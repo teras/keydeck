@@ -1,6 +1,8 @@
+use std::sync::Arc;
+use elgato_streamdeck::info::Kind;
 use elgato_streamdeck::{list_devices, new_hidapi, StreamDeck};
+use hidapi::HidApi;
 use image::open;
-use indexmap::IndexMap;
 
 #[macro_export]
 macro_rules! verbose_log {
@@ -12,150 +14,158 @@ macro_rules! verbose_log {
 }
 
 pub struct DeviceManager {
-    device_ids: IndexMap<String, StreamDeck>,
+    // hid_api: Arc<HidApi>,
+    devices: Vec<StreamDeckDevice>,
     pub verbose: bool,
+    image_dir: Option<String>,
+    auto_added: bool,
+}
+
+pub struct StreamDeckDevice {
+    hid_api: Arc<HidApi>,
+    kind: Kind,
+    serial: String,
+    device_id: String,
+    deck: Option<StreamDeck>,
+    enabled: bool,
+}
+
+impl StreamDeckDevice {
+    pub fn get_deck(&mut self) -> &StreamDeck {
+        self.deck.get_or_insert_with(|| {
+            StreamDeck::connect(&self.hid_api, self.kind, &self.serial)
+                .expect("Failed to connect to device")
+        })
+    }
 }
 
 impl DeviceManager {
     pub fn new() -> Self {
+        let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
+        let mut devices: Vec<StreamDeckDevice> = vec![];
+        for (kind, serial) in list_devices(&hidapi) {
+            let device_id = format!("{:04X}:{:04X}", kind.vendor_id(), kind.product_id());
+            devices.push(
+                StreamDeckDevice {
+                    hid_api: Arc::clone(&hidapi),
+                    kind: kind,
+                    serial: serial,
+                    device_id: device_id,
+                    deck: None,
+                    enabled: false,
+                }
+            );
+        }
+        if devices.is_empty() {
+            panic!("No devices connected");
+        }
         Self {
-            device_ids: IndexMap::new(),
+            // hid_api: Arc::clone(&hidapi),
+            devices: devices,
             verbose: false,
-        }
-    }
-
-    pub fn list_all_devices(&self) {
-        match new_hidapi() {
-            Ok(hid) => {
-                println!("Found devices:");
-                for (kind, serial) in list_devices(&hid) {
-                    println!("{:04X}:{:04X} {} {:?}", kind.vendor_id(), kind.product_id(), serial, kind);
-                }
-                println!("--------------");
-            }
-            Err(e) => {
-                eprintln!("Unable to create hidapi context: {}", e);
-            }
-        }
-    }
-
-    pub fn current_devices(&self) {
-        if self.device_ids.len() == 0 {
-            verbose_log!(self, "No devices connected");
-        } else {
-            for (device_id, _) in self.device_ids.iter() {
-                verbose_log!(self, format!( "Using device: {}", device_id));
-            }
-        }
-    }
-
-    fn add_all_devices(&mut self) -> Result<(), String> {
-        match new_hidapi() {
-            Ok(hid) => {
-                for (kind, serial) in list_devices(&hid) {
-                    let device_id = format!("{:04X}:{:04X}", kind.vendor_id(), kind.product_id());
-                    self.device_ids.insert(
-                        device_id.to_string(),
-                        StreamDeck::connect(&hid, kind, &serial)
-                            .expect(&format!("Failed to connect to device with id '{}'", device_id)),
-                    );
-                    verbose_log!(self, format!("Connected to '{}'", serial));
-                }
-                Ok(())
-            }
-            Err(e) => {
-                Err(format!("Unable to create hidapi context: {}", e))
-            }
-        }
-    }
-
-    pub fn add_device(&mut self, device_id: String) -> Result<(), String> {
-        if self.device_ids.contains_key(device_id.as_str()) {
-            return Ok(());
-        }
-        match parse_device_id(device_id.as_str()) {
-            Some((vendor_id, product_id)) => {
-                match new_hidapi() {
-                    Ok(hid) => {
-                        for (kind, serial) in list_devices(&hid) {
-                            if kind.vendor_id() == vendor_id && kind.product_id() == product_id {
-                                self.device_ids.insert(
-                                    device_id.to_string(),
-                                    StreamDeck::connect(&hid, kind, &serial)
-                                        .expect(&format!("Failed to connect to device with id '{}'", device_id)),
-                                );
-                                verbose_log!(self, format!("Connected to '{}'", serial));
-                                return Ok(());
-                            }
-                        }
-                        Err(format!("Device with id '{}' not found", device_id))
-                    }
-                    Err(e) => {
-                        Err(format!("Unable to create hidapi context: {}", e))
-                    }
-                }
-            }
-            None => {
-                Err(format!("Invalid device ID '{}'", device_id))
-            }
-        }
-    }
-
-    pub fn remove_device(&mut self, device_id: String) -> Result<(), String> {
-        if self.device_ids.contains_key(device_id.as_str()) {
-            self.device_ids.swap_remove(device_id.as_str());
-            verbose_log!(self, format!("Removed device with id '{}'", device_id));
-            Ok(())
-        } else {
-            Err(format!("Device with id '{}' not found", device_id))
+            image_dir: None,
+            auto_added: true,
         }
     }
 
     pub fn set_button_image(&mut self, button_idx: u8, img_path: String) -> Result<(), String> {
-        self.ensure_devices()?;
-        let image = open(img_path.clone()).unwrap();
-        for (_, device) in self.device_ids.iter_mut() {
-            device.set_button_image(button_idx, image.clone()).expect(format!("Failed to set button image {} on device '{}' to button {}", img_path, device.serial_number().unwrap(), button_idx).as_str());
-            device.flush().expect(format!("Failed to flush button image {} on device '{}' to button {}", img_path, device.serial_number().unwrap(), button_idx).as_str());
+        let image = load_image(img_path.clone(), self.image_dir.clone());
+        for device in self.iter_active_devices() {
+            let deck = device.get_deck();
+            deck.set_button_image(button_idx, image.clone()).expect(format!("Failed to set button image {} on device '{}' to button {}", img_path, deck.serial_number().unwrap(), button_idx).as_str());
+            deck.flush().expect(format!("Failed to flush button image {} on device '{}' to button {}", img_path, deck.serial_number().unwrap(), button_idx).as_str());
         }
         verbose_log!(self, format!("Set button image {} to button {}", img_path, button_idx));
         Ok(())
     }
 
+    pub fn set_image_dir(&mut self, img_dir: String) {
+        self.image_dir = Some(img_dir);
+    }
+
     pub fn set_brightness(&mut self, brightness: u8) -> Result<(), String> {
-        self.ensure_devices()?;
-        for (_, device) in self.device_ids.iter_mut() {
-            device.set_brightness(brightness).expect(format!("Failed to set brightness on device '{}'", device.serial_number().unwrap()).as_str());
+        for device in self.iter_active_devices() {
+            let deck = device.get_deck();
+            deck.set_brightness(brightness).expect(format!("Failed to set brightness on device '{}'", deck.serial_number().unwrap()).as_str());
         }
         verbose_log!(self, format!("Set brightness to {}", brightness));
         Ok(())
     }
 
     pub fn clear_all_button_images(&mut self) -> Result<(), String> {
-        self.ensure_devices()?;
-        for (_, device) in self.device_ids.iter_mut() {
-            device.clear_all_button_images().expect(format!("Failed to clear all button images on device '{}'", device.serial_number().unwrap()).as_str());
-            device.flush().expect(format!("Failed to flush clear all button images on device '{}'", device.serial_number().unwrap()).as_str());
+        for device in self.iter_active_devices() {
+            let deck = device.get_deck();
+            deck.clear_all_button_images().expect(format!("Failed to clear all button images on device '{}'", deck.serial_number().unwrap()).as_str());
+            deck.flush().expect(format!("Failed to flush clear all button images on device '{}'", deck.serial_number().unwrap()).as_str());
         }
         verbose_log!(self, "Cleared all button images");
         Ok(())
     }
 
-    fn ensure_devices(&mut self) -> Result<(), String> {
-        if self.device_ids.len() == 0 {
-            self.add_all_devices()?;
+    pub fn list_devices(&mut self) {
+        for device in self.iter_active_devices() {
+            println!("{} {} {:?}", device.device_id, device.serial, device.kind);
         }
-        if self.device_ids.len() == 0 {
-            return Err("No devices connected".to_string());
+        println!("Total devices: {}", self.count_active_devices());
+    }
+
+    pub fn enable_device(&mut self, identifier: String) -> Result<(), String> {
+        if self.auto_added {
+            self.set_state_all_devices(false);
+            self.auto_added = false;
         }
-        Ok(())
+        for device in &mut self.devices {
+            if device.device_id == identifier || device.serial.trim() == identifier {
+                device.enabled = true;
+                return Ok(());
+            }
+        }
+        Err(format!("Enabling device with id '{}' not found", identifier))
+    }
+
+    pub fn disable_device(&mut self, device_id: String) -> Result<(), String> {
+        self.auto_added = false;
+        for device in &mut self.devices {
+            if device.device_id == device_id || device.serial.trim() == device_id {
+                device.enabled = false;
+                return Ok(());
+            }
+        }
+        Err(format!("Disabling device with id '{}' not found", device_id))
+    }
+
+    fn set_state_all_devices(&mut self, state: bool) {
+        for device in &mut self.devices {
+            device.enabled = state;
+        }
+    }
+
+    fn count_active_devices(&self) -> usize {
+        let mut count = 0;
+        for device in self.devices.iter() {
+            if device.enabled {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    fn iter_active_devices(&mut self) -> impl Iterator<Item=&mut StreamDeckDevice> {
+        if self.count_active_devices() == 0 {
+            self.set_state_all_devices(true);
+            self.auto_added = true;
+        }
+        self.devices.iter_mut().filter(|device| device.enabled)
     }
 }
 
-fn parse_device_id(device_id: &str) -> Option<(u16, u16)> {
-    let parts: Vec<&str> = device_id.split(':').collect();
-    if parts.len() != 2 {
-        return None;
+fn load_image(image: String, img_path: Option<String>) -> image::DynamicImage {
+    if std::path::Path::new(&image).exists() {
+        return open(image).unwrap();
     }
-    Some((u16::from_str_radix(parts[0], 16).ok()?, u16::from_str_radix(parts[1], 16).ok()?))
+    let img_path = img_path.unwrap_or_else(|| ".".to_string());
+    let image = format!("{}/{}", img_path, image.replace("\\", "/"));
+    open(image).unwrap()
 }
+
+

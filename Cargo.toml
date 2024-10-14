@@ -10,3 +10,10 @@ image = { version = "0.25.2", default-features = false, features = [
     "bmp",
     "jpeg",
 ] }
+hidapi = { version = "2.6", default-features = false, features=["linux-static-hidraw"] }
+
+[profile.release]
+opt-level = "z"  # Optimize for size
+lto = true       # Enable Link Time Optimization (LTO)
+codegen-units = 1  # Reduce codegen units for better LTO
+panic = "abort"  # Abort on panic to reduce binary size
