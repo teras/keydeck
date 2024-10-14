@@ -1,5 +1,5 @@
-use crate::parse_device_id;
 use elgato_streamdeck::{list_devices, new_hidapi, StreamDeck};
+use image::open;
 use indexmap::IndexMap;
 
 #[macro_export]
@@ -17,34 +17,21 @@ pub struct DeviceManager {
 }
 
 impl DeviceManager {
-    pub fn set_button_image(&mut self, p0: String, p1: String) -> Result<(), String> {
-        if self.device_ids.len() == 0 {
-            self.add_all_devices()?;
-        }
-        if self.device_ids.len() == 0 {
-            return Err("No devices connected".to_string());
-        }
-        println!("Setting button image {} {}", p0, p1);
-        Ok(())
-    }
-}
-
-impl DeviceManager {
     pub fn new() -> Self {
         Self {
             device_ids: IndexMap::new(),
-            verbose: true,
+            verbose: false,
         }
     }
 
     pub fn list_all_devices(&self) {
         match new_hidapi() {
             Ok(hid) => {
-                verbose_log!(self, "Found devices:");
+                println!("Found devices:");
                 for (kind, serial) in list_devices(&hid) {
-                    verbose_log!(self, format!("{:04X}:{:04X} {} {:?}", kind.vendor_id(), kind.product_id(), serial, kind));
+                    println!("{:04X}:{:04X} {} {:?}", kind.vendor_id(), kind.product_id(), serial, kind);
                 }
-                verbose_log!(self, "--------------");
+                println!("--------------");
             }
             Err(e) => {
                 eprintln!("Unable to create hidapi context: {}", e);
@@ -116,11 +103,59 @@ impl DeviceManager {
 
     pub fn remove_device(&mut self, device_id: String) -> Result<(), String> {
         if self.device_ids.contains_key(device_id.as_str()) {
-            self.device_ids.remove(device_id.as_str());
+            self.device_ids.swap_remove(device_id.as_str());
             verbose_log!(self, format!("Removed device with id '{}'", device_id));
             Ok(())
         } else {
             Err(format!("Device with id '{}' not found", device_id))
         }
     }
+
+    pub fn set_button_image(&mut self, button_idx: u8, img_path: String) -> Result<(), String> {
+        self.ensure_devices()?;
+        let image = open(img_path.clone()).unwrap();
+        for (_, device) in self.device_ids.iter_mut() {
+            device.set_button_image(button_idx, image.clone()).expect(format!("Failed to set button image {} on device '{}' to button {}", img_path, device.serial_number().unwrap(), button_idx).as_str());
+            device.flush().expect(format!("Failed to flush button image {} on device '{}' to button {}", img_path, device.serial_number().unwrap(), button_idx).as_str());
+        }
+        verbose_log!(self, format!("Set button image {} to button {}", img_path, button_idx));
+        Ok(())
+    }
+
+    pub fn set_brightness(&mut self, brightness: u8) -> Result<(), String> {
+        self.ensure_devices()?;
+        for (_, device) in self.device_ids.iter_mut() {
+            device.set_brightness(brightness).expect(format!("Failed to set brightness on device '{}'", device.serial_number().unwrap()).as_str());
+        }
+        verbose_log!(self, format!("Set brightness to {}", brightness));
+        Ok(())
+    }
+
+    pub fn clear_all_button_images(&mut self) -> Result<(), String> {
+        self.ensure_devices()?;
+        for (_, device) in self.device_ids.iter_mut() {
+            device.clear_all_button_images().expect(format!("Failed to clear all button images on device '{}'", device.serial_number().unwrap()).as_str());
+            device.flush().expect(format!("Failed to flush clear all button images on device '{}'", device.serial_number().unwrap()).as_str());
+        }
+        verbose_log!(self, "Cleared all button images");
+        Ok(())
+    }
+
+    fn ensure_devices(&mut self) -> Result<(), String> {
+        if self.device_ids.len() == 0 {
+            self.add_all_devices()?;
+        }
+        if self.device_ids.len() == 0 {
+            return Err("No devices connected".to_string());
+        }
+        Ok(())
+    }
+}
+
+fn parse_device_id(device_id: &str) -> Option<(u16, u16)> {
+    let parts: Vec<&str> = device_id.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    Some((u16::from_str_radix(parts[0], 16).ok()?, u16::from_str_radix(parts[1], 16).ok()?))
 }

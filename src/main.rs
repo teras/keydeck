@@ -1,7 +1,7 @@
 mod device_manager;
 
-use std::env;
 use crate::device_manager::DeviceManager;
+use std::env;
 
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
 
     while let Some(arg) = arg_iter.next() {
         match arg.as_str() {
-            "--help" => println!("Usage: streamdeck-rs [options]\n\nOptions:\n  -l, --list\t\tList all connected devices\n  -d, --add <id>\tAdd device with id\n  -r, --remove <id>\tRemove device with id\n  -c, --current\t\tList current devices\n  -b, --button <num> <image>\tSet button image\n"),
+            "--help" => println!("Usage: {} [options]\n\nOptions:\n  -l, --list\t\tList all connected devices\n  -d, --add <id>\tAdd a device with the given id\n  -r, --remove <id>\tRemove a device with the given id\n  -c, --current\t\tList all current devices\n  --button <index> <path>\tSet the image for a button\n  --clear\t\tClear all button images\n  --brightness <value>\tSet the brightness of all devices\n  --quiet\t\tDisable verbose logging\n  --verbose\t\tEnable verbose logging", env::args().next().unwrap()),
             "--list" | "-l" => manager.list_all_devices(),
             "-d" | "--add" => {
                 if let Some(arg1) = arg_iter.next() {
@@ -29,11 +29,19 @@ fn main() {
                 }
             }
             "-c" | "--current" => manager.current_devices(),
-            "-b" | "--button" => {
-                if let (Some(arg1), Some(arg2)) = (arg_iter.next(), arg_iter.next()) {
-                    manager.set_button_image(arg1.parse().expect("Failed to parse button number"), arg2.to_string()).expect("Failed to set button image");
+            "--button" => {
+                if let (Some(index), Some(path)) = (arg_iter.next(), arg_iter.next()) {
+                    manager.set_button_image(index.parse().expect("Failed to parse button number"), path.to_string()).expect("Failed to set button image");
                 } else {
                     eprintln!("Error: Setting button image requires two arguments, button number and image path");
+                }
+            }
+            "--clear" => manager.clear_all_button_images().expect("Failed to clear all button images"),
+            "--brightness" => {
+                if let Some(arg1) = arg_iter.next() {
+                    manager.set_brightness(arg1.parse().expect("Failed to parse brightness")).expect("Failed to set brightness");
+                } else {
+                    eprintln!("Error: Setting brightness requires an argument");
                 }
             }
             "--quiet" => manager.verbose = false,
@@ -43,12 +51,4 @@ fn main() {
             }
         }
     }
-}
-
-fn parse_device_id(device_id: &str) -> Option<(u16, u16)> {
-    let parts: Vec<&str> = device_id.split(':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    Some((u16::from_str_radix(parts[0], 16).ok()?, u16::from_str_radix(parts[1], 16).ok()?))
 }
