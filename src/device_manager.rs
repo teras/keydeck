@@ -1,8 +1,9 @@
-use std::sync::Arc;
 use elgato_streamdeck::info::Kind;
-use elgato_streamdeck::{list_devices, new_hidapi, StreamDeck};
+use elgato_streamdeck::{list_devices, new_hidapi, DeviceStateReader, StreamDeck};
 use hidapi::HidApi;
 use image::open;
+use std::sync::Arc;
+use std::time::Duration;
 
 #[macro_export]
 macro_rules! verbose_log {
@@ -26,16 +27,27 @@ pub struct StreamDeckDevice {
     kind: Kind,
     serial: String,
     device_id: String,
-    deck: Option<StreamDeck>,
+    deck: Option<Arc<StreamDeck>>,
+    reader: Option<Arc<DeviceStateReader>>,
     enabled: bool,
 }
 
 impl StreamDeckDevice {
-    pub fn get_deck(&mut self) -> &StreamDeck {
+    pub fn get_deck(&mut self) -> Arc<StreamDeck> {
         self.deck.get_or_insert_with(|| {
-            StreamDeck::connect(&self.hid_api, self.kind, &self.serial)
-                .expect("Failed to connect to device")
-        })
+            Arc::new(
+                StreamDeck::connect(&self.hid_api, self.kind, &self.serial)
+                    .expect("Failed to connect to device"),
+            )
+        }).clone()  // Return a clone of the Arc<StreamDeck>
+    }
+
+    pub fn get_reader(&mut self) -> Arc<DeviceStateReader> {
+        if self.reader.is_none() {
+            let deck = self.get_deck();
+            self.reader = Some(deck.get_reader());
+        }
+        self.reader.as_ref().unwrap().clone()
     }
 }
 
@@ -52,6 +64,7 @@ impl DeviceManager {
                     serial: serial,
                     device_id: device_id,
                     deck: None,
+                    reader: None,
                     enabled: false,
                 }
             );
@@ -60,7 +73,6 @@ impl DeviceManager {
             panic!("No devices connected");
         }
         Self {
-            // hid_api: Arc::clone(&hidapi),
             devices: devices,
             verbose: false,
             image_dir: None,
@@ -68,12 +80,70 @@ impl DeviceManager {
         }
     }
 
+    pub fn grab_event(&mut self) -> Result<(), String> {
+        if self.count_active_devices() != 1 {
+            return Err("Only one active device is allowed to grab events".to_string());
+        }
+        for device in self.iter_active_devices() {
+            if let Ok(updates) = device.get_reader().read(Some(Duration::from_secs_f64(100.0))) {
+                for update in updates {
+                    println!("{:?}", update);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn shutdown_devices(&mut self) -> Result<(), String> {
+        for device in self.iter_active_devices() {
+            device.get_deck().shutdown().map_err(|e| format!("Failed to shutdown device '{}': {}", device.get_deck().serial_number().unwrap(), e))?;
+        }
+        verbose_log!(self, "Shutdown devices");
+        Ok(())
+    }
+
+    pub(crate) fn reset_devices(&mut self) -> Result<(), String> {
+        for device in self.iter_active_devices() {
+            device.get_deck().reset().map_err(|e| format!("Failed to reset device '{}': {}", device.get_deck().serial_number().unwrap(), e))?;
+        }
+        verbose_log!(self, "Reset devices");
+        Ok(())
+    }
+
+    pub(crate) fn sleep_devices(&mut self) -> Result<(), String> {
+        for device in self.iter_active_devices() {
+            device.get_deck().sleep().map_err(|e| format!("Failed to sleep device '{}': {}", device.get_deck().serial_number().unwrap(), e))?;
+        }
+        verbose_log!(self, "Sleep devices");
+        Ok(())
+    }
+
+    pub(crate) fn set_logo_image(&mut self, logo_image: String) -> Result<(), String> {
+        let image = load_image(logo_image.clone(), self.image_dir.clone());
+        for device in self.iter_active_devices() {
+            let deck = device.get_deck();
+            deck.set_logo_image(image.clone()).map_err(|e| format!("Failed to set logo image on device '{}': {}", deck.serial_number().unwrap(), e))?;
+            deck.flush().map_err(|e| format!("Failed to flush logo image on device '{}': {}", deck.serial_number().unwrap(), e))?;
+        }
+        verbose_log!(self, format!("Set logo image {}", logo_image));
+        Ok(())
+    }
+
+    pub fn clear_button_image(&mut self, button_idx: u8) -> Result<(), String> {
+        for device in self.iter_active_devices() {
+            let deck = device.get_deck();
+            deck.clear_button_image(button_idx).map_err(|e| format!("Failed to clear button image on device '{}' from button {}: {}", deck.serial_number().unwrap(), button_idx, e))?;
+        }
+        verbose_log!(self, format!("Cleared button image from button {}", button_idx));
+        Ok(())
+    }
+
     pub fn set_button_image(&mut self, button_idx: u8, img_path: String) -> Result<(), String> {
         let image = load_image(img_path.clone(), self.image_dir.clone());
         for device in self.iter_active_devices() {
             let deck = device.get_deck();
-            deck.set_button_image(button_idx, image.clone()).expect(format!("Failed to set button image {} on device '{}' to button {}", img_path, deck.serial_number().unwrap(), button_idx).as_str());
-            deck.flush().expect(format!("Failed to flush button image {} on device '{}' to button {}", img_path, deck.serial_number().unwrap(), button_idx).as_str());
+            deck.set_button_image(button_idx, image.clone()).map_err(|e| format!("Failed to set button image {} on device '{}' to button {}: {}", img_path, deck.serial_number().unwrap(), button_idx, e))?;
+            deck.flush().map_err(|e| format!("Failed to flush button image {} on device '{}' to button {}: {}", img_path, deck.serial_number().unwrap(), button_idx, e))?;
         }
         verbose_log!(self, format!("Set button image {} to button {}", img_path, button_idx));
         Ok(())
@@ -86,7 +156,7 @@ impl DeviceManager {
     pub fn set_brightness(&mut self, brightness: u8) -> Result<(), String> {
         for device in self.iter_active_devices() {
             let deck = device.get_deck();
-            deck.set_brightness(brightness).expect(format!("Failed to set brightness on device '{}'", deck.serial_number().unwrap()).as_str());
+            deck.set_brightness(brightness).map_err(|e| format!("Failed to set brightness on device '{}': {}", deck.serial_number().unwrap(), e))?;
         }
         verbose_log!(self, format!("Set brightness to {}", brightness));
         Ok(())
@@ -95,8 +165,8 @@ impl DeviceManager {
     pub fn clear_all_button_images(&mut self) -> Result<(), String> {
         for device in self.iter_active_devices() {
             let deck = device.get_deck();
-            deck.clear_all_button_images().expect(format!("Failed to clear all button images on device '{}'", deck.serial_number().unwrap()).as_str());
-            deck.flush().expect(format!("Failed to flush clear all button images on device '{}'", deck.serial_number().unwrap()).as_str());
+            deck.clear_all_button_images().map_err(|e| format!("Failed to clear all button images on device '{}': {}", deck.serial_number().unwrap(), e))?;
+            deck.flush().map_err(|e| format!("Failed to flush clear all button images on device '{}': {}", deck.serial_number().unwrap(), e))?;
         }
         verbose_log!(self, "Cleared all button images");
         Ok(())
