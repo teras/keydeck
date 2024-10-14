@@ -1,0 +1,8 @@
+[package]
+name = "Streamdeck-CLI"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+elgato-streamdeck = { path = "/home/teras/Sources/elgato-streamdeck" }
+indexmap = "1"
