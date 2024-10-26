@@ -112,9 +112,7 @@ impl PagedDevice {
                             self.set_page(jump);
                         }
                         Action::Focus { focus } => {
-                            set_focus(focus, focus).unwrap_or_else(|e| {
-                                eprintln!("Error: {}", e);
-                            });
+                            set_focus(focus, &"".to_string()).unwrap_or_else(|e| { eprintln!("Error: {}", e); });
                         }
                     }
                 }

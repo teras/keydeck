@@ -1,99 +1,239 @@
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{Atom, ConnectionExt, Window, InputFocus, PropMode};
-use x11rb::protocol::xproto::ClientMessageData;
+use x11rb::protocol::xproto::{
+    Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConnectionExt, EventMask, Window,
+    CLIENT_MESSAGE_EVENT,
+};
 use x11rb::rust_connection::RustConnection;
-use x11rb::protocol::xproto::ClientMessageEvent;
 
-fn get_atom(conn: &RustConnection, name: &str) -> Result<Atom, &'static str> {
-    let cookie = conn.intern_atom(false, name.as_bytes()).map_err(|_| "Failed to intern atom")?;
-    let reply = cookie.reply().map_err(|_| "Failed to get atom reply")?;
-    Ok(reply.atom)
-}
-
-// Helper function to check if a window property matches the specified value
-fn window_property_matches(
-    conn: &RustConnection,
-    window: Window,
-    property_atom: Atom,
-    string_atom: Atom,
-    value: &str,
-) -> Result<bool, &'static str> {
-    let cookie = conn.get_property(false, window, property_atom, string_atom, 0, 1024)
-        .map_err(|_| "Failed to get property")?;
-    let reply = cookie.reply().map_err(|_| "Failed to get property reply")?;
-
-    let prop_value: Vec<u8> = reply.value8().map(|iter| iter.collect()).unwrap_or_default();
-    Ok(String::from_utf8_lossy(&prop_value).contains(value))
-}
-
-// Recursive function to search windows and their children
-fn recursive_search(
-    conn: &RustConnection,
-    window: Window,
-    wm_name_atom: Atom,
-    wm_class_atom: Atom,
-    string_atom: Atom,
-    title: &str,
-    class: &str,
-) -> Result<Option<Window>, &'static str> {
-    // Check if the current window matches the title or class
-    let title_matches = window_property_matches(conn, window, wm_name_atom, string_atom, title).unwrap_or(false);
-    let class_matches = window_property_matches(conn, window, wm_class_atom, string_atom, class).unwrap_or(false);
-
-    if title_matches || class_matches {
-        return Ok(Some(window));
+pub fn set_focus(class: &String, title: &String) -> Result<(), String> {
+    // Ensure at least one of class or title is specified
+    if class.is_empty() && title.is_empty() {
+        return Err("At least one of class or title must be specified".to_string());
     }
 
-    // Get the children of the current window to search recursively
-    let cookie = conn.query_tree(window).map_err(|_| "Failed to query window tree")?;
-    let reply = cookie.reply().map_err(|_| "Failed to get tree reply")?;
-
-    // Recursively search each child window
-    for &child in &reply.children {
-        if let Some(found) = recursive_search(conn, child, wm_name_atom, wm_class_atom, string_atom, title, class)? {
-            return Ok(Some(found));
-        }
-    }
-    Ok(None)
-}
-
-pub fn set_focus(title: &str, class: &str) -> Result<(), &'static str> {
-    // Connect to X11 and retrieve root window and atoms
-    let (conn, screen_num) = RustConnection::connect(None).map_err(|_| "Failed to connect to X11")?;
+    // Connect to the X server
+    let (conn, screen_num) = RustConnection::connect(None)
+        .map_err(|e| format!("Failed to connect to X server: {}", e))?;
     let screen = &conn.setup().roots[screen_num];
-    let (root, wm_name_atom, wm_class_atom, string_atom, net_active_window_atom) = (
-        screen.root,
-        get_atom(&conn, "WM_NAME")?,
-        get_atom(&conn, "WM_CLASS")?,
-        get_atom(&conn, "STRING")?,
-        get_atom(&conn, "_NET_ACTIVE_WINDOW")?, // Atom for setting the active window
-    );
+    let root = screen.root;
 
-    // Perform a recursive search starting from the root window
-    if let Some(win) = recursive_search(&conn, root, wm_name_atom, wm_class_atom, string_atom, title, class)? {
-        // Focus the found window
-        conn.set_input_focus(InputFocus::POINTER_ROOT, win, x11rb::CURRENT_TIME)
-            .map_err(|_| "Failed to set input focus")?;
+    // Intern necessary atoms
+    let net_client_list_atom = intern_atom(&conn, b"_NET_CLIENT_LIST")?;
+    let net_wm_name_atom = intern_atom(&conn, b"_NET_WM_NAME")?;
+    let utf8_string_atom = intern_atom(&conn, b"UTF8_STRING")?;
+    let net_active_window_atom = intern_atom(&conn, b"_NET_ACTIVE_WINDOW")?;
+    let wm_class_atom = AtomEnum::WM_CLASS.into();
+    let wm_name_atom = AtomEnum::WM_NAME.into();
 
-        // Raise the window to the top of the stacking order
-        conn.configure_window(win, &x11rb::protocol::xproto::ConfigureWindowAux::new().stack_mode(x11rb::protocol::xproto::StackMode::ABOVE))
-            .map_err(|_| "Failed to raise window")?;
+    // Get the list of top-level windows
+    let client_list = conn
+        .get_property::<Atom, Atom>(
+            false,
+            root,
+            net_client_list_atom,
+            AtomEnum::WINDOW.into(),
+            0,
+            u32::MAX,
+        )
+        .map_err(|e| format!("Failed to get _NET_CLIENT_LIST property: {}", e))?
+        .reply()
+        .map_err(|e| format!("Failed to get reply for _NET_CLIENT_LIST property: {}", e))?;
 
-        // Send _NET_ACTIVE_WINDOW client message to the root window to request focus
-        let client_message = ClientMessageEvent {
-            response_type: x11rb::protocol::xproto::CLIENT_MESSAGE_EVENT,
-            format: 32,
-            sequence: 0,
-            window: win,
-            type_: net_active_window_atom,
-            data: ClientMessageData::from([1, x11rb::CURRENT_TIME, 0, 0, 0]),
+    if client_list.format != 32 {
+        return Err("Invalid format for _NET_CLIENT_LIST property".to_string());
+    }
+
+    let window_ids = client_list
+        .value32()
+        .ok_or_else(|| "Failed to parse _NET_CLIENT_LIST property".to_string())?;
+
+    // Iterate over each window and attempt to find a match
+    for window in window_ids {
+        // Get WM_CLASS
+        let wm_class = get_wm_class(&conn, window, wm_class_atom)?;
+        // Get window title
+        let window_title = get_window_title(
+            &conn,
+            window,
+            net_wm_name_atom,
+            utf8_string_atom,
+            wm_name_atom,
+        )?;
+
+        // Perform matching
+        let class_match = if !class.is_empty() {
+            if let Some((res_name, res_class)) = &wm_class {
+                let class_target_lower = class.to_lowercase();
+                res_name.to_lowercase().contains(&class_target_lower)
+                    || res_class.to_lowercase().contains(&class_target_lower)
+            } else {
+                false
+            }
+        } else {
+            true
         };
 
-        conn.send_event(false, root, x11rb::protocol::xproto::EventMask::SUBSTRUCTURE_REDIRECT | x11rb::protocol::xproto::EventMask::SUBSTRUCTURE_NOTIFY, client_message)
-            .map_err(|_| "Failed to send _NET_ACTIVE_WINDOW message")?;
+        let title_match = if !title.is_empty() {
+            if let Some(window_title) = &window_title {
+                let title_target_lower = title.to_lowercase();
+                window_title.to_lowercase().contains(&title_target_lower)
+            } else {
+                false
+            }
+        } else {
+            true
+        };
 
-        Ok(())
-    } else {
-        Err("Window with specified title or class not found")
+        // If both class and title match, activate the window
+        if class_match && title_match {
+            // Construct the ClientMessage data
+            let data32 = [
+                2, // Source indication (2 = pager)
+                0, // Timestamp (0 means CurrentTime)
+                0, // Flags (set to 0)
+                0,
+                0,
+            ];
+
+            let data: ClientMessageData = data32.into();
+
+            let event = ClientMessageEvent {
+                response_type: CLIENT_MESSAGE_EVENT,
+                format: 32,
+                sequence: 0,
+                window, // The window we want to activate
+                type_: net_active_window_atom,
+                data,
+            };
+
+            // Send the event to the root window
+            conn.send_event(
+                false,
+                root,
+                EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+                &event,
+            )
+                .map_err(|e| format!("Failed to send _NET_ACTIVE_WINDOW event: {}", e))?;
+
+            // Flush the request to ensure it's sent
+            conn.flush()
+                .map_err(|e| format!("Failed to flush X connection: {}", e))?;
+
+            return Ok(());
+        }
     }
+
+    Err(format!("No matching window found using class '{}' and title '{}'", class, title))
+}
+
+/// Helper function to intern an atom and return its identifier.
+fn intern_atom(conn: &RustConnection, name: &[u8]) -> Result<Atom, String> {
+    conn.intern_atom(false, name)
+        .map_err(|e| format!("Failed to intern atom {:?}: {}", name, e))?
+        .reply()
+        .map_err(|e| format!("Failed to get reply for atom {:?}: {}", name, e))
+        .map(|r| r.atom)
+}
+
+/// Retrieves the `WM_CLASS` property of a window.
+fn get_wm_class(
+    conn: &RustConnection,
+    window: Window,
+    wm_class_atom: Atom,
+) -> Result<Option<(String, String)>, String> {
+    let reply = conn
+        .get_property::<Atom, Atom>(
+            false,
+            window,
+            wm_class_atom,
+            AtomEnum::STRING.into(),
+            0,
+            u32::MAX,
+        )
+        .map_err(|e| format!("Failed to get WM_CLASS property: {}", e))?
+        .reply()
+        .map_err(|e| format!("Failed to get reply for WM_CLASS property: {}", e))?;
+
+    if reply.value_len == 0 {
+        return Ok(None);
+    }
+
+    let value = reply.value;
+    let parts = value.split(|&b| b == 0).collect::<Vec<_>>();
+
+    if parts.len() < 2 {
+        return Ok(None);
+    }
+
+    let res_name = String::from_utf8(parts[0].to_vec())
+        .map_err(|e| format!("Failed to parse res_name from WM_CLASS: {}", e))?;
+    let res_class = String::from_utf8(parts[1].to_vec())
+        .map_err(|e| format!("Failed to parse res_class from WM_CLASS: {}", e))?;
+
+    Ok(Some((res_name, res_class)))
+}
+
+/// Retrieves the window title using `_NET_WM_NAME` or falls back to `WM_NAME`.
+fn get_window_title(
+    conn: &RustConnection,
+    window: Window,
+    net_wm_name_atom: Atom,
+    utf8_string_atom: Atom,
+    wm_name_atom: Atom,
+) -> Result<Option<String>, String> {
+    // Attempt to get _NET_WM_NAME with UTF8_STRING encoding
+    if let Ok(cookie) = conn.get_property::<Atom, Atom>(
+        false,
+        window,
+        net_wm_name_atom,
+        utf8_string_atom,
+        0,
+        u32::MAX,
+    ) {
+        if let Ok(reply) = cookie.reply() {
+            if reply.value_len > 0 {
+                if let Ok(title) = String::from_utf8(reply.value) {
+                    return Ok(Some(title));
+                }
+            }
+        }
+    }
+
+    // Attempt to get _NET_WM_NAME with STRING encoding
+    if let Ok(cookie) = conn.get_property::<Atom, Atom>(
+        false,
+        window,
+        net_wm_name_atom,
+        AtomEnum::STRING.into(), // Added `.into()`
+        0,
+        u32::MAX,
+    ) {
+        if let Ok(reply) = cookie.reply() {
+            if reply.value_len > 0 {
+                if let Ok(title) = String::from_utf8(reply.value) {
+                    return Ok(Some(title));
+                }
+            }
+        }
+    }
+
+    // Fallback to WM_NAME with STRING encoding
+    if let Ok(cookie) = conn.get_property::<Atom, Atom>(
+        false,
+        window,
+        wm_name_atom,
+        AtomEnum::STRING.into(), // Added `.into()`
+        0,
+        u32::MAX,
+    ) {
+        if let Ok(reply) = cookie.reply() {
+            if reply.value_len > 0 {
+                if let Ok(title) = String::from_utf8(reply.value) {
+                    return Ok(Some(title));
+                }
+            }
+        }
+    }
+
+    Ok(None)
 }
