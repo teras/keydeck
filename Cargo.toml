@@ -5,12 +5,16 @@ edition = "2021"
 
 [dependencies]
 elgato-streamdeck = { path = "/home/teras/Sources/elgato-streamdeck" }
-indexmap = "2.6.0"
+indexmap = { version = "2.6.0", features = ["serde"] }
 image = { version = "0.25.2", default-features = false, features = [
     "bmp",
     "jpeg",
+    "png",
 ] }
-hidapi = { version = "2.6", default-features = false, features=["linux-static-hidraw"] }
+hidapi = { version = "2.6", default-features = false, features = ["linux-static-hidraw"] }
+serde = { version = "1.0.213", features = ["derive"] }
+serde_yaml_ng = "0.10.0"
+x11rb = "0.13.1"
 
 [profile.release]
 opt-level = "z"  # Optimize for size

@@ -1,8 +1,37 @@
 mod device_manager;
+mod server;
+mod pages;
+mod paged_device;
+mod set_focus;
 
 use crate::device_manager::DeviceManager;
+use crate::server::start_server;
 use std::env;
 
+fn print_help() {
+    println!("Usage: streamdeck [OPTION]...");
+    println!("Control an Elgato Stream Deck device");
+    println!();
+    println!("Options:");
+    println!("  -g, --grab                  Grab the next event (note, it can be more than one)");
+    println!("  -i, --image <BUTTON> <PATH> Set the image for a button");
+    println!("  -d, --img-dir <DIR>         Set the directory where the images are searched");
+    println!("  -c, --clear                 Clear all button images");
+    println!("  -cb, --clear-button <BUTTON> Clear the image for a button");
+    println!("  -b, --brightness <BRIGHTNESS> Set the brightness of the device");
+    println!("  -l, --logo <PATH>           Set the logo image");
+    println!("  -s, --sleep                 Put the device to sleep");
+    println!("  -1, --enable <DEVICE>       Enable a device");
+    println!("  -0, --disable <DEVICE>      Disable a device");
+    println!("      --flush                 Flush devices");
+    println!("      --reset                 Reset devices");
+    println!("      --shutdown              Shutdown devices");
+    println!("      --list                  List all devices");
+    println!("      --quiet                 Do not print verbose messages");
+    println!("      --verbose               Print verbose messages");
+    println!("      --server                Start the server");
+    println!("      --help                  Display this help and exit");
+}
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<String>>();
@@ -10,9 +39,13 @@ fn main() {
 
     let mut manager = DeviceManager::new();
 
+    if args.len() == 0 {
+        print_help();
+        return;
+    }
     while let Some(arg) = arg_iter.next() {
         match arg.as_str() {
-            "--help" => println!("Usage: streamdeck-rs [options]\nOptions:\n-i, --image <button number> <image path> - Set the image for a button\n-d, --img-dir <directory path> - Set the directory where images are searched\n-c, --clear - Clear all button images\n-b, --brightness <brightness> - Set the brightness of the device\n--enable <device id> - Enable a device\n--disable <device id> - Disable a device\n--list-all - List all devices\n--list-enabled - List enabled devices\n--quiet - Disable verbose output\n--verbose - Enable verbose output"),
+            "--help" => print_help(),
             "-g" | "--grab" => manager.grab_event().unwrap(),
             "-i" | "--image" => {
                 if let (Some(index), Some(path)) = (arg_iter.next(), arg_iter.next()) {
@@ -65,11 +98,13 @@ fn main() {
                     eprintln!("Error: Removing device requires an argument");
                 }
             }
+            "--flush" => manager.flush_devices().unwrap(),
             "--reset" => manager.reset_devices().unwrap(),
             "--shutdown" => manager.shutdown_devices().unwrap(),
             "--list" => manager.list_devices(),
-            "--quiet" => manager.verbose = false,
-            "--verbose" => manager.verbose = true,
+            "--quiet" => manager.set_verbose(false),
+            "--verbose" => manager.set_verbose(true),
+            "--server" => start_server(&mut manager),
             _ => {
                 eprintln!("Error: Unknown command '{}'", arg);
             }
