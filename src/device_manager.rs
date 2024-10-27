@@ -4,6 +4,7 @@ use hidapi::HidApi;
 use image::{open, DynamicImage};
 use std::cell::RefCell;
 use std::path::Path;
+use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -79,29 +80,16 @@ impl StreamDeckDevice {
         deck.set_logo_image(image).map_err(|e| format!("Failed to set logo image on device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
-    pub fn set_logo_image(&self, image_dir: Option<String>, logo_image: String) -> Result<(), String> {
-        verbose_log!(self, format!("Set logo image on device '{}'", self.serial));
-        let img_data = load_image(&logo_image, image_dir.clone())?;
-        self.get_deck().set_logo_image(img_data).map_err(|e| format!("Failed to set logo image on device '{}': {}", self.serial, e))
-    }
-
     pub fn clear_button_image(&self, button_idx: u8) -> Result<(), String> {
         let deck = self.get_deck();
         verbose_log!(self, format!("Clearing button image on device '{}' from button {}", deck.serial_number().unwrap(), button_idx));
         deck.clear_button_image(button_idx).map_err(|e| format!("Failed to clear button image on device '{}' from button {}: {}", deck.serial_number().unwrap(), button_idx, e))
     }
 
-    pub fn set_button_image_cached(&self, button_idx: u8, image: DynamicImage) -> Result<(), String> {
+    pub fn set_button_image(&self, button_idx: u8, image: DynamicImage) -> Result<(), String> {
         let deck = self.get_deck();
         verbose_log!(self, format!("Setting button image on device '{}' to button {}", deck.serial_number().unwrap(), button_idx));
         deck.set_button_image(button_idx, image).map_err(|e| format!("Failed to set button image on device '{}' to button {}: {}", deck.serial_number().unwrap(), button_idx, e))
-    }
-
-    pub fn set_button_image(&self, button_idx: u8, image_dir: Option<String>, image_name: String) -> Result<(), String> {
-        let deck = self.get_deck();
-        let image_data = load_image(&image_name, image_dir)?;
-        verbose_log!(self, format!("Setting button image {} on device '{}' to button {}", image_name, deck.serial_number().unwrap(), button_idx));
-        deck.set_button_image(button_idx, image_data).map_err(|e| format!("Failed to set button image {} on device '{}' to button {}: {}", image_name, deck.serial_number().unwrap(), button_idx, e))
     }
 
     pub fn flush(&self) -> Result<(), String> {
@@ -147,7 +135,8 @@ impl DeviceManager {
             );
         }
         if devices.is_empty() {
-            panic!("No devices connected");
+            eprintln!("No StreamDeck devices found");
+            exit(1);
         }
         Self {
             devices: devices,
@@ -193,7 +182,10 @@ impl DeviceManager {
     }
 
     pub(crate) fn set_logo_image(&mut self, logo_image: String) -> Result<(), String> {
-        let image_data = load_image(&logo_image, self.image_dir.clone())?;
+        let image_data = match find_path(&logo_image, self.image_dir.clone()) {
+            Some(image_path) => open(image_path).map_err(|e| format!("Failed to open image '{}': {}", &logo_image, e))?,
+            None => return Err(format!("Image '{}' not found", logo_image)),
+        };
         for device in self.iter_active_devices() {
             device.set_logo_image_cached(image_data.clone())?;
             device.flush()?;
@@ -216,9 +208,12 @@ impl DeviceManager {
     }
 
     pub fn set_button_image(&mut self, button_idx: u8, img_path: String) -> Result<(), String> {
-        let image_data = load_image(&img_path, self.image_dir.clone())?;
+        let image_data = match find_path(&img_path, self.image_dir.clone()) {
+            Some(image_path) => open(image_path).map_err(|e| format!("Failed to open image '{}': {}", &img_path, e))?,
+            None => return Err(format!("Image '{}' not found", img_path)),
+        };
         for device in self.iter_active_devices() {
-            device.set_button_image_cached(button_idx, image_data.clone())?;
+            device.set_button_image(button_idx, image_data.clone())?;
             device.flush()?;
         }
         Ok(())
@@ -301,12 +296,17 @@ impl DeviceManager {
     }
 }
 
-pub fn load_image(image: &str, img_path: Option<String>) -> Result<DynamicImage, String> {
-    if Path::new(image).exists() {
-        open(image).map_err(|e| format!("Failed to load image {}: {}", image, e))
+
+pub fn find_path(file: &str, dir: Option<String>) -> Option<String> {
+    if Path::new(file).exists() {
+        Some(file.to_string())
     } else {
-        let image_path = format!("{}/{}", img_path.unwrap_or_else(|| ".".to_string()), image.replace("\\", "/"));
-        open(&image_path).map_err(|e| format!("Failed to load image {}: {}", image_path, e))
+        let other_path = format!("{}/{}", dir.clone().unwrap_or_else(|| ".".to_string()), file.replace("\\", "/"));
+        if Path::new(&other_path).exists() {
+            Some(other_path)
+        } else {
+            None
+        }
     }
 }
 

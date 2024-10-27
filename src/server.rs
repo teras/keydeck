@@ -1,9 +1,9 @@
-use crate::device_manager::{find_device_by_serial, load_image, DeviceManager, StreamDeckDevice};
+use crate::device_manager::{find_device_by_serial, find_path, DeviceManager, StreamDeckDevice};
 use crate::pages::{Action, Button, Page, Pages};
 use crate::set_focus::set_focus;
 use elgato_streamdeck::DeviceStateUpdate;
 use image::imageops::overlay;
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::{open, DynamicImage, Rgba, RgbaImage};
 use std::cell::RefCell;
 use std::num::ParseIntError;
 use std::sync::Arc;
@@ -33,6 +33,8 @@ pub struct PagedDevice {
     device: StreamDeckDevice,
     pages: Arc<Pages>,
     current_page_ref: RefCell<usize>,
+    button_images: RefCell<Vec<String>>,
+    button_backgrounds: RefCell<Vec<String>>,
 }
 
 impl PagedDevice {
@@ -41,18 +43,22 @@ impl PagedDevice {
             Some(page_name) => pages.pages.get_index_of(page_name).unwrap_or(0),
             None => 0,
         };
+        let button_count = { device.get_button_count() as usize };
         PagedDevice {
             device,
             pages,
             current_page_ref: RefCell::new(current_page),
+            button_images: RefCell::new(vec![String::new(); button_count]),
+            button_backgrounds: RefCell::new(vec![String::new(); button_count]),
         }
     }
 
     pub fn event_loop(&self) {
-        self.refresh_page();
+        self.device.clear_all_button_images().unwrap_or_else(|e| { eprintln!("Error while clearing button images: {}", e) });
         self.device.set_brightness(50).unwrap_or_else(|e| { eprintln!("Error while setting brightness: {}", e) });
+        self.refresh_page();
         loop {
-            if let Ok(updates) = self.device.get_reader().read(Some(Duration::from_secs_f64(100.0))) {
+            if let Ok(updates) = self.device.get_reader().read(Some(Duration::from_secs_f64(60.0))) {
                 for update in updates {
                     match update {
                         DeviceStateUpdate::ButtonDown(button_id) => self.button_down(button_id + 1),
@@ -71,40 +77,63 @@ impl PagedDevice {
         }
     }
 
+    fn update_image(&self, image: &str, image_path: Option<String>, background: Option<String>, button_index: u8) {
+        let image_exists = if image.len() > 0 { find_path(image, image_path) } else { Some(image.to_string()) };
+        let image = if let Some(image) = image_exists { image } else {
+            eprintln!("Image not found: {}", image);
+            "".to_string()
+        };
+        let bg_color = if let Some(bg_color) = background.as_ref() { bg_color } else { "" };
+        {
+            // Check if the image and background color are the same as the current ones
+            let mut button_images = self.button_images.borrow_mut();
+            let mut button_backgrounds = self.button_backgrounds.borrow_mut();
+            if button_images[button_index as usize - 1] == image && button_backgrounds[button_index as usize - 1] == bg_color {
+                // No need to update the image
+                return;
+            }
+            // Update the image and background color in the cache
+            button_images[button_index as usize - 1] = image.clone();
+            button_backgrounds[button_index as usize - 1] = bg_color.to_string();
+        }
+        if image.len() == 0 {
+            // Clear the button image instead, since the image is empty
+            self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| { eprintln!("Error while clearing button image: {}", e) });
+            return;
+        }
+
+        let image_data = if let Ok(image_data) = open(&image) { image_data } else {
+            eprintln!("Error while opening image: {}", image);
+            return;
+        };
+        if bg_color.len() != 0 {
+            if let Ok((r, g, b, a)) = string_to_color(bg_color) {
+                let bg_color = Rgba([r, g, b, a]);
+                let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
+                overlay(&mut background, &image_data, 0, 0);
+                self.device.set_button_image(button_index - 1, DynamicImage::from(background)).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
+            } else {
+                self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
+            }
+        } else {
+            self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
+        }
+    }
+
     fn refresh_page(&self) {
-        // Separate `get_button_count` to avoid repeated borrowing
         let button_count = self.device.get_button_count();
         let current_page = { self.current_page_ref.borrow().clone() };
-
         for button_index in 1..=button_count {
             if let Some(button) = self.find_button(current_page, button_index).as_ref() {
                 if let Some(icon) = &button.icon {
-                    if let Ok(image_data) = load_image(icon.as_str(), Some(self.pages.image_dir.clone().unwrap())) {
-                        if let Some(bg_color) = button.background.clone() {
-                            if let Ok((r, g, b, a)) = string_to_color(bg_color.as_str()) {
-                                let bg_color = Rgba([r, g, b, a]);
-                                let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
-                                overlay(&mut background, &image_data, 0, 0);
-                                self.device.set_button_image_cached(button_index - 1, DynamicImage::from(background)).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
-                            } else {
-                                self.device.set_button_image_cached(button_index - 1, image_data).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
-                            }
-                        } else {
-                            self.device.set_button_image_cached(button_index - 1, image_data).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
-                        }
-                    } else {
-                        eprintln!("Error while loading image: {}", icon);
-                    }
+                    self.update_image(icon, self.pages.image_dir.clone(), button.background.clone(), button_index);
+                } else {
+                    self.update_image("", None, button.background.clone(), button_index);
                 }
-                // if let Some(text) = &button.text {
-                //     match text {
-                //         Text::Simple(value) => self.device.set_button_image("").unwrap(),
-                //         Text::Detailed { value, fontsize } => self.device.set_button_text(q, value).unwrap(),
-                //     }
-                // }
+            } else {
+                self.update_image("", None, None, button_index);
             }
         }
-        self.device.clear_all_button_images().unwrap_or_else(|e| { eprintln!("Error while clearing button images: {}", e) });
         self.device.flush().unwrap_or_else(|e| { eprintln!("Error while flushing device: {}", e) });
     }
 

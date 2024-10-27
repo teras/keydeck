@@ -14,10 +14,10 @@ hidapi = { version = "2.6", default-features = false, features = ["linux-static-
 serde = { version = "1.0.213", features = ["derive"] }
 serde_yaml_ng = "0.10.0"
 x11rb = "0.13.1"
-imageproc = "0.25.0"
 
 [profile.release]
 opt-level = "z"  # Optimize for size
 lto = true       # Enable Link Time Optimization (LTO)
 codegen-units = 1  # Reduce codegen units for better LTO
 panic = "abort"  # Abort on panic to reduce binary size
+strip = true       # Strip symbols automatically
