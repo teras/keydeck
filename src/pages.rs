@@ -55,6 +55,7 @@ pub enum Action {
     Exec { exec: String },
     Jump { jump: String },
     Focus { focus: String },
+    Wait { wait: f32 },
 }
 
 impl Pages {

@@ -116,6 +116,8 @@ impl PagedDevice {
                 self.current_page_ref.replace(page);
                 self.refresh_page();
             }
+        } else {
+            eprintln!("Page not found: {}", page_name);
         }
     }
 
@@ -137,18 +139,20 @@ impl PagedDevice {
     fn button_up(&self, button_id: u8) {
         let current_page = { self.current_page_ref.borrow().clone() };
         if let Some(button) = self.find_button(current_page, button_id) {
-            if let Some(actions) = &button.actions { // Handle Option<Vec<Action>>
+            if let Some(actions) = &button.actions {
                 for action in actions {
                     match action {
                         Action::Exec { exec } => {
-                            println!("Executing: {}", exec);
-                            // std::process::Command::new(exec).spawn().expect("Failed to execute command");
+                            std::process::Command::new("bash").arg("-c").arg(exec).spawn().expect("Failed to execute command");
                         }
                         Action::Jump { jump } => {
                             self.set_page(jump);
                         }
                         Action::Focus { focus } => {
                             set_focus(focus, &"".to_string()).unwrap_or_else(|e| { eprintln!("Error: {}", e); });
+                        }
+                        Action::Wait { wait } => {
+                            thread::sleep(Duration::from_millis((wait * 1000.0) as u64));
                         }
                     }
                 }
