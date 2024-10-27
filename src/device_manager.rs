@@ -301,7 +301,7 @@ impl DeviceManager {
     }
 }
 
-fn load_image(image: &str, img_path: Option<String>) -> Result<DynamicImage, String> {
+pub fn load_image(image: &str, img_path: Option<String>) -> Result<DynamicImage, String> {
     if Path::new(image).exists() {
         open(image).map_err(|e| format!("Failed to load image {}: {}", image, e))
     } else {

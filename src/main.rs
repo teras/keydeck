@@ -1,7 +1,6 @@
 mod device_manager;
 mod server;
 mod pages;
-mod paged_device;
 mod set_focus;
 
 use crate::device_manager::DeviceManager;
