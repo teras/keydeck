@@ -2,10 +2,20 @@ mod device_manager;
 mod server;
 mod pages;
 mod set_focus;
+mod event;
+mod key_listener;
+mod device_listener;
+mod paged_device;
+mod utils;
+mod focus_listener;
+mod tick_device;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;
 use std::env;
+use std::sync::atomic::AtomicBool;
+
+pub static DEBUG: AtomicBool = AtomicBool::new(false);
 
 fn print_help() {
     println!("Usage: streamdeck [OPTION]...");
@@ -101,9 +111,9 @@ fn main() {
             "--reset" => manager.reset_devices().unwrap(),
             "--shutdown" => manager.shutdown_devices().unwrap(),
             "--list" => manager.list_devices(),
-            "--quiet" => manager.set_verbose(false),
-            "--verbose" => manager.set_verbose(true),
-            "--server" => start_server(&mut manager),
+            "--quiet" => DEBUG.store(false, std::sync::atomic::Ordering::Relaxed),
+            "--verbose" => DEBUG.store(true, std::sync::atomic::Ordering::Relaxed),
+            "--server" => start_server(),
             _ => {
                 eprintln!("Error: Unknown command '{}'", arg);
             }

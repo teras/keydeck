@@ -1,21 +1,12 @@
+use crate::verbose_log;
 use elgato_streamdeck::info::Kind;
 use elgato_streamdeck::{list_devices, new_hidapi, DeviceStateReader, StreamDeck};
 use hidapi::HidApi;
 use image::{open, DynamicImage};
 use std::cell::RefCell;
 use std::path::Path;
-use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
-
-#[macro_export]
-macro_rules! verbose_log {
-    ($self:expr, $msg:expr) => {
-        if $self.verbose {
-            println!("{}", $msg);
-        }
-    };
-}
 
 pub struct DeviceManager {
     devices: Vec<StreamDeckDevice>,
@@ -26,12 +17,11 @@ pub struct DeviceManager {
 pub struct StreamDeckDevice {
     hid_api: Arc<HidApi>,
     kind: Kind,
-    serial: String,
+    pub serial: String,
     device_id: String,
     deck: RefCell<Option<Arc<StreamDeck>>>,
     reader: RefCell<Option<Arc<DeviceStateReader>>>,
     enabled: bool,
-    pub verbose: bool,
 }
 
 impl StreamDeckDevice {
@@ -58,55 +48,55 @@ impl StreamDeckDevice {
 
     pub fn shutdown(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Shutting down device '{}'", self.serial));
+        verbose_log!("Shutting down device '{}'", self.serial);
         deck.shutdown().map_err(|e| format!("Failed to shutdown device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
     pub fn reset(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Resetting device '{}'", self.serial));
+        verbose_log!("Resetting device '{}'", self.serial);
         deck.reset().map_err(|e| format!("Failed to reset device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
     pub fn sleep(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Sleeping device '{}'", self.serial));
+        verbose_log!("Sleeping device '{}'", self.serial);
         deck.sleep().map_err(|e| format!("Failed to sleep device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
     pub fn set_logo_image_cached(&self, image: DynamicImage) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Setting logo image on device '{}'",  deck.serial_number().unwrap()));
+        verbose_log!("Setting logo image on device '{}'",  deck.serial_number().unwrap());
         deck.set_logo_image(image).map_err(|e| format!("Failed to set logo image on device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
     pub fn clear_button_image(&self, button_idx: u8) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Clearing button image on device '{}' from button {}", deck.serial_number().unwrap(), button_idx));
+        verbose_log!("Clearing button image on device '{}' from button {}", deck.serial_number().unwrap(), button_idx);
         deck.clear_button_image(button_idx).map_err(|e| format!("Failed to clear button image on device '{}' from button {}: {}", deck.serial_number().unwrap(), button_idx, e))
     }
 
     pub fn set_button_image(&self, button_idx: u8, image: DynamicImage) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Setting button image on device '{}' to button {}", deck.serial_number().unwrap(), button_idx));
+        verbose_log!("Setting button image on device '{}' to button {}", deck.serial_number().unwrap(), button_idx);
         deck.set_button_image(button_idx, image).map_err(|e| format!("Failed to set button image on device '{}' to button {}: {}", deck.serial_number().unwrap(), button_idx, e))
     }
 
     pub fn flush(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Flushing device '{}'", deck.serial_number().unwrap()));
+        verbose_log!("Flushing device '{}'", deck.serial_number().unwrap());
         deck.flush().map_err(|e| format!("Failed to flush device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
     pub fn set_brightness(&self, brightness: u8) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Setting brightness {} on device '{}'", brightness, deck.serial_number().unwrap()));
+        verbose_log!("Setting brightness {} on device '{}'", brightness, deck.serial_number().unwrap());
         deck.set_brightness(brightness).map_err(|e| format!("Failed to set brightness on device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
     pub fn clear_all_button_images(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!(self, format!("Cleared all button images on device '{}'", deck.serial_number().unwrap()));
+        verbose_log!("Cleared all button images on device '{}'", deck.serial_number().unwrap());
         deck.clear_all_button_images().map_err(|e| format!("Failed to clear all button images on device '{}': {}", deck.serial_number().unwrap(), e))
     }
 
@@ -130,16 +120,14 @@ impl DeviceManager {
                     deck: RefCell::new(None),
                     reader: RefCell::new(None),
                     enabled: true,
-                    verbose: false,
                 }
             );
         }
         if devices.is_empty() {
             eprintln!("No StreamDeck devices found");
-            exit(1);
         }
         Self {
-            devices: devices,
+            devices,
             image_dir: None,
             auto_added: true,
         }
@@ -269,12 +257,6 @@ impl DeviceManager {
         Err(format!("Disabling device with id '{}' not found", device_id))
     }
 
-    pub fn set_verbose(&mut self, verbose: bool) {
-        for device in self.devices.iter_mut() {
-            device.verbose = verbose;
-        }
-    }
-
     fn set_state_all_devices(&mut self, state: bool) {
         for device in &mut self.devices {
             device.enabled = state;
@@ -323,7 +305,6 @@ pub fn find_device_by_serial(device_sn: &str) -> Option<StreamDeckDevice> {
                 deck: RefCell::new(None),
                 reader: RefCell::new(None),
                 enabled: true,
-                verbose: false,
             });
         }
     }
