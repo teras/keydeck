@@ -5,6 +5,88 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 
+pub fn get_focus() -> (String, String) {
+    // Connect to the X server and handle the error by printing and returning empty strings
+    let (conn, screen_num) = match RustConnection::connect(None) {
+        Ok(connection) => connection,
+        Err(e) => {
+            eprintln!("Failed to connect to X server: {}", e);
+            return ("".to_string(), "".to_string());
+        }
+    };
+    let screen = &conn.setup().roots[screen_num];
+    let root = screen.root;
+
+    // Intern necessary atoms
+    let wm_class_atom = AtomEnum::WM_CLASS.into();
+    let net_active_window_atom = match intern_atom(&conn, b"_NET_ACTIVE_WINDOW") {
+        Ok(atom) => atom,
+        Err(e) => {
+            eprintln!("Failed to intern _NET_ACTIVE_WINDOW: {}", e);
+            return ("".to_string(), "".to_string());
+        }
+    };
+    let net_wm_name_atom = match intern_atom(&conn, b"_NET_WM_NAME") {
+        Ok(atom) => atom,
+        Err(e) => {
+            eprintln!("{}", e);
+            return ("".to_string(), "".to_string());
+        }
+    };
+    let utf8_string_atom = match intern_atom(&conn, b"UTF8_STRING") {
+        Ok(atom) => atom,
+        Err(e) => {
+            eprintln!("{}", e);
+            return ("".to_string(), "".to_string());
+        }
+    };
+    let wm_name_atom = AtomEnum::WM_NAME.into();
+
+    // Get the active window using _NET_ACTIVE_WINDOW
+    let active_window_cookie = conn.get_property::<Atom, Atom>(
+        false,
+        root,
+        net_active_window_atom,
+        AtomEnum::WINDOW.into(),
+        0,
+        1,
+    );
+    let active_window = match active_window_cookie {
+        Ok(cookie) => match cookie.reply() {
+            Ok(reply) => match reply.value32().and_then(|mut ids| ids.next()) {
+                Some(window) => window,
+                None => {
+                    eprintln!("No active window found in _NET_ACTIVE_WINDOW");
+                    return ("".to_string(), "".to_string());
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to get reply for _NET_ACTIVE_WINDOW: {:?}", e);
+                return ("".to_string(), "".to_string());
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get _NET_ACTIVE_WINDOW property: {:?}", e);
+            return ("".to_string(), "".to_string());
+        }
+    };
+
+    // Retrieve class and title
+    let class = match get_wm_class(&conn, active_window, wm_class_atom) {
+        Ok(Some((res_name, res_class))) => format!("{}.{}", res_name, res_class),
+        _ => "".to_string(),
+    };
+    let title = match get_window_title(&conn, active_window, net_wm_name_atom, utf8_string_atom, wm_name_atom) {
+        Ok(Some(window_title)) => window_title,
+        _ => "".to_string(),
+    };
+
+    (class, title)
+}
+
+// Helper functions `intern_atom`, `get_wm_class`, and `get_window_title` should remain the same.
+
+
 pub fn set_focus(class: &String, title: &String) -> Result<(), String> {
     // Ensure at least one of class or title is specified
     if class.is_empty() && title.is_empty() {

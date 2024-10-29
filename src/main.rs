@@ -1,7 +1,7 @@
 mod device_manager;
 mod server;
 mod pages;
-mod set_focus;
+mod focus_property;
 mod event;
 mod key_listener;
 mod device_listener;
@@ -48,10 +48,6 @@ fn main() {
 
     let mut manager = DeviceManager::new();
 
-    if args.len() == 0 {
-        print_help();
-        return;
-    }
     while let Some(arg) = arg_iter.next() {
         match arg.as_str() {
             "--help" => print_help(),
@@ -118,5 +114,9 @@ fn main() {
                 eprintln!("Error: Unknown command '{}'", arg);
             }
         }
+    }
+    if args.len() == 0 {
+        println!("Starting server");
+        start_server();
     }
 }

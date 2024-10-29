@@ -4,23 +4,41 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FocusChangeRestorePolicy {
+    Keep,
+    Last,
+    Main,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Pages {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub main_page: Option<String>,
+    #[serde(default = "default_lost_focus")] // Use the default function
+    pub restore_mode: FocusChangeRestorePolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     pub pages: IndexMap<String, Page>,
     templates: Option<IndexMap<String, Page>>,
 }
 
+// Define a function that returns the default variant
+fn default_lost_focus() -> FocusChangeRestorePolicy {
+    FocusChangeRestorePolicy::Keep // Choose your default variant here
+}
+
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Page {
     #[serde(flatten)]
     pub buttons: IndexMap<String, Option<Button>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub activate: Option<String>,
+    pub window_class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     templates: Option<Vec<String>>,
 }

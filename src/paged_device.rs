@@ -1,8 +1,9 @@
 use crate::device_manager::{find_path, StreamDeckDevice};
 use crate::event::DeviceEvent;
+use crate::focus_property::set_focus;
 use crate::key_listener::key_listener;
-use crate::pages::{Action, Button, Page, Pages};
-use crate::set_focus::set_focus;
+use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
+use crate::verbose_log;
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
 use std::cell::RefCell;
@@ -20,6 +21,7 @@ pub struct PagedDevice {
     button_images: RefCell<Vec<String>>,
     button_backgrounds: RefCell<Vec<String>>,
     active_events: Arc<AtomicBool>,
+    last_active_page: RefCell<Option<String>>,
 }
 
 impl PagedDevice {
@@ -40,6 +42,7 @@ impl PagedDevice {
             button_images: RefCell::new(vec![String::new(); button_count]),
             button_backgrounds: RefCell::new(vec![String::new(); button_count]),
             active_events,
+            last_active_page: RefCell::new(None),
         };
         paged_device.refresh_page();
         paged_device
@@ -61,7 +64,7 @@ impl PagedDevice {
                             std::process::Command::new("bash").arg("-c").arg(exec).spawn().expect("Failed to execute command");
                         }
                         Action::Jump { jump } => {
-                            self.set_page(jump);
+                            self.set_page(jump, false);
                         }
                         Action::Focus { focus } => {
                             set_focus(focus, &"".to_string()).unwrap_or_else(|e| { eprintln!("Error: {}", e); });
@@ -105,6 +108,36 @@ impl PagedDevice {
 
     pub fn touch_screen_swipe(&self, from: (u16, u16), to: (u16, u16)) {
         println!("Touch screen swipe: {:?} {:?}", from, to);
+    }
+
+    pub fn focus_changed(&self, class: &str, title: &str) {
+        if class.is_empty() && title.is_empty() {
+            return;
+        }
+        for (name, page) in &self.pages.as_ref().pages {
+            if let Some(class_pattern) = &page.window_class {
+                if class.contains(class_pattern) {
+                    self.set_page(name, true);
+                    return;
+                }
+            }
+            if let Some(title_pattern) = &page.window_title {
+                if title.contains(title_pattern) {
+                    self.set_page(name, true);
+                    return;
+                }
+            }
+        }
+        // Roll back last page if no application matches
+        let last_active_page = { self.last_active_page.borrow().clone() };
+        if let Some(last_active_page) = last_active_page {
+            match self.pages.restore_mode {
+                FocusChangeRestorePolicy::Last => self.set_page(&last_active_page, false),
+                FocusChangeRestorePolicy::Main => self.set_page(self.pages.main_page.as_ref().unwrap(), false),
+                FocusChangeRestorePolicy::Keep => {}
+            }
+            self.last_active_page.take();
+        }
     }
 
     fn update_image(&self, image: &str, image_path: Option<String>, background: Option<String>, button_index: u8) {
@@ -167,11 +200,21 @@ impl PagedDevice {
         self.device.flush().unwrap_or_else(|e| { eprintln!("Error while flushing device: {}", e) });
     }
 
-    fn set_page(&self, page_name: &String) {
+    fn set_page(&self, page_name: &String, is_auto: bool) {
         let page = self.pages.pages.get_index_of(page_name);
         if let Some(page) = page {
             let old_page = { self.current_page_ref.borrow_mut().clone() };
             if page != old_page {
+                verbose_log!("Setting page to {}", page_name);
+                if is_auto {
+                    if self.last_active_page.borrow().is_none() {
+                        self.last_active_page.replace(Some(self.pages.pages.get_index(old_page).unwrap().0.clone()));
+                    }
+                } else {
+                    // if { self.last_active_page.borrow().is_some() } {
+                    self.last_active_page.take();
+                    // }
+                }
                 self.current_page_ref.replace(page);
                 self.refresh_page();
             }

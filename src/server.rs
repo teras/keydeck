@@ -2,15 +2,19 @@ use crate::device_listener::device_listener;
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
 use crate::focus_listener::focus_listener;
+use crate::focus_property::get_focus;
 use crate::paged_device::PagedDevice;
 use crate::pages::Pages;
 use crate::tick_device::tick_listener;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use crate::verbose_log;
 
 pub fn start_server() {
     let pages = Arc::new(Pages::new());
+    let (mut current_class, mut current_title) = get_focus();
+
     let (tx, rx) = std::sync::mpsc::channel::<DeviceEvent>();
 
     let still_active = Arc::new(AtomicBool::new(true));
@@ -73,17 +77,23 @@ pub fn start_server() {
                 }
             }
             DeviceEvent::FocusChanges(class, title) => {
-                println!("Focus change: {} - {}", class, title);
+                current_class = class;
+                current_title = title;
+                for device in devices.values() {
+                    device.focus_changed(&current_class, &current_title);
+                }
             }
             DeviceEvent::Tick => {
-                println!("Tick");
+                verbose_log!("Tick");
             }
             DeviceEvent::NewDevice(sn) => {
                 if devices.contains_key(&sn) {
                     return;
                 }
                 if let Some(device) = find_device_by_serial(&sn) {
-                    devices.insert(sn, PagedDevice::new(pages.clone(), device, &tx));
+                    let new_device = PagedDevice::new(pages.clone(), device, &tx);
+                    new_device.focus_changed(&current_class, &current_title);
+                    devices.insert(sn, new_device);
                 }
             }
             DeviceEvent::RemovedDevice(sn) => {
