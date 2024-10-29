@@ -1,7 +1,7 @@
 use crate::device_manager::{find_path, StreamDeckDevice};
 use crate::event::DeviceEvent;
 use crate::focus_property::set_focus;
-use crate::key_listener::key_listener;
+use crate::button_listener::button_listener;
 use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
 use crate::verbose_log;
 use image::imageops::overlay;
@@ -32,7 +32,7 @@ impl PagedDevice {
             None => 0,
         };
         let active_events = Arc::new(AtomicBool::new(true));
-        key_listener(&device.serial, tx, &active_events);
+        button_listener(&device.serial, tx, &active_events);
         device.clear_all_button_images().unwrap_or_else(|e| { eprintln!("Error while clearing button images: {}", e) });
         device.set_brightness(50).unwrap_or_else(|e| { eprintln!("Error while setting brightness: {}", e) });
         let paged_device = PagedDevice {

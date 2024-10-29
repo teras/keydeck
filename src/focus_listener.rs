@@ -24,7 +24,7 @@ pub fn focus_listener(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
         verbose_log!("Starting focus listener");
         while active.load(std::sync::atomic::Ordering::Relaxed) {
             if let Ok((class, title)) = listener.get_next_focus_change() {
-                send(&tx, DeviceEvent::FocusChanges(class, title));
+                send(&tx, DeviceEvent::FocusChanges { class, title });
             } else {
                 eprintln!("Error while getting next focus change");
                 return;

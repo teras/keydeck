@@ -22,13 +22,13 @@ pub fn device_listener(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
                 } else {
                     verbose_log!("Found new device: {}", serial);
                     devices.insert(serial.clone());
-                    send(&tx, DeviceEvent::NewDevice(serial));
+                    send(&tx, DeviceEvent::NewDevice { sn: serial });
                 }
             }
             for removed in current {
                 verbose_log!("Device removed: {}", removed);
                 devices.remove(&removed);
-                send(&tx, DeviceEvent::RemovedDevice(removed));
+                send(&tx, DeviceEvent::RemovedDevice { sn: removed });
             }
             thread::sleep(std::time::Duration::from_secs_f64(2.0));
         }

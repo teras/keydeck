@@ -9,44 +9,43 @@ pub fn send(tx: &Sender<DeviceEvent>, event: DeviceEvent) {
 #[derive(Debug)]
 pub enum DeviceEvent {
     /// Button got pressed down
-    ButtonDown(String, u8),
+    ButtonDown { sn: String, button_id: u8 },
 
     /// Button got released
-    ButtonUp(String, u8),
+    ButtonUp { sn: String, button_id: u8 },
 
     /// Encoder got pressed down
-    EncoderDown(String, u8),
+    EncoderDown { sn: String, encoder_id: u8 },
 
     /// Encoder was released from being pressed down
-    EncoderUp(String, u8),
+    EncoderUp { sn: String, encoder_id: u8 },
 
     /// Encoder was twisted
-    EncoderTwist(String, u8, i8),
+    EncoderTwist { sn: String, encoder_id: u8, value: i8 },
 
     /// Touch Point got pressed down
-    TouchPointDown(String, u8),
+    TouchPointDown { sn: String, point_id: u8 },
 
     /// Touch Point got released
-    TouchPointUp(String, u8),
+    TouchPointUp { sn: String, point_id: u8 },
 
     /// Touch screen received short press
-    TouchScreenPress(String, u16, u16),
+    TouchScreenPress { sn: String, x: u16, y: u16 },
 
     /// Touch screen received long press
-    TouchScreenLongPress(String, u16, u16),
+    TouchScreenLongPress { sn: String, x: u16, y: u16 },
 
     /// Touch screen received a swipe
-    TouchScreenSwipe(String, (u16, u16), (u16, u16)),
-
+    TouchScreenSwipe { sn: String, start: (u16, u16), end: (u16, u16) },
     /// Window focus changed
-    FocusChanges(String, String),
+    FocusChanges { class: String, title: String },
 
     /// A tick of the timer clock
     Tick,
 
     /// New device connected
-    NewDevice(String),
+    NewDevice { sn: String },
 
     /// Device removed
-    RemovedDevice(String),
+    RemovedDevice { sn: String },
 }
