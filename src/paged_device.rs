@@ -1,7 +1,7 @@
-use crate::device_manager::{find_path, StreamDeckDevice};
+use crate::button_listener::button_listener;
+use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::DeviceEvent;
 use crate::focus_property::set_focus;
-use crate::button_listener::button_listener;
 use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
 use crate::verbose_log;
 use image::imageops::overlay;
@@ -15,7 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 pub struct PagedDevice {
-    device: StreamDeckDevice,
+    device: KeyDeckDevice,
     pages: Arc<Pages>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
@@ -25,7 +25,7 @@ pub struct PagedDevice {
 }
 
 impl PagedDevice {
-    pub fn new(pages: Arc<Pages>, device: StreamDeckDevice, tx: &Sender<DeviceEvent>) -> Self {
+    pub fn new(pages: Arc<Pages>, device: KeyDeckDevice, tx: &Sender<DeviceEvent>) -> Self {
         let button_count = { device.get_button_count() as usize };
         let current_page = match &pages.main_page {
             Some(page_name) => pages.pages.get_index_of(page_name).unwrap_or(0),
@@ -48,8 +48,13 @@ impl PagedDevice {
         paged_device
     }
 
-    pub fn terminate(&self) {
+    pub fn disable(&self) {
         self.active_events.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn terminate(&self) {
+        self.disable();
+        self.device.shutdown().unwrap_or_else(|e| { eprintln!("Error while shutting down device: {}", e) });
     }
 
     pub fn button_down(&self, _button_id: u8) {}
@@ -58,20 +63,36 @@ impl PagedDevice {
         let current_page = { self.current_page_ref.borrow().clone() };
         if let Some(button) = self.find_button(current_page, button_id) {
             if let Some(actions) = &button.actions {
+                let mut still_active = true;
                 for action in actions {
                     match action {
                         Action::Exec { exec } => {
                             std::process::Command::new("bash").arg("-c").arg(exec).spawn().expect("Failed to execute command");
                         }
                         Action::Jump { jump } => {
-                            self.set_page(jump, false);
+                            if let Err(e) = self.set_page(jump, false) {
+                                still_active = false;
+                                eprintln!("{}", e);
+                            }
                         }
                         Action::Focus { focus } => {
-                            set_focus(focus, &"".to_string()).unwrap_or_else(|e| { eprintln!("Error: {}", e); });
+                            if let Err(e) = set_focus(focus, &"".to_string()) {
+                                still_active = false;
+                                eprintln!("{}", e);
+                            }
                         }
                         Action::Wait { wait } => {
                             thread::sleep(Duration::from_millis((wait * 1000.0) as u64));
                         }
+                        Action::Key { key } => {
+                            let key = key.clone();
+                            thread::spawn(move || {
+                                std::process::Command::new("bash").arg("-c").arg(format!("xdotool key {}", key)).spawn().expect("Failed to execute command");
+                            });
+                        }
+                    }
+                    if !still_active {
+                        break;
                     }
                 }
             }
@@ -117,13 +138,17 @@ impl PagedDevice {
         for (name, page) in &self.pages.as_ref().pages {
             if let Some(class_pattern) = &page.window_class {
                 if class.contains(class_pattern) {
-                    self.set_page(name, true);
+                    if let Err(error) = self.set_page(name, true) {
+                        eprintln!("{}", error);
+                    }
                     return;
                 }
             }
             if let Some(title_pattern) = &page.window_title {
                 if title.contains(title_pattern) {
-                    self.set_page(name, true);
+                    if let Err(error) = self.set_page(name, true) {
+                        eprintln!("{}", error);
+                    }
                     return;
                 }
             }
@@ -132,8 +157,12 @@ impl PagedDevice {
         let last_active_page = { self.last_active_page.borrow().clone() };
         if let Some(last_active_page) = last_active_page {
             match self.pages.restore_mode {
-                FocusChangeRestorePolicy::Last => self.set_page(&last_active_page, false),
-                FocusChangeRestorePolicy::Main => self.set_page(self.pages.main_page.as_ref().unwrap(), false),
+                FocusChangeRestorePolicy::Last => if let Err(e) = self.set_page(&last_active_page, false) {
+                    eprintln!("{}", e);
+                },
+                FocusChangeRestorePolicy::Main => if let Err(e) = self.set_page(self.pages.main_page.as_ref().unwrap(), false) {
+                    eprintln!("{}", e);
+                },
                 FocusChangeRestorePolicy::Keep => {}
             }
             self.last_active_page.take();
@@ -200,7 +229,7 @@ impl PagedDevice {
         self.device.flush().unwrap_or_else(|e| { eprintln!("Error while flushing device: {}", e) });
     }
 
-    fn set_page(&self, page_name: &String, is_auto: bool) {
+    fn set_page(&self, page_name: &String, is_auto: bool) -> Result<(), String> {
         let page = self.pages.pages.get_index_of(page_name);
         if let Some(page) = page {
             let old_page = { self.current_page_ref.borrow_mut().clone() };
@@ -218,8 +247,9 @@ impl PagedDevice {
                 self.current_page_ref.replace(page);
                 self.refresh_page();
             }
+            Ok(())
         } else {
-            eprintln!("Page not found: {}", page_name);
+            Err(format!("Page not found: {}", page_name))
         }
     }
 

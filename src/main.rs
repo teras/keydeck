@@ -18,8 +18,8 @@ use std::sync::atomic::AtomicBool;
 pub static DEBUG: AtomicBool = AtomicBool::new(false);
 
 fn print_help() {
-    println!("Usage: streamdeck [OPTION]...");
-    println!("Control an Elgato Stream Deck device");
+    println!("Usage: keydeck [OPTION]...");
+    println!("Control a Stream Deck or similar device");
     println!();
     println!("Options:");
     println!("  -g, --grab                  Grab the next event (note, it can be more than one)");

@@ -37,6 +37,7 @@ pub enum DeviceEvent {
 
     /// Touch screen received a swipe
     TouchScreenSwipe { sn: String, start: (u16, u16), end: (u16, u16) },
+
     /// Window focus changed
     FocusChanges { class: String, title: String },
 
@@ -48,4 +49,7 @@ pub enum DeviceEvent {
 
     /// Device removed
     RemovedDevice { sn: String },
+
+    /// Exit application
+    Exit
 }

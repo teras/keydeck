@@ -73,15 +73,16 @@ pub enum Action {
     Exec { exec: String },
     Jump { jump: String },
     Focus { focus: String },
+    Key { key: String },
     Wait { wait: f32 },
 }
 
 impl Pages {
     pub fn new() -> Self {
         let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
-        path.push(".config/streamdeck-cli.yaml");
-        let data = fs::read_to_string(path).expect("Failed to read config file ~/.config/streamdeck-cli.yaml");
-        let mut pages: Pages = serde_yaml_ng::from_str(&data).expect("Failed to parse config file ~/.config/streamdeck-cli.yaml");
+        path.push(".config/keydeck.yaml");
+        let data = fs::read_to_string(path).expect("Failed to read config file ~/.config/keydeck.yaml");
+        let mut pages: Pages = serde_yaml_ng::from_str(&data).expect("Failed to parse config file ~/.config/keydeck.yaml");
 
         for (_, page) in &mut pages.pages {
             // Safely iterate over templates if it exists

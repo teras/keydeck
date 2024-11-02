@@ -9,12 +9,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub struct DeviceManager {
-    devices: Vec<StreamDeckDevice>,
+    devices: Vec<KeyDeckDevice>,
     image_dir: Option<String>,
     auto_added: bool,
 }
 
-pub struct StreamDeckDevice {
+pub struct KeyDeckDevice {
     hid_api: Arc<HidApi>,
     kind: Kind,
     pub serial: String,
@@ -24,14 +24,14 @@ pub struct StreamDeckDevice {
     enabled: bool,
 }
 
-impl StreamDeckDevice {
+impl KeyDeckDevice {
     pub fn get_deck(&self) -> Arc<StreamDeck> {
         self.deck.borrow_mut().get_or_insert_with(|| {
             Arc::new(
                 StreamDeck::connect(&self.hid_api, self.kind, &self.serial)
                     .expect("Failed to connect to device"),
             )
-        }).clone()  // Return a clone of the Arc<StreamDeck>
+        }).clone()
     }
 
     pub fn get_reader(&self) -> Arc<DeviceStateReader> {
@@ -108,11 +108,11 @@ impl StreamDeckDevice {
 impl DeviceManager {
     pub fn new() -> Self {
         let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
-        let mut devices: Vec<StreamDeckDevice> = vec![];
+        let mut devices: Vec<KeyDeckDevice> = vec![];
         for (kind, serial) in list_devices(&hidapi) {
             let device_id = format!("{:04X}:{:04X}", kind.vendor_id(), kind.product_id());
             devices.push(
-                StreamDeckDevice {
+                KeyDeckDevice {
                     hid_api: Arc::clone(&hidapi),
                     kind: kind,
                     serial: serial,
@@ -124,7 +124,7 @@ impl DeviceManager {
             );
         }
         if devices.is_empty() {
-            eprintln!("No StreamDeck devices found");
+            eprintln!("No devices found");
         }
         Self {
             devices,
@@ -273,7 +273,7 @@ impl DeviceManager {
         count
     }
 
-    pub fn iter_active_devices(&mut self) -> impl Iterator<Item=&mut StreamDeckDevice> {
+    pub fn iter_active_devices(&mut self) -> impl Iterator<Item=&mut KeyDeckDevice> {
         self.devices.iter_mut().filter(|device| device.enabled)
     }
 }
@@ -292,12 +292,12 @@ pub fn find_path(file: &str, dir: Option<String>) -> Option<String> {
     }
 }
 
-pub fn find_device_by_serial(device_sn: &str) -> Option<StreamDeckDevice> {
+pub fn find_device_by_serial(device_sn: &str) -> Option<KeyDeckDevice> {
     let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
     for (kind, serial) in list_devices(&hidapi) {
         if serial == device_sn {
             let device_id = format!("{:04X}:{:04X}", kind.vendor_id(), kind.product_id());
-            return Some(StreamDeckDevice {
+            return Some(KeyDeckDevice {
                 hid_api: Arc::clone(&hidapi),
                 kind,
                 serial,

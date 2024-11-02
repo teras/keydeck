@@ -8,6 +8,7 @@ use crate::pages::Pages;
 use crate::tick_device::tick_listener;
 use crate::verbose_log;
 use std::collections::HashMap;
+use std::process::exit;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -21,6 +22,11 @@ pub fn start_server() {
     device_listener(&tx, &still_active.clone());
     focus_listener(&tx, &still_active.clone());
     tick_listener(&tx, &still_active.clone());
+
+    let tx_h = tx.clone();
+    ctrlc::set_handler(move || {
+        tx_h.send(DeviceEvent::Exit).expect("Error sending exit event");
+    }).expect("Error setting Ctrl-C handler");
 
     let mut devices: HashMap<String, PagedDevice> = HashMap::new();
 
@@ -98,8 +104,15 @@ pub fn start_server() {
             }
             DeviceEvent::RemovedDevice { sn } => {
                 if let Some(device) = devices.remove(&sn) {
+                    device.disable();
+                }
+            }
+            DeviceEvent::Exit => {
+                for device in devices.values() {
                     device.terminate();
                 }
+                still_active.store(false, std::sync::atomic::Ordering::Relaxed);
+                exit(0);
             }
         }
     }
