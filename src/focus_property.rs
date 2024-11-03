@@ -4,13 +4,14 @@ use x11rb::protocol::xproto::{
     CLIENT_MESSAGE_EVENT,
 };
 use x11rb::rust_connection::RustConnection;
+use crate::error_log;
 
 pub fn get_focus() -> (String, String) {
     // Connect to the X server and handle the error by printing and returning empty strings
     let (conn, screen_num) = match RustConnection::connect(None) {
         Ok(connection) => connection,
         Err(e) => {
-            eprintln!("Failed to connect to X server: {}", e);
+            error_log!("Failed to connect to X server: {}", e);
             return ("".to_string(), "".to_string());
         }
     };
@@ -22,21 +23,21 @@ pub fn get_focus() -> (String, String) {
     let net_active_window_atom = match intern_atom(&conn, b"_NET_ACTIVE_WINDOW") {
         Ok(atom) => atom,
         Err(e) => {
-            eprintln!("Failed to intern _NET_ACTIVE_WINDOW: {}", e);
+            error_log!("Failed to intern _NET_ACTIVE_WINDOW: {}", e);
             return ("".to_string(), "".to_string());
         }
     };
     let net_wm_name_atom = match intern_atom(&conn, b"_NET_WM_NAME") {
         Ok(atom) => atom,
         Err(e) => {
-            eprintln!("{}", e);
+            error_log!("{}", e);
             return ("".to_string(), "".to_string());
         }
     };
     let utf8_string_atom = match intern_atom(&conn, b"UTF8_STRING") {
         Ok(atom) => atom,
         Err(e) => {
-            eprintln!("{}", e);
+            error_log!("{}", e);
             return ("".to_string(), "".to_string());
         }
     };
@@ -56,17 +57,17 @@ pub fn get_focus() -> (String, String) {
             Ok(reply) => match reply.value32().and_then(|mut ids| ids.next()) {
                 Some(window) => window,
                 None => {
-                    eprintln!("No active window found in _NET_ACTIVE_WINDOW");
+                    error_log!("No active window found in _NET_ACTIVE_WINDOW");
                     return ("".to_string(), "".to_string());
                 }
             },
             Err(e) => {
-                eprintln!("Failed to get reply for _NET_ACTIVE_WINDOW: {:?}", e);
+                error_log!("Failed to get reply for _NET_ACTIVE_WINDOW: {:?}", e);
                 return ("".to_string(), "".to_string());
             }
         },
         Err(e) => {
-            eprintln!("Failed to get _NET_ACTIVE_WINDOW property: {:?}", e);
+            error_log!("Failed to get _NET_ACTIVE_WINDOW property: {:?}", e);
             return ("".to_string(), "".to_string());
         }
     };

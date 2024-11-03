@@ -1,5 +1,5 @@
 use crate::event::{send, DeviceEvent};
-use crate::verbose_log;
+use crate::{error_log, verbose_log};
 use std::error::Error;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
@@ -17,7 +17,7 @@ pub fn listener_focus(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
         let mut listener = match X11FocusListener::new() {
             Ok(l) => l,
             Err(e) => {
-                eprintln!("Error while creating focus listener: {}", e);
+                error_log!("Error while creating focus listener: {}", e);
                 return;
             }
         };
@@ -26,7 +26,7 @@ pub fn listener_focus(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
             if let Ok((class, title)) = listener.get_next_focus_change() {
                 send(&tx, DeviceEvent::FocusChanges { class, title });
             } else {
-                eprintln!("Error while getting next focus change");
+                error_log!("Error while getting next focus change");
                 return;
             }
         }

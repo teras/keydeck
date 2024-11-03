@@ -3,7 +3,7 @@ use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::DeviceEvent;
 use crate::focus_property::set_focus;
 use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
-use crate::verbose_log;
+use crate::{error_log, verbose_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
 use std::cell::RefCell;
@@ -33,8 +33,8 @@ impl PagedDevice {
         };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&device.serial, tx, &active_events);
-        device.clear_all_button_images().unwrap_or_else(|e| { eprintln!("Error while clearing button images: {}", e) });
-        device.set_brightness(50).unwrap_or_else(|e| { eprintln!("Error while setting brightness: {}", e) });
+        device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
+        device.set_brightness(50).unwrap_or_else(|e| { error_log!("Error while setting brightness: {}", e) });
         let paged_device = PagedDevice {
             device,
             pages,
@@ -58,7 +58,7 @@ impl PagedDevice {
 
     pub fn terminate(&self) {
         self.disable();
-        self.device.shutdown().unwrap_or_else(|e| { eprintln!("Error while shutting down device: {}", e) });
+        self.device.shutdown().unwrap_or_else(|e| { error_log!("Error while shutting down device: {}", e) });
     }
 
     pub fn button_down(&self, _button_id: u8) {}
@@ -76,13 +76,13 @@ impl PagedDevice {
                         Action::Jump { jump } => {
                             if let Err(e) = self.set_page(jump, false) {
                                 still_active = false;
-                                eprintln!("{}", e);
+                                error_log!("{}", e);
                             }
                         }
                         Action::Focus { focus } => {
                             if let Err(e) = set_focus(focus, &"".to_string()) {
                                 still_active = false;
-                                eprintln!("{}", e);
+                                error_log!("{}", e);
                             }
                         }
                         Action::Wait { wait } => {
@@ -104,35 +104,35 @@ impl PagedDevice {
     }
 
     pub fn encoder_down(&self, encoder_id: u8) {
-        println!("Encoder down: {}", encoder_id);
+        verbose_log!("Encoder down: {}", encoder_id);
     }
 
     pub fn encoder_up(&self, encoder_id: u8) {
-        println!("Encoder up: {}", encoder_id);
+        verbose_log!("Encoder up: {}", encoder_id);
     }
 
     pub fn encoder_twist(&self, encoder_id: u8, value: i8) {
-        println!("Encoder twist: {} {}", encoder_id, value);
+        verbose_log!("Encoder twist: {} {}", encoder_id, value);
     }
 
     pub fn touch_point_down(&self, point_id: u8) {
-        println!("Touch point down: {}", point_id);
+        verbose_log!("Touch point down: {}", point_id);
     }
 
     pub fn touch_point_up(&self, point_id: u8) {
-        println!("Touch point up: {}", point_id);
+        verbose_log!("Touch point up: {}", point_id);
     }
 
     pub fn touch_screen_press(&self, x: u16, y: u16) {
-        println!("Touch screen press: {} {}", x, y);
+        verbose_log!("Touch screen press: {} {}", x, y);
     }
 
     pub fn touch_screen_long_press(&self, x: u16, y: u16) {
-        println!("Touch screen long press: {} {}", x, y);
+        verbose_log!("Touch screen long press: {} {}", x, y);
     }
 
     pub fn touch_screen_swipe(&self, from: (u16, u16), to: (u16, u16)) {
-        println!("Touch screen swipe: {:?} {:?}", from, to);
+        verbose_log!("Touch screen swipe: {:?} {:?}", from, to);
     }
 
     pub fn focus_changed(&self, class: &str, title: &str) {
@@ -143,7 +143,7 @@ impl PagedDevice {
             if let Some(class_pattern) = &page.window_class {
                 if class.contains(class_pattern) {
                     if let Err(error) = self.set_page(name, true) {
-                        eprintln!("{}", error);
+                        error_log!("{}", error);
                     }
                     return;
                 }
@@ -151,7 +151,7 @@ impl PagedDevice {
             if let Some(title_pattern) = &page.window_title {
                 if title.contains(title_pattern) {
                     if let Err(error) = self.set_page(name, true) {
-                        eprintln!("{}", error);
+                        error_log!("{}", error);
                     }
                     return;
                 }
@@ -162,10 +162,10 @@ impl PagedDevice {
         if let Some(last_active_page) = last_active_page {
             match self.pages.restore_mode {
                 FocusChangeRestorePolicy::Last => if let Err(e) = self.set_page(&last_active_page, false) {
-                    eprintln!("{}", e);
+                    error_log!("{}", e);
                 },
                 FocusChangeRestorePolicy::Main => if let Err(e) = self.set_page(self.pages.main_page.as_ref().unwrap(), false) {
-                    eprintln!("{}", e);
+                    error_log!("{}", e);
                 },
                 FocusChangeRestorePolicy::Keep => {}
             }
@@ -176,7 +176,7 @@ impl PagedDevice {
     fn update_image(&self, image: &str, image_path: Option<String>, background: Option<String>, button_index: u8) {
         let image_exists = if image.len() > 0 { find_path(image, image_path) } else { Some(image.to_string()) };
         let image = if let Some(image) = image_exists { image } else {
-            eprintln!("Image not found: {}", image);
+            error_log!("Image not found: {}", image);
             "".to_string()
         };
         let bg_color = if let Some(bg_color) = background.as_ref() { bg_color } else { "" };
@@ -194,12 +194,12 @@ impl PagedDevice {
         }
         if image.len() == 0 {
             // Clear the button image instead, since the image is empty
-            self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| { eprintln!("Error while clearing button image: {}", e) });
+            self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| { error_log!("Error while clearing button image: {}", e) });
             return;
         }
 
         let image_data = if let Ok(image_data) = open(&image) { image_data } else {
-            eprintln!("Error while opening image: {}", image);
+            error_log!("Error while opening image: {}", image);
             return;
         };
         if bg_color.len() != 0 {
@@ -207,12 +207,12 @@ impl PagedDevice {
                 let bg_color = Rgba([r, g, b, a]);
                 let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
                 overlay(&mut background, &image_data, 0, 0);
-                self.device.set_button_image(button_index - 1, DynamicImage::from(background)).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
+                self.device.set_button_image(button_index - 1, DynamicImage::from(background)).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
             } else {
-                self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
+                self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
             }
         } else {
-            self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { eprintln!("Error while setting button image: {}", e) });
+            self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
         }
     }
 
@@ -230,7 +230,7 @@ impl PagedDevice {
                 self.update_image("", None, None, button_index);
             }
         }
-        self.device.flush().unwrap_or_else(|e| { eprintln!("Error while flushing device: {}", e) });
+        self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
     }
 
     fn set_page(&self, page_name: &String, is_auto: bool) -> Result<(), String> {
@@ -259,7 +259,7 @@ impl PagedDevice {
 
     fn find_page(&self, page_id: usize) -> &Page {
         let (_, page) = self.pages.pages.get_index(page_id).unwrap_or_else(|| {
-            eprintln!("Page not found: {}", page_id);
+            error_log!("Page not found: {}", page_id);
             std::process::exit(1);
         });
         page

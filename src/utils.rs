@@ -6,3 +6,16 @@ macro_rules! verbose_log {
         }
     };
 }
+
+#[macro_export]
+macro_rules! error_log {
+    ($($arg:tt)*) => {
+        eprintln!($($arg)*)
+    };
+}
+#[macro_export]
+macro_rules! info_log {
+    ($($arg:tt)*) => {
+        println!($($arg)*)
+    };
+}

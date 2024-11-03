@@ -1,4 +1,4 @@
-use crate::verbose_log;
+use crate::{error_log, info_log, verbose_log};
 use elgato_streamdeck::info::Kind;
 use elgato_streamdeck::{list_devices, new_hidapi, DeviceStateReader, StreamDeck};
 use hidapi::HidApi;
@@ -106,7 +106,6 @@ impl KeyDeckDevice {
 
     pub fn keep_alive(&self) {
         let deck = self.get_deck();
-        verbose_log!("Keeping device '{}' alive", deck.serial_number().unwrap());
         deck.keep_alive().ok();
     }
 }
@@ -130,7 +129,7 @@ impl DeviceManager {
             );
         }
         if devices.is_empty() {
-            eprintln!("No devices found");
+            error_log!("No devices found");
         }
         Self {
             devices,
@@ -147,7 +146,7 @@ impl DeviceManager {
         for device in self.iter_active_devices() {
             if let Ok(updates) = device.get_reader().read(Some(Duration::from_secs_f64(100.0))) {
                 for update in updates {
-                    println!("{:?}", update);
+                    info_log!("{:?}", update);
                 }
             }
         }
@@ -233,9 +232,9 @@ impl DeviceManager {
 
     pub fn list_devices(&mut self) {
         for device in self.iter_active_devices() {
-            println!("{} {} {:?}", device.device_id, device.serial, device.kind);
+            info_log!("{} {} {:?}", device.device_id, device.serial, device.kind);
         }
-        println!("Total devices: {}", self.count_active_devices());
+        info_log!("Total devices: {}", self.count_active_devices());
     }
 
     pub fn enable_device(&mut self, identifier: String) -> Result<(), String> {

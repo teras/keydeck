@@ -1,8 +1,9 @@
 use std::sync::mpsc::Sender;
+use crate::error_log;
 
 pub fn send(tx: &Sender<DeviceEvent>, event: DeviceEvent) {
     tx.send(event).unwrap_or_else(|e| {
-        eprintln!("Error while sending event: {}", e)
+        error_log!("Error while sending event: {}", e)
     })
 }
 

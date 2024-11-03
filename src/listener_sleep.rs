@@ -7,6 +7,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use crate::error_log;
 
 #[derive(Debug)]
 struct PrepareForSleep {
@@ -38,7 +39,7 @@ pub fn listener_sleep(tx: &Sender<DeviceEvent>, still_active: &Arc<AtomicBool>, 
         let conn = match Connection::new_system() {
             Ok(conn) => conn,
             Err(e) => {
-                eprintln!("Failed to connect to D-Bus: {}", e);
+                error_log!("Failed to connect to D-Bus: {}", e);
                 return;
             }
         };
@@ -57,7 +58,7 @@ pub fn listener_sleep(tx: &Sender<DeviceEvent>, still_active: &Arc<AtomicBool>, 
 
         while still_active.load(std::sync::atomic::Ordering::Relaxed) {
             conn.process(Duration::from_millis(1000)).unwrap_or_else(|e| {
-                eprintln!("Failed to process D-Bus messages: {}", e);
+                error_log!("Failed to process D-Bus messages: {}", e);
                 false
             });
         }

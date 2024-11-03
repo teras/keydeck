@@ -8,7 +8,7 @@ use crate::listener_sleep::listener_sleep;
 use crate::listener_tick::listener_tick;
 use crate::paged_device::PagedDevice;
 use crate::pages::Pages;
-use crate::verbose_log;
+use crate::{info_log, verbose_log};
 use std::collections::HashMap;
 use std::process::exit;
 use std::sync::atomic::AtomicBool;
@@ -98,7 +98,7 @@ pub fn start_server() {
                     return;
                 }
                 if let Some(device) = find_device_by_serial(&sn) {
-                    println!("Adding device {}", sn);
+                    info_log!("Adding device {}", sn);
                     let new_device = PagedDevice::new(pages.clone(), device, &tx);
                     new_device.focus_changed(&current_class, &current_title);
                     devices.insert(sn, new_device);
@@ -106,12 +106,12 @@ pub fn start_server() {
             }
             DeviceEvent::RemovedDevice { sn } => {
                 if let Some(device) = devices.remove(&sn) {
-                    println!("Removing device {}", sn);
+                    info_log!("Removing device {}", sn);
                     device.disable();
                 }
             }
             DeviceEvent::Exit => {
-                println!("Exiting Apllication");
+                info_log!("Exiting Apllication");
                 for device in devices.values() {
                     device.terminate();
                 }
