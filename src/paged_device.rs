@@ -173,7 +173,7 @@ impl PagedDevice {
         }
     }
 
-    fn update_image(&self, image: &str, image_path: Option<String>, background: Option<String>, button_index: u8) {
+    fn update_image(&self, image: &str, image_path: Option<String>, background: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
         let image_exists = if image.len() > 0 { find_path(image, image_path) } else { Some(image.to_string()) };
         let image = if let Some(image) = image_exists { image } else {
             error_log!("Image not found: {}", image);
@@ -193,8 +193,7 @@ impl PagedDevice {
             button_backgrounds[button_index as usize - 1] = bg_color.to_string();
         }
         if image.len() == 0 {
-            // Clear the button image instead, since the image is empty
-            self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| { error_log!("Error while clearing button image: {}", e) });
+            invalid_indices.push(button_index);
             return;
         }
 
@@ -219,18 +218,25 @@ impl PagedDevice {
     fn refresh_page(&self) {
         let button_count = self.device.get_button_count();
         let current_page = { self.current_page_ref.borrow().clone() };
+        let mut invalid_indices = Vec::new();
         for button_index in 1..=button_count {
             if let Some(button) = self.find_button(current_page, button_index).as_ref() {
                 if let Some(icon) = &button.icon {
-                    self.update_image(icon, self.pages.image_dir.clone(), button.background.clone(), button_index);
+                    self.update_image(icon, self.pages.image_dir.clone(), button.background.clone(), button_index, &mut invalid_indices);
                 } else {
-                    self.update_image("", None, button.background.clone(), button_index);
+                    self.update_image("", None, button.background.clone(), button_index, &mut invalid_indices);
                 }
             } else {
-                self.update_image("", None, None, button_index);
+                self.update_image("", None, None, button_index, &mut invalid_indices);
             }
         }
         self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
+        // Process all invalid button indices
+        for &button_index in &invalid_indices {
+            self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| {
+                error_log!("Error while clearing button image: {}", e);
+            });
+        }
     }
 
     fn set_page(&self, page_name: &String, is_auto: bool) -> Result<(), String> {
