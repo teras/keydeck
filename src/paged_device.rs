@@ -48,6 +48,10 @@ impl PagedDevice {
         paged_device
     }
 
+    pub fn keep_alive(&self) {
+        self.device.keep_alive();
+    }
+
     pub fn disable(&self) {
         self.active_events.store(false, std::sync::atomic::Ordering::Relaxed);
     }

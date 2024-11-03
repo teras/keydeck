@@ -103,6 +103,12 @@ impl KeyDeckDevice {
     pub fn get_button_count(&self) -> u8 {
         self.kind.key_count()
     }
+
+    pub fn keep_alive(&self) {
+        let deck = self.get_deck();
+        verbose_log!("Keeping device '{}' alive", deck.serial_number().unwrap());
+        deck.keep_alive().ok();
+    }
 }
 
 impl DeviceManager {
@@ -277,7 +283,6 @@ impl DeviceManager {
         self.devices.iter_mut().filter(|device| device.enabled)
     }
 }
-
 
 pub fn find_path(file: &str, dir: Option<String>) -> Option<String> {
     if Path::new(file).exists() {

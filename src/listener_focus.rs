@@ -10,7 +10,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, EventMask, PropertyNotifyEvent, Window};
 use x11rb::rust_connection::RustConnection;
 
-pub fn focus_listener(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
+pub fn listener_focus(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
     let active = active.clone();
     let tx = tx.clone();
     thread::spawn(move || {

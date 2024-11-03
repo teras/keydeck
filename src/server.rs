@@ -1,11 +1,13 @@
-use crate::device_listener::device_listener;
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
-use crate::focus_listener::focus_listener;
 use crate::focus_property::get_focus;
+use crate::listener_signal::listener_signal;
+use crate::listener_device::listener_device;
+use crate::listener_focus::listener_focus;
+use crate::listener_sleep::listener_sleep;
+use crate::listener_tick::listener_tick;
 use crate::paged_device::PagedDevice;
 use crate::pages::Pages;
-use crate::tick_device::tick_listener;
 use crate::verbose_log;
 use std::collections::HashMap;
 use std::process::exit;
@@ -18,18 +20,15 @@ pub fn start_server() {
 
     let (tx, rx) = std::sync::mpsc::channel::<DeviceEvent>();
     let still_active = Arc::new(AtomicBool::new(true));
+    let should_reset_devices = Arc::new(AtomicBool::new(false));
 
-    device_listener(&tx, &still_active.clone());
-    focus_listener(&tx, &still_active.clone());
-    tick_listener(&tx, &still_active.clone());
-
-    let tx_h = tx.clone();
-    ctrlc::set_handler(move || {
-        tx_h.send(DeviceEvent::Exit).expect("Error sending exit event");
-    }).expect("Error setting Ctrl-C handler");
+    listener_sleep(&tx, &still_active.clone(), &should_reset_devices);
+    listener_device(&tx, &still_active.clone(), &should_reset_devices);
+    listener_focus(&tx, &still_active.clone());
+    listener_signal(&tx);
+    listener_tick(&tx, &still_active.clone());
 
     let mut devices: HashMap<String, PagedDevice> = HashMap::new();
-
     for message in rx {
         match message {
             DeviceEvent::ButtonDown { sn, button_id } => {
@@ -90,13 +89,16 @@ pub fn start_server() {
                 }
             }
             DeviceEvent::Tick => {
-                verbose_log!("Tick");
+                for device in devices.values() {
+                    device.keep_alive();
+                }
             }
             DeviceEvent::NewDevice { sn } => {
                 if devices.contains_key(&sn) {
                     return;
                 }
                 if let Some(device) = find_device_by_serial(&sn) {
+                    println!("Adding device {}", sn);
                     let new_device = PagedDevice::new(pages.clone(), device, &tx);
                     new_device.focus_changed(&current_class, &current_title);
                     devices.insert(sn, new_device);
@@ -104,15 +106,28 @@ pub fn start_server() {
             }
             DeviceEvent::RemovedDevice { sn } => {
                 if let Some(device) = devices.remove(&sn) {
+                    println!("Removing device {}", sn);
                     device.disable();
                 }
             }
             DeviceEvent::Exit => {
+                println!("Exiting Apllication");
                 for device in devices.values() {
                     device.terminate();
                 }
                 still_active.store(false, std::sync::atomic::Ordering::Relaxed);
                 exit(0);
+            }
+            DeviceEvent::Sleep { sleep } => {
+                if sleep {
+                    verbose_log!("Sleeping");
+                    for device in devices.values() {
+                        device.terminate();
+                    }
+                    devices.clear();
+                } else {
+                    verbose_log!("Waking up");
+                }
             }
         }
     }

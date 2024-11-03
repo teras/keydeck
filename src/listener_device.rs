@@ -1,19 +1,24 @@
 use crate::event::{send, DeviceEvent};
+use crate::verbose_log;
 use elgato_streamdeck::{list_devices, new_hidapi};
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
-use crate::verbose_log;
 
-pub fn device_listener(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
+pub fn listener_device(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>, should_reset: &Arc<AtomicBool>) {
     let active = active.clone();
+    let should_reset = should_reset.clone();
     let tx = tx.clone();
     thread::spawn(move || {
         let mut devices: HashSet<String> = HashSet::new();
         verbose_log!("Starting device listener");
         while active.load(std::sync::atomic::Ordering::Relaxed) {
+            if should_reset.load(std::sync::atomic::Ordering::Relaxed) {
+                devices.clear();
+                should_reset.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
             let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
             let mut current = devices.clone();
             for (_, serial) in list_devices(&hidapi) {

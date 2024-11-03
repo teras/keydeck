@@ -51,5 +51,8 @@ pub enum DeviceEvent {
     RemovedDevice { sn: String },
 
     /// Exit application
-    Exit
+    Exit,
+
+    /// System is going to sleep/will awake
+    Sleep { sleep: bool },
 }

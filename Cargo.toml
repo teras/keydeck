@@ -14,7 +14,8 @@ hidapi = { version = "2.6", default-features = false, features = ["linux-static-
 serde = { version = "1.0.213", features = ["derive"] }
 serde_yaml_ng = "0.10.0"
 x11rb = "0.13.1"
-ctrlc = "3.4.5"
+dbus = "0.9.7"
+signal-hook = "0.3.17"
 
 [profile.release]
 opt-level = "z"  # Optimize for size
