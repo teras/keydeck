@@ -85,7 +85,7 @@ pub fn start_server() {
                 current_class = class;
                 current_title = title;
                 for device in devices.values() {
-                    device.focus_changed(&current_class, &current_title);
+                    device.focus_changed(&current_class, &current_title, false);
                 }
             }
             DeviceEvent::Tick => {
@@ -100,7 +100,7 @@ pub fn start_server() {
                 if let Some(device) = find_device_by_serial(&sn) {
                     info_log!("Adding device {}", sn);
                     let new_device = PagedDevice::new(pages.clone(), device, &tx);
-                    new_device.focus_changed(&current_class, &current_title);
+                    new_device.focus_changed(&current_class, &current_title, false);
                     devices.insert(sn, new_device);
                 }
             }

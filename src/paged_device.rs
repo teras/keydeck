@@ -23,6 +23,8 @@ pub struct PagedDevice {
     button_backgrounds: RefCell<Vec<String>>,
     active_events: Arc<AtomicBool>,
     last_active_page: RefCell<Option<String>>,
+    current_class: RefCell<String>,
+    current_title: RefCell<String>,
 }
 
 impl PagedDevice {
@@ -44,6 +46,8 @@ impl PagedDevice {
             button_backgrounds: RefCell::new(vec![String::new(); button_count]),
             active_events,
             last_active_page: RefCell::new(None),
+            current_class: RefCell::new(String::new()),
+            current_title: RefCell::new(String::new()),
         };
         paged_device.refresh_page();
         paged_device
@@ -79,6 +83,11 @@ impl PagedDevice {
                                 still_active = false;
                                 error_log!("{}", e);
                             }
+                        }
+                        Action::AutoJump { autojump: _ } => {
+                            let class = { self.current_class.borrow().clone() };
+                            let title = { self.current_title.borrow().clone() };
+                            self.focus_changed(&class, &title, true)
                         }
                         Action::Focus { focus } => {
                             if let Err(e) = set_focus(focus, &"".to_string()) {
@@ -133,9 +142,21 @@ impl PagedDevice {
         verbose_log!("Touch screen swipe: {:?} {:?}", from, to);
     }
 
-    pub fn focus_changed(&self, class: &str, title: &str) {
+    pub fn focus_changed(&self, class: &str, title: &str, force_change: bool) {
+        {
+            self.current_class.replace(class.to_string());
+            self.current_title.replace(title.to_string());
+        }
         if class.is_empty() && title.is_empty() {
             return;
+        }
+        if !force_change {
+            let old_page = { self.current_page_ref.borrow().clone() };
+            if let Some(lock) = self.pages.pages.get_index(old_page).unwrap().1.lock {
+                if lock {
+                    return;
+                }
+            }
         }
         for (name, page) in &self.pages.as_ref().pages {
             if let Some(class_pattern) = &page.window_class {
@@ -168,6 +189,14 @@ impl PagedDevice {
                 FocusChangeRestorePolicy::Keep => {}
             }
             self.last_active_page.take();
+        } else {
+            if force_change {
+                let main_page = match &self.pages.main_page {
+                    Some(page_name) => page_name,
+                    None => self.pages.pages.get_index(0).unwrap().0,
+                };
+                self.set_page(main_page, false).unwrap_or_else(|e| { error_log!("{}", e) });
+            }
         }
     }
 
@@ -256,9 +285,9 @@ impl PagedDevice {
                         self.last_active_page.replace(Some(self.pages.pages.get_index(old_page).unwrap().0.clone()));
                     }
                 } else {
-                    // if { self.last_active_page.borrow().is_some() } {
-                    self.last_active_page.take();
-                    // }
+                    if self.pages.pages.get_index(page).map_or(true, |(_, target_page)| !target_page.lock.unwrap_or(false)) {
+                        self.last_active_page.take();
+                    }
                 }
                 self.current_page_ref.replace(page);
                 self.refresh_page();

@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum FocusChangeRestorePolicy {
     Keep,
     Last,
@@ -12,6 +12,7 @@ pub enum FocusChangeRestorePolicy {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Pages {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_dir: Option<String>,
@@ -43,10 +44,13 @@ pub struct Page {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub lock: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     templates: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Button {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
@@ -59,7 +63,7 @@ pub struct Button {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum Text {
     Simple(String),
     Detailed {
@@ -71,10 +75,11 @@ pub enum Text {
 
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum Action {
     Exec { exec: String },
     Jump { jump: String },
+    AutoJump { autojump: () },
     Focus { focus: String },
     Key { key: String },
     Wait { wait: f32 },
