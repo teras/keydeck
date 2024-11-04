@@ -7,17 +7,19 @@ use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
-use indexmap::IndexMap;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-pub struct PagedDevice {
+pub struct PagedDevice<'a> {
     device: KeyDeckDevice,
-    pages: Arc<Pages>,
+    pages: &'a Pages,
+    colors: &'a Option<HashMap<String, String>>,
+    image_dir: Option<String>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
     button_backgrounds: RefCell<Vec<String>>,
@@ -27,11 +29,15 @@ pub struct PagedDevice {
     current_title: RefCell<String>,
 }
 
-impl PagedDevice {
-    pub fn new(pages: Arc<Pages>, device: KeyDeckDevice, tx: &Sender<DeviceEvent>) -> Self {
+impl<'a> PagedDevice<'a> {
+    pub fn new(pages: &'a Pages,
+               image_dir: Option<String>,
+               colors: &'a Option<HashMap<String, String>>,
+               device: KeyDeckDevice,
+               tx: &Sender<DeviceEvent>) -> Self {
         let button_count = { device.get_button_count() as usize };
         let current_page = match &pages.main_page {
-            Some(page_name) => pages.pages.get_index_of(page_name).unwrap_or(0),
+            Some(page_name) => pages.pages.get_index_of(page_name).unwrap_or(100),
             None => 0,
         };
         let active_events = Arc::new(AtomicBool::new(true));
@@ -41,6 +47,8 @@ impl PagedDevice {
         let paged_device = PagedDevice {
             device,
             pages,
+            colors,
+            image_dir,
             current_page_ref: RefCell::new(current_page),
             button_images: RefCell::new(vec![String::new(); button_count]),
             button_backgrounds: RefCell::new(vec![String::new(); button_count]),
@@ -158,7 +166,7 @@ impl PagedDevice {
                 }
             }
         }
-        for (name, page) in &self.pages.as_ref().pages {
+        for (name, page) in &self.pages.pages {
             if let Some(class_pattern) = &page.window_class {
                 if class.contains(class_pattern) {
                     if let Err(error) = self.set_page(name, true) {
@@ -229,7 +237,7 @@ impl PagedDevice {
             return;
         };
         if bg_color.len() != 0 {
-            match string_to_color(bg_color, &self.pages.colors) {
+            match string_to_color(bg_color, &self.colors) {
                 Ok((r, g, b, a)) => {
                     let bg_color = Rgba([r, g, b, a]);
                     let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
@@ -257,7 +265,7 @@ impl PagedDevice {
         for button_index in 1..=button_count {
             if let Some(button) = self.find_button(current_page, button_index).as_ref() {
                 if let Some(icon) = &button.icon {
-                    self.update_image(icon, self.pages.image_dir.clone(), button.background.clone(), button_index, &mut invalid_indices);
+                    self.update_image(icon, self.image_dir.clone(), button.background.clone(), button_index, &mut invalid_indices);
                 } else {
                     self.update_image("", None, button.background.clone(), button_index, &mut invalid_indices);
                 }
@@ -282,7 +290,10 @@ impl PagedDevice {
                 verbose_log!("Setting page to {}", page_name);
                 if is_auto {
                     if self.last_active_page.borrow().is_none() {
-                        self.last_active_page.replace(Some(self.pages.pages.get_index(old_page).unwrap().0.clone()));
+                        // only if the page that the old_page refers to is not locked, update the active page
+                        if self.pages.pages.get_index(old_page).map_or(true, |(_, target_page)| !target_page.lock.unwrap_or(false)) {
+                            self.last_active_page.replace(Some(self.pages.pages.get_index(old_page).unwrap().0.clone()));
+                        }
                     }
                 } else {
                     if self.pages.pages.get_index(page).map_or(true, |(_, target_page)| !target_page.lock.unwrap_or(false)) {
@@ -312,7 +323,7 @@ impl PagedDevice {
     }
 }
 
-fn string_to_color(color: &str, named_colors: &Option<IndexMap<String, String>>) -> Result<(u8, u8, u8, u8), String> {
+fn string_to_color(color: &str, named_colors: &Option<HashMap<String, String>>) -> Result<(u8, u8, u8, u8), String> {
     if (color.len() == 8 || color.len() == 10) && color.starts_with("0x") {
         let r = u8::from_str_radix(&color[2..4], 16).map_err(|_| format!("Invalid color format: {}", color))?;
         let g = u8::from_str_radix(&color[4..6], 16).map_err(|_| format!("Invalid color format: {}", color))?;

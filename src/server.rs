@@ -1,21 +1,21 @@
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
 use crate::focus_property::get_focus;
-use crate::listener_signal::listener_signal;
 use crate::listener_device::listener_device;
 use crate::listener_focus::listener_focus;
+use crate::listener_signal::listener_signal;
 use crate::listener_sleep::listener_sleep;
 use crate::listener_tick::listener_tick;
 use crate::paged_device::PagedDevice;
-use crate::pages::Pages;
-use crate::{info_log, verbose_log};
+use crate::pages::KeyDeckConf;
+use crate::{error_log, info_log, verbose_log};
 use std::collections::HashMap;
 use std::process::exit;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 pub fn start_server() {
-    let pages = Arc::new(Pages::new());
+    let conf = Arc::new(KeyDeckConf::new());
     let (mut current_class, mut current_title) = get_focus();
 
     let (tx, rx) = std::sync::mpsc::channel::<DeviceEvent>();
@@ -98,10 +98,20 @@ pub fn start_server() {
                     return;
                 }
                 if let Some(device) = find_device_by_serial(&sn) {
-                    info_log!("Adding device {}", sn);
-                    let new_device = PagedDevice::new(pages.clone(), device, &tx);
-                    new_device.focus_changed(&current_class, &current_title, false);
-                    devices.insert(sn, new_device);
+                    let pages = if let Some(page) = conf.page_groups.get(&sn) {
+                        Some(page)
+                    } else if let Some(default_page) = conf.page_groups.get("default") {
+                        Some(default_page)
+                    } else {
+                        error_log!("Unable to match profile for device with serial number {}, or missing default profile", sn);
+                        None
+                    };
+                    if let Some(pages) = pages {
+                        let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, device, &tx);
+                        new_device.focus_changed(&current_class, &current_title, false);
+                        info_log!("Adding device {}", sn);
+                        devices.insert(sn, new_device);
+                    }
                 }
             }
             DeviceEvent::RemovedDevice { sn } => {
@@ -111,7 +121,7 @@ pub fn start_server() {
                 }
             }
             DeviceEvent::Exit => {
-                info_log!("Exiting Apllication");
+                info_log!("Exiting Application");
                 for device in devices.values() {
                     device.terminate();
                 }
