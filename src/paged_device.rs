@@ -241,8 +241,8 @@ impl<'a> PagedDevice<'a> {
         };
         if bg_color.len() != 0 {
             match string_to_color(bg_color, &self.colors) {
-                Ok((r, g, b, a)) => {
-                    let bg_color = Rgba([r, g, b, a]);
+                Ok((r, g, b)) => {
+                    let bg_color = Rgba([r, g, b, 255]);
                     let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
                     overlay(&mut background, &image_data, 0, 0);
                     self.device
@@ -341,13 +341,20 @@ impl<'a> PagedDevice<'a> {
     }
 }
 
-fn string_to_color(color: &str, named_colors: &Option<HashMap<String, String>>) -> Result<(u8, u8, u8, u8), String> {
+fn string_to_color(color: &str, named_colors: &Option<HashMap<String, String>>) -> Result<(u8, u8, u8), String> {
     if (color.len() == 8 || color.len() == 10) && color.starts_with("0x") {
-        let r = u8::from_str_radix(&color[2..4], 16).map_err(|_| format!("Invalid color format: {}", color))?;
-        let g = u8::from_str_radix(&color[4..6], 16).map_err(|_| format!("Invalid color format: {}", color))?;
-        let b = u8::from_str_radix(&color[6..8], 16).map_err(|_| format!("Invalid color format: {}", color))?;
-        let a = if color.len() == 10 { u8::from_str_radix(&color[8..10], 16).map_err(|_| format!("Invalid color format: {}", color))? } else { 255 };
-        Ok((r, g, b, a))
+        let offset = if color.len() == 10 { 2 } else { 0 };
+        let a = if color.len() == 10 { u8::from_str_radix(&color[2..4], 16).map_err(|_| format!("Invalid color format: {}", color))? } else { 255 };
+        let r = u8::from_str_radix(&color[offset + 2..offset + 4], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+        let g = u8::from_str_radix(&color[offset + 4..offset + 6], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+        let b = u8::from_str_radix(&color[offset + 6..offset + 8], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+
+        // Assuming the background color is 0,0,0
+        let alpha = a as f32 / 255.0;
+        let final_r = (r as f32 * alpha).round() as u8;
+        let final_g = (g as f32 * alpha).round() as u8;
+        let final_b = (b as f32 * alpha).round() as u8;
+        Ok((final_r, final_g, final_b))
     } else {
         if let Some(idx_named_colors) = named_colors {
             if let Some(idx_color) = idx_named_colors.get(color) {
