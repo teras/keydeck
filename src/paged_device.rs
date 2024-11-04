@@ -3,7 +3,7 @@ use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::DeviceEvent;
 use crate::focus_property::set_focus;
 use crate::keyboard::send_key_combination;
-use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
+use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, Page, Pages};
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
@@ -19,6 +19,7 @@ pub struct PagedDevice<'a> {
     device: KeyDeckDevice,
     pages: &'a Pages,
     colors: &'a Option<HashMap<String, String>>,
+    button_templates: &'a Option<HashMap<String, Button>>,
     image_dir: Option<String>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
@@ -33,6 +34,7 @@ impl<'a> PagedDevice<'a> {
     pub fn new(pages: &'a Pages,
                image_dir: Option<String>,
                colors: &'a Option<HashMap<String, String>>,
+               button_templates: &'a Option<HashMap<String, Button>>,
                device: KeyDeckDevice,
                tx: &Sender<DeviceEvent>) -> Self {
         let button_count = { device.get_button_count() as usize };
@@ -48,6 +50,7 @@ impl<'a> PagedDevice<'a> {
             device,
             pages,
             colors,
+            button_templates,
             image_dir,
             current_page_ref: RefCell::new(current_page),
             button_images: RefCell::new(vec![String::new(); button_count]),
@@ -317,9 +320,24 @@ impl<'a> PagedDevice<'a> {
         page
     }
 
-    fn find_button(&self, page_id: usize, button_id: u8) -> &Option<Button> {
+    fn find_button(&self, page_id: usize, button_id: u8) -> Option<&Button> {
         let key = format!("button{}", button_id); // Generate the key based on button_id
-        self.find_page(page_id).buttons.get(&key).unwrap_or(&None)
+        if let Some(bc) = self.find_page(page_id).buttons.get(&key) {
+            match bc {
+                ButtonConfig::Template(template) => {
+                    match self.button_templates.as_ref()?.get(template) {
+                        Some(button) => Some(button),
+                        None => {
+                            println!("Warning: Button template '{}' not found", template);
+                            None
+                        }
+                    }
+                }
+                ButtonConfig::Detailed(bc) => Some(bc),
+            }
+        } else {
+            None
+        }
     }
 }
 

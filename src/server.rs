@@ -107,7 +107,7 @@ pub fn start_server() {
                         None
                     };
                     if let Some(pages) = pages {
-                        let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, device, &tx);
+                        let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, &conf.buttons, device, &tx);
                         new_device.focus_changed(&current_class, &current_title, false);
                         info_log!("Adding device {}", sn);
                         devices.insert(sn, new_device);

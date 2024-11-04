@@ -11,6 +11,8 @@ pub struct KeyDeckConf {
     #[serde(skip_serializing_if = "Option::is_none")]
     templates: Option<HashMap<String, Page>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<HashMap<String, Button>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub colors: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub services: Option<HashMap<String, Service>>,
@@ -59,7 +61,7 @@ pub struct Page {
     #[serde(skip_serializing_if = "Option::is_none")]
     templates: Option<Vec<String>>,
     #[serde(flatten)]
-    pub buttons: HashMap<String, Option<Button>>,
+    pub buttons: HashMap<String, ButtonConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -70,14 +72,21 @@ pub struct Button {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<Text>,
+    pub text: Option<TextConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actions: Option<Vec<Action>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ButtonConfig {
+    Template(String),
+    Detailed(Button),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum Text {
+pub enum TextConfig {
     Simple(String),
     Detailed {
         value: String,
