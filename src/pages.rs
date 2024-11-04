@@ -22,7 +22,10 @@ pub struct Pages {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     pub pages: IndexMap<String, Page>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     templates: Option<IndexMap<String, Page>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub colors: Option<IndexMap<String, String>>,
 }
 
 // Define a function that returns the default variant

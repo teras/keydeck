@@ -7,8 +7,8 @@ use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
+use indexmap::IndexMap;
 use std::cell::RefCell;
-use std::num::ParseIntError;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -200,13 +200,21 @@ impl PagedDevice {
             return;
         };
         if bg_color.len() != 0 {
-            if let Ok((r, g, b, a)) = string_to_color(bg_color) {
-                let bg_color = Rgba([r, g, b, a]);
-                let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
-                overlay(&mut background, &image_data, 0, 0);
-                self.device.set_button_image(button_index - 1, DynamicImage::from(background)).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
-            } else {
-                self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
+            match string_to_color(bg_color, &self.pages.colors) {
+                Ok((r, g, b, a)) => {
+                    let bg_color = Rgba([r, g, b, a]);
+                    let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
+                    overlay(&mut background, &image_data, 0, 0);
+                    self.device
+                        .set_button_image(button_index - 1, DynamicImage::from(background))
+                        .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
+                }
+                Err(e) => {
+                    error_log!("{}", e);
+                    self.device
+                        .set_button_image(button_index - 1, image_data)
+                        .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
+                }
             }
         } else {
             self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
@@ -275,10 +283,19 @@ impl PagedDevice {
     }
 }
 
-fn string_to_color(color: &str) -> Result<(u8, u8, u8, u8), ParseIntError> {
-    let r = u8::from_str_radix(&color[0..2], 16)?;
-    let g = u8::from_str_radix(&color[2..4], 16)?;
-    let b = u8::from_str_radix(&color[4..6], 16)?;
-    let a = u8::from_str_radix(&color[6..8], 16)?;
-    Ok((r, g, b, a))
+fn string_to_color(color: &str, named_colors: &Option<IndexMap<String, String>>) -> Result<(u8, u8, u8, u8), String> {
+    if (color.len() == 8 || color.len() == 10) && color.starts_with("0x") {
+        let r = u8::from_str_radix(&color[2..4], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+        let g = u8::from_str_radix(&color[4..6], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+        let b = u8::from_str_radix(&color[6..8], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+        let a = if color.len() == 10 { u8::from_str_radix(&color[8..10], 16).map_err(|_| format!("Invalid color format: {}", color))? } else { 255 };
+        Ok((r, g, b, a))
+    } else {
+        if let Some(idx_named_colors) = named_colors {
+            if let Some(idx_color) = idx_named_colors.get(color) {
+                return string_to_color(idx_color, named_colors);
+            }
+        }
+        Err(format!("Unable to find named color '{}'", color))
+    }
 }
