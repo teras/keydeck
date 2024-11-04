@@ -11,6 +11,7 @@ mod listener_focus;
 mod listener_tick;
 mod listener_sleep;
 mod listener_signal;
+mod keyboard;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;

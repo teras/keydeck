@@ -2,6 +2,7 @@ use crate::button_listener::button_listener;
 use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::DeviceEvent;
 use crate::focus_property::set_focus;
+use crate::keyboard::send_key_combination;
 use crate::pages::{Action, Button, FocusChangeRestorePolicy, Page, Pages};
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
@@ -89,10 +90,7 @@ impl PagedDevice {
                             thread::sleep(Duration::from_millis((wait * 1000.0) as u64));
                         }
                         Action::Key { key } => {
-                            let key = key.clone();
-                            thread::spawn(move || {
-                                std::process::Command::new("bash").arg("-c").arg(format!("xdotool key {}", key)).spawn().expect("Failed to execute command");
-                            });
+                            send_key_combination(key).unwrap_or_else(|e| { error_log!("{}", e) });
                         }
                     }
                     if !still_active {
