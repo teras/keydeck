@@ -12,6 +12,7 @@ mod listener_tick;
 mod listener_sleep;
 mod listener_signal;
 mod keyboard;
+mod lock;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;
@@ -119,7 +120,6 @@ fn main() {
         }
     }
     if args.len() == 0 {
-        println!("Starting server");
         start_server();
     }
 }

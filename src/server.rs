@@ -6,6 +6,7 @@ use crate::listener_focus::listener_focus;
 use crate::listener_signal::listener_signal;
 use crate::listener_sleep::listener_sleep;
 use crate::listener_tick::listener_tick;
+use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
 use crate::pages::KeyDeckConf;
 use crate::{error_log, info_log, verbose_log};
@@ -15,6 +16,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 pub fn start_server() {
+    ensure_lock();
+    info_log!("Starting KeyDeck Server");
+
     let conf = Arc::new(KeyDeckConf::new());
     let (mut current_class, mut current_title) = get_focus();
 
@@ -126,6 +130,7 @@ pub fn start_server() {
                     device.terminate();
                 }
                 still_active.store(false, std::sync::atomic::Ordering::Relaxed);
+                cleanup_lock();
                 exit(0);
             }
             DeviceEvent::Sleep { sleep } => {

@@ -60,7 +60,6 @@ impl<'a> PagedDevice<'a> {
             current_class: RefCell::new(String::new()),
             current_title: RefCell::new(String::new()),
         };
-        paged_device.refresh_page();
         paged_device
     }
 
