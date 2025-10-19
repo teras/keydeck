@@ -1,6 +1,5 @@
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
-use crate::focus_property::get_focus;
 use crate::listener_device::listener_device;
 use crate::listener_focus::listener_focus;
 use crate::listener_signal::listener_signal;
@@ -20,7 +19,8 @@ pub fn start_server() {
     info_log!("Starting KeyDeck Server");
 
     let conf = Arc::new(KeyDeckConf::new());
-    let (mut current_class, mut current_title) = get_focus();
+    // Initialize with empty focus - listener will send current window immediately
+    let (mut current_class, mut current_title) = (String::new(), String::new());
 
     let (tx, rx) = std::sync::mpsc::channel::<DeviceEvent>();
     let still_active = Arc::new(AtomicBool::new(true));

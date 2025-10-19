@@ -115,6 +115,14 @@ pub struct Button {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextConfig>,
 
+    /// Outline color (in the format "0xRRGGBB") for text rendering.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outline: Option<String>,
+
+    /// Text color (in the format "0xRRGGBB") for text rendering. Defaults to white (0xFFFFFF).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_color: Option<String>,
+
     /// List of actions that will be executed when the button is pressed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actions: Option<Vec<Action>>,
@@ -148,6 +156,52 @@ pub enum TextConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum FocusAction {
+    /// Simple string: focus: "firefox"
+    Simple(String),
+
+    /// Detailed config: focus: { target: "firefox", verify: true, timeout: 2.0 }
+    Detailed {
+        target: String,
+        #[serde(default)]
+        verify: bool,
+        #[serde(default = "default_verify_timeout")]
+        timeout: f64,  // seconds, default 1.0
+    },
+}
+
+fn default_verify_timeout() -> f64 {
+    1.0
+}
+
+impl FocusAction {
+    /// Get the target window class/title
+    pub fn target(&self) -> &str {
+        match self {
+            FocusAction::Simple(s) => s,
+            FocusAction::Detailed { target, .. } => target,
+        }
+    }
+
+    /// Check if verification is required
+    pub fn should_verify(&self) -> bool {
+        match self {
+            FocusAction::Simple(_) => false,
+            FocusAction::Detailed { verify, .. } => *verify,
+        }
+    }
+
+    /// Get the verification timeout in seconds (only relevant if verify=true)
+    pub fn timeout(&self) -> f64 {
+        match self {
+            FocusAction::Simple(_) => 1.0,
+            FocusAction::Detailed { timeout, .. } => *timeout,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum Action {
     /// Executes an external command.
@@ -160,11 +214,23 @@ pub enum Action {
     AutoJump { autojump: () },
 
     /// Focuses on an application specified by window class.
-    Focus { focus: String },
+    /// Can be either a simple string or a detailed configuration with verification.
+    Focus { focus: FocusAction },
+
+    /// Verifies that the specified window is currently focused.
+    /// Checks immediately against current focus. If not matched, aborts action sequence.
+    /// This is automatically injected when using focus with verify=true, but can also
+    /// be used standalone in config: verify_focus: "ferdium"
+    VerifyFocus { verify_focus: String },
 
     /// Sends a keyboard shortcut event. Some examples include "LCtrl+LShift+z" or "F12".
     /// The value is case-insensitive and can be a single character or a key name.
     Key { key: String },
+
+    /// Sends a string of ASCII characters as individual keystrokes.
+    /// Each character in the string is sent as a separate key press/release event.
+    /// Supports escape sequences: \n (Enter), \t (Tab), \r (Enter), \\ (backslash), \e (Escape)
+    Text { text: String },
 
     /// Waits for a specified time in seconds before executing the next action.
     Wait { wait: f32 },
@@ -174,8 +240,21 @@ impl KeyDeckConf {
     pub fn new() -> Self {
         let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
         path.push(".config/keydeck.yaml");
-        let data = fs::read_to_string(path).expect("Failed to read config file ~/.config/keydeck.yaml");
-        let mut conf: KeyDeckConf = serde_yaml_ng::from_str(&data).expect("Failed to parse config file ~/.config/keydeck.yaml");
+
+        let data = fs::read_to_string(&path).unwrap_or_else(|e| {
+            eprintln!("Error: Failed to read config file at {}", path.display());
+            eprintln!("Reason: {}", e);
+            eprintln!("\nPlease create a config file at ~/.config/keydeck.yaml");
+            eprintln!("See the documentation for configuration format.");
+            std::process::exit(1);
+        });
+
+        let mut conf: KeyDeckConf = serde_yaml_ng::from_str(&data).unwrap_or_else(|e| {
+            eprintln!("Error: Failed to parse config file at {}", path.display());
+            eprintln!("Reason: {}", e);
+            eprintln!("\nPlease check your YAML syntax.");
+            std::process::exit(1);
+        });
 
         for (_, pages) in &mut conf.page_groups {
             for (_, page) in &mut pages.pages {

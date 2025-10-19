@@ -1,4 +1,5 @@
 use crate::event::{send, DeviceEvent};
+use crate::session::{detect_session_type, SessionType};
 use crate::{error_log, verbose_log};
 use std::error::Error;
 use std::sync::atomic::AtomicBool;
@@ -11,17 +12,33 @@ use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, EventMask, PropertyNotify
 use x11rb::rust_connection::RustConnection;
 
 pub fn listener_focus(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
+    let session_type = detect_session_type();
+
+    match session_type {
+        SessionType::X11 => {
+            verbose_log!("Detected X11 session, using X11 focus listener");
+            listener_focus_x11(tx, active);
+        }
+        SessionType::Wayland => {
+            verbose_log!("Detected Wayland session, using KWin D-Bus event-driven focus listener");
+            // Import and call the Wayland listener
+            crate::listener_focus_wayland::listener_focus_wayland(tx, active);
+        }
+    }
+}
+
+fn listener_focus_x11(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
     let active = active.clone();
     let tx = tx.clone();
     thread::spawn(move || {
         let mut listener = match X11FocusListener::new() {
             Ok(l) => l,
             Err(e) => {
-                error_log!("Error while creating focus listener: {}", e);
+                error_log!("Error while creating X11 focus listener: {}", e);
                 return;
             }
         };
-        verbose_log!("Starting focus listener");
+        verbose_log!("Starting X11 focus listener");
         while active.load(std::sync::atomic::Ordering::Relaxed) {
             if let Ok((class, title)) = listener.get_next_focus_change() {
                 send(&tx, DeviceEvent::FocusChanges { class, title });
@@ -30,7 +47,7 @@ pub fn listener_focus(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
                 return;
             }
         }
-        verbose_log!("Exiting focus listener");
+        verbose_log!("Exiting X11 focus listener");
     });
 }
 

@@ -4,91 +4,16 @@ use x11rb::protocol::xproto::{
     CLIENT_MESSAGE_EVENT,
 };
 use x11rb::rust_connection::RustConnection;
-use crate::error_log;
-
-pub fn get_focus() -> (String, String) {
-    // Connect to the X server and handle the error by printing and returning empty strings
-    let (conn, screen_num) = match RustConnection::connect(None) {
-        Ok(connection) => connection,
-        Err(e) => {
-            error_log!("Failed to connect to X server: {}", e);
-            return ("".to_string(), "".to_string());
-        }
-    };
-    let screen = &conn.setup().roots[screen_num];
-    let root = screen.root;
-
-    // Intern necessary atoms
-    let wm_class_atom = AtomEnum::WM_CLASS.into();
-    let net_active_window_atom = match intern_atom(&conn, b"_NET_ACTIVE_WINDOW") {
-        Ok(atom) => atom,
-        Err(e) => {
-            error_log!("Failed to intern _NET_ACTIVE_WINDOW: {}", e);
-            return ("".to_string(), "".to_string());
-        }
-    };
-    let net_wm_name_atom = match intern_atom(&conn, b"_NET_WM_NAME") {
-        Ok(atom) => atom,
-        Err(e) => {
-            error_log!("{}", e);
-            return ("".to_string(), "".to_string());
-        }
-    };
-    let utf8_string_atom = match intern_atom(&conn, b"UTF8_STRING") {
-        Ok(atom) => atom,
-        Err(e) => {
-            error_log!("{}", e);
-            return ("".to_string(), "".to_string());
-        }
-    };
-    let wm_name_atom = AtomEnum::WM_NAME.into();
-
-    // Get the active window using _NET_ACTIVE_WINDOW
-    let active_window_cookie = conn.get_property::<Atom, Atom>(
-        false,
-        root,
-        net_active_window_atom,
-        AtomEnum::WINDOW.into(),
-        0,
-        1,
-    );
-    let active_window = match active_window_cookie {
-        Ok(cookie) => match cookie.reply() {
-            Ok(reply) => match reply.value32().and_then(|mut ids| ids.next()) {
-                Some(window) => window,
-                None => {
-                    error_log!("No active window found in _NET_ACTIVE_WINDOW");
-                    return ("".to_string(), "".to_string());
-                }
-            },
-            Err(e) => {
-                error_log!("Failed to get reply for _NET_ACTIVE_WINDOW: {:?}", e);
-                return ("".to_string(), "".to_string());
-            }
-        },
-        Err(e) => {
-            error_log!("Failed to get _NET_ACTIVE_WINDOW property: {:?}", e);
-            return ("".to_string(), "".to_string());
-        }
-    };
-
-    // Retrieve class and title
-    let class = match get_wm_class(&conn, active_window, wm_class_atom) {
-        Ok(Some((res_name, res_class))) => format!("{}.{}", res_name, res_class),
-        _ => "".to_string(),
-    };
-    let title = match get_window_title(&conn, active_window, net_wm_name_atom, utf8_string_atom, wm_name_atom) {
-        Ok(Some(window_title)) => window_title,
-        _ => "".to_string(),
-    };
-
-    (class, title)
-}
-
-// Helper functions `intern_atom`, `get_wm_class`, and `get_window_title` should remain the same.
-
+use crate::session::{detect_session_type, SessionType};
 
 pub fn set_focus(class: &String, title: &String) -> Result<(), String> {
+    match detect_session_type() {
+        SessionType::X11 => set_focus_x11(class, title),
+        SessionType::Wayland => crate::focus_property_wayland::set_focus(class, title),
+    }
+}
+
+fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
     // Ensure at least one of class or title is specified
     if class.is_empty() && title.is_empty() {
         return Err("At least one of class or title must be specified".to_string());
@@ -320,3 +245,4 @@ fn get_window_title(
 
     Ok(None)
 }
+

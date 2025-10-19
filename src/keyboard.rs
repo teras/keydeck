@@ -68,46 +68,48 @@ enum Keys {
     ArrowRight = 0xff53,         // XK_Right
 }
 
-// Maps ASCII characters to keysyms
-fn keysym_for_char(ch: char) -> Result<Keysym, String> {
+// Maps ASCII characters to keysyms and returns whether Shift is needed
+fn keysym_for_char(ch: char) -> Result<(Keysym, bool), String> {
     match ch {
-        'a'..='z' => Ok(ch as u32 - 'a' as u32 + 0x61),
-        'A'..='Z' => Ok(ch as u32 - 'A' as u32 + 0x41),
-        '0'..='9' => Ok(ch as u32 - '0' as u32 + 0x30),
-        ' ' => Ok(0x20),
-        '!' => Ok(0x21),
-        '@' => Ok(0x40),
-        '#' => Ok(0x23),
-        '$' => Ok(0x24),
-        '%' => Ok(0x25),
-        '^' => Ok(0x5E),
-        '&' => Ok(0x26),
-        '*' => Ok(0x2A),
-        '(' => Ok(0x28),
-        ')' => Ok(0x29),
-        '-' => Ok(0x2D),
-        '_' => Ok(0x5F),
-        '=' => Ok(0x3D),
-        '+' => Ok(0x2B),
-        '[' => Ok(0x5B),
-        ']' => Ok(0x5D),
-        '{' => Ok(0x7B),
-        '}' => Ok(0x7D),
-        ';' => Ok(0x3B),
-        ':' => Ok(0x3A),
-        '\'' => Ok(0x27),
-        '"' => Ok(0x22),
-        ',' => Ok(0x2C),
-        '.' => Ok(0x2E),
-        '/' => Ok(0x2F),
-        '\\' => Ok(0x5C),
-        '?' => Ok(0x3F),
-        '`' => Ok(0x60),
-        '~' => Ok(0x7E),
-        '|' => Ok(0x7C),
-        '<' => Ok(0x3C),
-        '>' => Ok(0x3E),
-        _ => Err(format!("Unsupported character: {}", ch).to_string()), // Return an error for unsupported characters
+        'a'..='z' => Ok((ch as u32 - 'a' as u32 + 0x61, false)),
+        'A'..='Z' => Ok((ch as u32 - 'A' as u32 + 0x61, true)),  // Uppercase: map to lowercase keysym + Shift
+        '0'..='9' => Ok((ch as u32 - '0' as u32 + 0x30, false)),
+        ' ' => Ok((0x20, false)),
+        // Shifted symbols - these need Shift pressed
+        '!' => Ok((0x31, true)),  // '1' -> '!'
+        '@' => Ok((0x32, true)),  // '2' -> '@'
+        '#' => Ok((0x33, true)),  // '3' -> '#'
+        '$' => Ok((0x34, true)),  // '4' -> '$'
+        '%' => Ok((0x35, true)),  // '5' -> '%'
+        '^' => Ok((0x36, true)),  // '6' -> '^'
+        '&' => Ok((0x37, true)),  // '7' -> '&'
+        '*' => Ok((0x38, true)),  // '8' -> '*'
+        '(' => Ok((0x39, true)),  // '9' -> '('
+        ')' => Ok((0x30, true)),  // '0' -> ')'
+        '_' => Ok((0x2D, true)),  // '-' -> '_'
+        '+' => Ok((0x3D, true)),  // '=' -> '+'
+        '{' => Ok((0x5B, true)),  // '[' -> '{'
+        '}' => Ok((0x5D, true)),  // ']' -> '}'
+        ':' => Ok((0x3B, true)),  // ';' -> ':'
+        '"' => Ok((0x27, true)),  // '\'' -> '"'
+        '<' => Ok((0x2C, true)),  // ',' -> '<'
+        '>' => Ok((0x2E, true)),  // '.' -> '>'
+        '?' => Ok((0x2F, true)),  // '/' -> '?'
+        '~' => Ok((0x60, true)),  // '`' -> '~'
+        '|' => Ok((0x5C, true)),  // '\' -> '|'
+        // Unshifted symbols
+        '-' => Ok((0x2D, false)),
+        '=' => Ok((0x3D, false)),
+        '[' => Ok((0x5B, false)),
+        ']' => Ok((0x5D, false)),
+        ';' => Ok((0x3B, false)),
+        '\'' => Ok((0x27, false)),
+        ',' => Ok((0x2C, false)),
+        '.' => Ok((0x2E, false)),
+        '/' => Ok((0x2F, false)),
+        '\\' => Ok((0x5C, false)),
+        '`' => Ok((0x60, false)),
+        _ => Err(format!("Unsupported character: {}", ch).to_string()),
     }
 }
 
@@ -142,7 +144,8 @@ fn press_key_combination(combo: &str, conn: &RustConnection, keyboard_mapping: &
     let mut keycodes: Vec<u8> = Vec::new();
     for part in parts {
         let keysym = if part.len() == 1 {
-            keysym_for_char(part.chars().next().unwrap())?
+            let (keysym, _) = keysym_for_char(part.chars().next().unwrap())?;
+            keysym
         } else {
             Keys::from_str(&part.to_lowercase()).map_err(|e| e.to_string())? as u32
         };
@@ -182,5 +185,131 @@ pub fn send_key_combination(combination: &str) -> Result<(), String> {
     let keysym_mapping = keyboard_mapping.reply().map_err(|e| e.to_string())?;
 
     press_key_combination(combination, &conn, &keysym_mapping, min_keycode).unwrap_or_else(|e| eprintln!("{}", e));
+    Ok(())
+}
+
+/// Processes escape sequences in a string and returns the actual character to send.
+/// Supported escape sequences: \n (Enter), \t (Tab), \r (Enter), \\ (backslash), \e (Escape)
+fn process_escape_sequences(text: &str) -> Vec<char> {
+    let mut result = Vec::new();
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(&next_ch) = chars.peek() {
+                match next_ch {
+                    'n' => {
+                        chars.next(); // consume the 'n'
+                        result.push('\n'); // newline -> Enter key
+                    }
+                    't' => {
+                        chars.next(); // consume the 't'
+                        result.push('\t'); // tab -> Tab key
+                    }
+                    'r' => {
+                        chars.next(); // consume the 'r'
+                        result.push('\r'); // carriage return -> Enter key
+                    }
+                    '\\' => {
+                        chars.next(); // consume the second backslash
+                        result.push('\\'); // literal backslash
+                    }
+                    'e' => {
+                        chars.next(); // consume the 'e'
+                        result.push('\x1b'); // escape character
+                    }
+                    _ => {
+                        // Unknown escape sequence, keep the backslash
+                        result.push(ch);
+                    }
+                }
+            } else {
+                // Backslash at end of string
+                result.push(ch);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
+}
+
+/// Maps special control characters to their corresponding keysyms
+fn keysym_for_control_char(ch: char) -> Option<Keysym> {
+    match ch {
+        '\n' | '\r' => Some(0xff0d), // XK_Return (Enter key)
+        '\t' => Some(0xff09),         // XK_Tab
+        '\x1b' => Some(0xff1b),       // XK_Escape
+        _ => None,
+    }
+}
+
+/// Sends a string of ASCII characters as individual keystrokes.
+/// Each character in the string is converted to its corresponding keysym and sent as a key press/release event.
+/// Supports escape sequences: \n, \t, \r, \\, \e
+/// Properly handles shifted characters (uppercase letters and symbols that require Shift)
+pub fn send_string(text: &str) -> Result<(), String> {
+    // Connect to the X11 server
+    let (conn, _) = RustConnection::connect(None).map_err(|e| e.to_string())?;
+
+    // Ensure that the XTest extension is available
+    let xtest_available = conn
+        .query_extension(b"XTEST")
+        .map(|r| r.reply().map(|x| x.present).unwrap_or(false))
+        .unwrap_or(false);
+    if !xtest_available {
+        return Err("XTest extension is not available".to_string());
+    }
+
+    let setup = conn.setup();
+    let min_keycode = setup.min_keycode;
+    let max_keycode = setup.max_keycode;
+
+    let keyboard_mapping = conn.get_keyboard_mapping(min_keycode, max_keycode - min_keycode + 1).map_err(|e| e.to_string())?;
+    let keysym_mapping = keyboard_mapping.reply().map_err(|e| e.to_string())?;
+
+    // Get the Shift key's keycode
+    let shift_keysym = Keys::LShift as u32;
+    let shift_keycode = keysym_to_keycode(shift_keysym, &keysym_mapping, min_keycode)?;
+
+    // Process escape sequences
+    let processed_chars = process_escape_sequences(text);
+
+    // Send each character as a keystroke
+    for ch in processed_chars {
+        // Check if it's a control character first
+        if let Some(control_keysym) = keysym_for_control_char(ch) {
+            // Control characters don't need Shift
+            let keycode = keysym_to_keycode(control_keysym, &keysym_mapping, min_keycode)?;
+            send_key_event(&keycode, &conn, KEY_PRESS)?;
+            thread::sleep(Duration::from_millis(10));
+            send_key_event(&keycode, &conn, KEY_RELEASE)?;
+            thread::sleep(Duration::from_millis(10));
+        } else {
+            // Regular characters - check if Shift is needed
+            let (keysym, needs_shift) = keysym_for_char(ch)?;
+            let keycode = keysym_to_keycode(keysym, &keysym_mapping, min_keycode)?;
+
+            if needs_shift {
+                // Press Shift first
+                send_key_event(&shift_keycode, &conn, KEY_PRESS)?;
+                thread::sleep(Duration::from_millis(10));
+            }
+
+            // Press and release the key
+            send_key_event(&keycode, &conn, KEY_PRESS)?;
+            thread::sleep(Duration::from_millis(10));
+            send_key_event(&keycode, &conn, KEY_RELEASE)?;
+            thread::sleep(Duration::from_millis(10));
+
+            if needs_shift {
+                // Release Shift
+                send_key_event(&shift_keycode, &conn, KEY_RELEASE)?;
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
     Ok(())
 }

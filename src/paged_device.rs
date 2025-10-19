@@ -1,9 +1,10 @@
-use crate::button_listener::button_listener;
+use crate::listener_button::button_listener;
 use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::DeviceEvent;
 use crate::focus_property::set_focus;
-use crate::keyboard::send_key_combination;
-use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, Page, Pages};
+use crate::keyboard::{send_key_combination, send_string};
+use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, Page, Pages, TextConfig};
+use crate::text_renderer;
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
@@ -13,7 +14,19 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// Represents a queue of actions waiting to be executed after a focus verification event.
+/// Created when a verified focus action is executed, and resumed when the corresponding
+/// FocusChanges event arrives.
+struct PendingActionQueue {
+    /// Remaining actions to execute, with VerifyFocus at the front
+    actions: Vec<Action>,
+    /// Timestamp when this queue was last modified, used for timeout detection
+    last_modified: Instant,
+    /// Maximum time to wait for the verification event before dropping the queue
+    timeout: Duration,
+}
 
 pub struct PagedDevice<'a> {
     device: KeyDeckDevice,
@@ -28,6 +41,7 @@ pub struct PagedDevice<'a> {
     last_active_page: RefCell<Option<String>>,
     current_class: RefCell<String>,
     current_title: RefCell<String>,
+    pending_actions: RefCell<Option<PendingActionQueue>>,
 }
 
 impl<'a> PagedDevice<'a> {
@@ -38,10 +52,6 @@ impl<'a> PagedDevice<'a> {
                device: KeyDeckDevice,
                tx: &Sender<DeviceEvent>) -> Self {
         let button_count = { device.get_button_count() as usize };
-        let current_page = match &pages.main_page {
-            Some(page_name) => pages.pages.get_index_of(page_name).unwrap_or(100),
-            None => 0,
-        };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&device.serial, tx, &active_events);
         device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
@@ -52,14 +62,26 @@ impl<'a> PagedDevice<'a> {
             colors,
             button_templates,
             image_dir,
-            current_page_ref: RefCell::new(current_page),
+            // Initialize to sentinel value so first set_page() will trigger refresh
+            current_page_ref: RefCell::new(usize::MAX),
             button_images: RefCell::new(vec![String::new(); button_count]),
             button_backgrounds: RefCell::new(vec![String::new(); button_count]),
             active_events,
             last_active_page: RefCell::new(None),
             current_class: RefCell::new(String::new()),
             current_title: RefCell::new(String::new()),
+            pending_actions: RefCell::new(None),
         };
+
+        // Set the initial page (will trigger refresh because current_page_ref is MAX)
+        let main_page_name = match &pages.main_page {
+            Some(name) => name.clone(),
+            None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+        };
+        if !main_page_name.is_empty() {
+            let _ = paged_device.set_page(&main_page_name, false);
+        }
+
         paged_device
     }
 
@@ -79,42 +101,108 @@ impl<'a> PagedDevice<'a> {
     pub fn button_down(&self, _button_id: u8) {}
 
     pub fn button_up(&self, button_id: u8) {
+        // Clear any pending actions - new button press cancels waiting actions
+        self.pending_actions.borrow_mut().take();
+
         let current_page = { self.current_page_ref.borrow().clone() };
         if let Some(button) = self.find_button(current_page, button_id) {
             if let Some(actions) = &button.actions {
-                let mut still_active = true;
-                for action in actions {
-                    match action {
-                        Action::Exec { exec } => {
-                            std::process::Command::new("bash").arg("-c").arg(exec).spawn().expect("Failed to execute command");
+                self.execute_actions(actions.clone());
+            }
+        }
+    }
+
+    /// Execute a sequence of actions. Returns when actions are complete, or pauses
+    /// when a verified focus action needs to wait for a FocusChanges event.
+    fn execute_actions(&self, actions: Vec<Action>) {
+        let mut actions_iter = actions.into_iter();
+
+        while let Some(action) = actions_iter.next() {
+            match action {
+                Action::Exec { exec } => {
+                    std::process::Command::new("bash").arg("-c").arg(exec).spawn()
+                        .expect("Failed to execute command");
+                }
+                Action::Jump { jump } => {
+                    if let Err(e) = self.set_page(&jump, false) {
+                        error_log!("{}", e);
+                        return; // Abort sequence on error
+                    }
+                }
+                Action::AutoJump { autojump: _ } => {
+                    let class = { self.current_class.borrow().clone() };
+                    let title = { self.current_title.borrow().clone() };
+                    self.focus_changed(&class, &title, true)
+                }
+                Action::Focus { focus } => {
+                    let target = focus.target();
+                    let should_verify = focus.should_verify();
+
+                    // Always check if we already have the correct focus
+                    let current_class = { self.current_class.borrow().clone() };
+                    let current_title = { self.current_title.borrow().clone() };
+                    let target_lower = target.to_lowercase();
+                    let already_focused = current_class.to_lowercase().contains(&target_lower) ||
+                                        current_title.to_lowercase().contains(&target_lower);
+
+                    if already_focused {
+                        verbose_log!("Focus already on '{}', skipping focus request", target);
+                        // Continue to next action without requesting focus
+                    } else if should_verify {
+                        // Not focused, need to request and verify
+                        if let Err(e) = set_focus(&target.to_string(), &"".to_string()) {
+                            error_log!("{}", e);
+                            return; // Abort if focus fails
                         }
-                        Action::Jump { jump } => {
-                            if let Err(e) = self.set_page(jump, false) {
-                                still_active = false;
-                                error_log!("{}", e);
-                            }
-                        }
-                        Action::AutoJump { autojump: _ } => {
-                            let class = { self.current_class.borrow().clone() };
-                            let title = { self.current_title.borrow().clone() };
-                            self.focus_changed(&class, &title, true)
-                        }
-                        Action::Focus { focus } => {
-                            if let Err(e) = set_focus(focus, &"".to_string()) {
-                                still_active = false;
-                                error_log!("{}", e);
-                            }
-                        }
-                        Action::Wait { wait } => {
-                            thread::sleep(Duration::from_millis((wait * 1000.0) as u64));
-                        }
-                        Action::Key { key } => {
-                            send_key_combination(key).unwrap_or_else(|e| { error_log!("{}", e) });
+
+                        // Inject VerifyFocus action and pause queue
+                        let mut remaining: Vec<Action> = vec![
+                            Action::VerifyFocus { verify_focus: target.to_string() }
+                        ];
+                        remaining.extend(actions_iter);
+
+                        // Store pending queue and wait for FocusChanges event
+                        *self.pending_actions.borrow_mut() = Some(PendingActionQueue {
+                            actions: remaining,
+                            last_modified: Instant::now(),
+                            timeout: Duration::from_secs_f64(focus.timeout()),
+                        });
+
+                        verbose_log!("Focus action paused, waiting for FocusChanges event for '{}'", target);
+                        return; // Pause execution, will resume on FocusChanges
+                    } else {
+                        // Not focused, no verification: just request and continue
+                        if let Err(e) = set_focus(&target.to_string(), &"".to_string()) {
+                            error_log!("{}", e);
+                            return; // Abort if focus fails
                         }
                     }
-                    if !still_active {
-                        break;
+                }
+                Action::VerifyFocus { verify_focus } => {
+                    // Check current focus immediately
+                    let current_class = { self.current_class.borrow().clone() };
+                    let current_title = { self.current_title.borrow().clone() };
+
+                    let target_lower = verify_focus.to_lowercase();
+                    let matches = current_class.to_lowercase().contains(&target_lower) ||
+                                 current_title.to_lowercase().contains(&target_lower);
+
+                    if !matches {
+                        error_log!("VerifyFocus failed: expected '{}' but current is class='{}' title='{}'",
+                                  verify_focus, current_class, current_title);
+                        return; // Abort sequence
                     }
+
+                    verbose_log!("VerifyFocus succeeded for '{}'", verify_focus);
+                }
+                Action::Wait { wait } => {
+                    thread::sleep(Duration::from_millis((wait * 1000.0) as u64));
+                }
+                Action::Key { key } => {
+                    send_key_combination(&key).unwrap_or_else(|e| { error_log!("{}", e) });
+                }
+                Action::Text { text } => {
+                    send_string(&text).unwrap_or_else(|e| { error_log!("{}", e) });
                 }
             }
         }
@@ -157,6 +245,21 @@ impl<'a> PagedDevice<'a> {
             self.current_class.replace(class.to_string());
             self.current_title.replace(title.to_string());
         }
+
+        // Check if we have pending actions waiting for focus verification
+        if let Some(pending) = self.pending_actions.borrow_mut().take() {
+            // Check timeout
+            if pending.last_modified.elapsed() > pending.timeout {
+                verbose_log!("Pending action queue timed out, dropping");
+                return; // Don't process normal focus change
+            }
+
+            verbose_log!("Resuming pending actions after FocusChanges event");
+            // Resume execution with the pending queue
+            self.execute_actions(pending.actions);
+            return; // Don't process normal focus change
+        }
+
         if class.is_empty() && title.is_empty() {
             return;
         }
@@ -170,7 +273,7 @@ impl<'a> PagedDevice<'a> {
         }
         for (name, page) in &self.pages.pages {
             if let Some(class_pattern) = &page.window_class {
-                if class.contains(class_pattern) {
+                if class.to_lowercase().contains(&class_pattern.to_lowercase()) {
                     if let Err(error) = self.set_page(name, true) {
                         error_log!("{}", error);
                     }
@@ -178,7 +281,7 @@ impl<'a> PagedDevice<'a> {
                 }
             }
             if let Some(title_pattern) = &page.window_title {
-                if title.contains(title_pattern) {
+                if title.to_lowercase().contains(&title_pattern.to_lowercase()) {
                     if let Err(error) = self.set_page(name, true) {
                         error_log!("{}", error);
                     }
@@ -193,9 +296,15 @@ impl<'a> PagedDevice<'a> {
                 FocusChangeRestorePolicy::Last => if let Err(e) = self.set_page(&last_active_page, false) {
                     error_log!("{}", e);
                 },
-                FocusChangeRestorePolicy::Main => if let Err(e) = self.set_page(self.pages.main_page.as_ref().unwrap(), false) {
-                    error_log!("{}", e);
-                },
+                FocusChangeRestorePolicy::Main => {
+                    let main_page = match &self.pages.main_page {
+                        Some(page_name) => page_name,
+                        None => self.pages.pages.get_index(0).unwrap().0,
+                    };
+                    if let Err(e) = self.set_page(main_page, false) {
+                        error_log!("{}", e);
+                    }
+                }
                 FocusChangeRestorePolicy::Keep => {}
             }
             self.last_active_page.take();
@@ -210,54 +319,187 @@ impl<'a> PagedDevice<'a> {
         }
     }
 
-    fn update_image(&self, image: &str, image_path: Option<String>, background: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
-        let image_exists = if image.len() > 0 { find_path(image, image_path) } else { Some(image.to_string()) };
-        let image = if let Some(image) = image_exists { image } else {
-            error_log!("Image not found: {}", image);
+    fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
+        // Get the button size from the device's image format
+        let (width, height) = {
+            let (w, h) = self.device.get_deck().kind().key_image_format().size;
+            (w as u32, h as u32)
+        };
+
+        // Determine if we're rendering text or using an icon
+        let has_text = text.is_some();
+        let text_str = if let Some(ref text_cfg) = text {
+            match text_cfg {
+                TextConfig::Simple(s) => s.clone(),
+                TextConfig::Detailed { value, .. } => value.clone(),
+            }
+        } else {
+            String::new()
+        };
+
+        // Find the icon path if provided
+        let image_exists = if image.len() > 0 { find_path(image, image_path.clone()) } else { Some(image.to_string()) };
+        let image_path = if let Some(image) = image_exists {
+            verbose_log!("Found image path: {}", image);
+            image
+        } else {
+            if image.len() > 0 {
+                error_log!("Image not found: {}", image);
+            }
             "".to_string()
         };
-        let bg_color = if let Some(bg_color) = background.as_ref() { bg_color } else { "" };
+
+        let bg_color_str = if let Some(bg_color) = background.as_ref() { bg_color.as_str() } else { "" };
+
+        // Create cache key including text information
+        let cache_key = format!("{}:{}:{}", image_path, bg_color_str, text_str);
+
         {
-            // Check if the image and background color are the same as the current ones
+            // Check if the button state is the same as the current one
             let mut button_images = self.button_images.borrow_mut();
             let mut button_backgrounds = self.button_backgrounds.borrow_mut();
-            if button_images[button_index as usize - 1] == image && button_backgrounds[button_index as usize - 1] == bg_color {
-                // No need to update the image
+            if button_images[button_index as usize - 1] == cache_key && button_backgrounds[button_index as usize - 1] == bg_color_str {
+                // No need to update the button
                 return;
             }
-            // Update the image and background color in the cache
-            button_images[button_index as usize - 1] = image.clone();
-            button_backgrounds[button_index as usize - 1] = bg_color.to_string();
+            // Update the cache key
+            button_images[button_index as usize - 1] = cache_key;
+            button_backgrounds[button_index as usize - 1] = bg_color_str.to_string();
         }
-        if image.len() == 0 {
+
+        // If we have text but no icon, render text directly
+        if has_text && image_path.is_empty() {
+            let font_size = if let Some(TextConfig::Detailed { fontsize, .. }) = text {
+                fontsize
+            } else {
+                None
+            };
+
+            // Parse background color or default to black
+            let bg_rgb = if let Some(ref bg) = background {
+                match string_to_color(bg, &self.colors) {
+                    Ok((r, g, b)) => Some([r, g, b]),
+                    Err(_) => Some([0, 0, 0]),
+                }
+            } else {
+                Some([0, 0, 0])
+            };
+
+            // Parse outline color if provided
+            let outline_rgb = if let Some(ref outline_str) = outline {
+                match string_to_color(outline_str, &self.colors) {
+                    Ok((r, g, b)) => Some([r, g, b]),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+
+            // Parse text color if provided (defaults to white in renderer)
+            let text_color_rgba = if let Some(ref color_str) = text_color {
+                match string_to_color(color_str, &self.colors) {
+                    Ok((r, g, b)) => Some(image::Rgba([r, g, b, 255u8])),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+
+            eprintln!("DEBUG: Rendering text '{}' on canvas size {}x{} (button dimensions)", text_str, width, height);
+            match text_renderer::render_text(&text_str, font_size, width, height, bg_rgb, text_color_rgba, outline_rgb, None) {
+                Ok(rendered_image) => {
+                    eprintln!("DEBUG: Text rendered successfully, final image size {}x{}", rendered_image.width(), rendered_image.height());
+                    self.device
+                        .set_button_image(button_index - 1, rendered_image)
+                        .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
+                }
+                Err(e) => {
+                    error_log!("Error rendering text: {}", e);
+                    invalid_indices.push(button_index);
+                }
+            }
+            return;
+        }
+
+        // If no icon and no text, mark as invalid
+        if image_path.is_empty() {
             invalid_indices.push(button_index);
             return;
         }
 
-        let image_data = if let Ok(image_data) = open(&image) { image_data } else {
-            error_log!("Error while opening image: {}", image);
+        // Load the icon image
+        let mut image_data = if let Ok(image_data) = open(&image_path) {
+            image_data
+        } else {
+            error_log!("Error while opening image: {}", image_path);
+            invalid_indices.push(button_index);
             return;
         };
-        if bg_color.len() != 0 {
-            match string_to_color(bg_color, &self.colors) {
+
+        // Apply background color if provided
+        if !bg_color_str.is_empty() {
+            match string_to_color(bg_color_str, &self.colors) {
                 Ok((r, g, b)) => {
                     let bg_color = Rgba([r, g, b, 255]);
                     let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
                     overlay(&mut background, &image_data, 0, 0);
-                    self.device
-                        .set_button_image(button_index - 1, DynamicImage::from(background))
-                        .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
+                    image_data = DynamicImage::from(background);
                 }
                 Err(e) => {
                     error_log!("{}", e);
-                    self.device
-                        .set_button_image(button_index - 1, image_data)
-                        .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
                 }
             }
-        } else {
-            self.device.set_button_image(button_index - 1, image_data).unwrap_or_else(|e| { error_log!("Error while setting button image: {}", e) });
         }
+
+        // If we have both icon and text, render text on top of the image
+        if has_text {
+            verbose_log!("Overlaying text '{}' on image", text_str);
+            let font_size = if let Some(TextConfig::Detailed { fontsize, .. }) = text {
+                fontsize
+            } else {
+                None
+            };
+
+            // Parse outline color if provided
+            let outline_rgb = if let Some(ref outline_str) = outline {
+                match string_to_color(outline_str, &self.colors) {
+                    Ok((r, g, b)) => Some([r, g, b]),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+
+            // Parse text color if provided (defaults to white in renderer)
+            let text_color_rgba = if let Some(ref color_str) = text_color {
+                match string_to_color(color_str, &self.colors) {
+                    Ok((r, g, b)) => Some(image::Rgba([r, g, b, 255u8])),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+
+            // Render text with the image as background (button dimensions, image scaled to fit)
+            match text_renderer::render_text(&text_str, font_size, width, height, background.as_ref().and_then(|bg| {
+                match string_to_color(bg, &self.colors) {
+                    Ok((r, g, b)) => Some([r, g, b]),
+                    Err(_) => Some([0, 0, 0]),
+                }
+            }), text_color_rgba, outline_rgb, Some(&image_data)) {
+                Ok(combined_image) => {
+                    image_data = combined_image;
+                }
+                Err(e) => {
+                    error_log!("Error rendering text with image: {}", e);
+                }
+            }
+        }
+
+        // Set the final button image
+        self.device
+            .set_button_image(button_index - 1, image_data)
+            .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
     }
 
     fn refresh_page(&self) {
@@ -267,12 +509,12 @@ impl<'a> PagedDevice<'a> {
         for button_index in 1..=button_count {
             if let Some(button) = self.find_button(current_page, button_index).as_ref() {
                 if let Some(icon) = &button.icon {
-                    self.update_image(icon, self.image_dir.clone(), button.background.clone(), button_index, &mut invalid_indices);
+                    self.update_button(icon, self.image_dir.clone(), button.background.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
                 } else {
-                    self.update_image("", None, button.background.clone(), button_index, &mut invalid_indices);
+                    self.update_button("", None, button.background.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
                 }
             } else {
-                self.update_image("", None, None, button_index, &mut invalid_indices);
+                self.update_button("", None, None, None, None, None, button_index, &mut invalid_indices);
             }
         }
         self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });

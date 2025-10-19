@@ -2,17 +2,22 @@ mod device_manager;
 mod server;
 mod pages;
 mod focus_property;
+mod focus_property_wayland;
 mod event;
-mod button_listener;
+mod listener_button;
 mod listener_device;
 mod paged_device;
 mod utils;
 mod listener_focus;
+mod listener_focus_wayland;
+mod kwin_script;
 mod listener_tick;
 mod listener_sleep;
 mod listener_signal;
 mod keyboard;
 mod lock;
+mod session;
+mod text_renderer;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;
@@ -48,9 +53,19 @@ fn print_help() {
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<String>>();
-    let mut arg_iter = args.iter();
 
+    // First pass: process flags (--verbose, --quiet) before anything else
+    for arg in &args {
+        match arg.as_str() {
+            "--quiet" => DEBUG.store(false, std::sync::atomic::Ordering::Relaxed),
+            "--verbose" => DEBUG.store(true, std::sync::atomic::Ordering::Relaxed),
+            _ => {}
+        }
+    }
+
+    let mut arg_iter = args.iter();
     let mut manager = DeviceManager::new();
+    let mut should_start_server = false;
 
     while let Some(arg) = arg_iter.next() {
         match arg.as_str() {
@@ -111,15 +126,14 @@ fn main() {
             "--reset" => manager.reset_devices().unwrap(),
             "--shutdown" => manager.shutdown_devices().unwrap(),
             "--list" => manager.list_devices(),
-            "--quiet" => DEBUG.store(false, std::sync::atomic::Ordering::Relaxed),
-            "--verbose" => DEBUG.store(true, std::sync::atomic::Ordering::Relaxed),
-            "--server" => start_server(),
+            "--quiet" | "--verbose" => {}, // Already processed in first pass
+            "--server" => should_start_server = true,
             _ => {
                 error_log!("Error: Unknown command '{}'", arg);
             }
         }
     }
-    if args.len() == 0 {
+    if args.len() == 0 || should_start_server {
         start_server();
     }
 }
