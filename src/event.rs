@@ -7,7 +7,7 @@ pub fn send(tx: &Sender<DeviceEvent>, event: DeviceEvent) {
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeviceEvent {
     /// Button got pressed down
     ButtonDown { sn: String, button_id: u8 },
@@ -56,4 +56,60 @@ pub enum DeviceEvent {
 
     /// System is going to sleep/will awake
     Sleep { sleep: bool },
+
+    /// Timer completed for a wait action
+    TimerComplete { sn: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaitEventType {
+    Focus,
+    Page,
+    Tick,
+    Sleep,
+    NewDevice,
+    RemovedDevice,
+    Timer,
+}
+
+impl WaitEventType {
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "focus" => Ok(WaitEventType::Focus),
+            "page" => Ok(WaitEventType::Page),
+            "tick" => Ok(WaitEventType::Tick),
+            "sleep" => Ok(WaitEventType::Sleep),
+            "newdevice" => Ok(WaitEventType::NewDevice),
+            "removeddevice" => Ok(WaitEventType::RemovedDevice),
+            "timer" => Ok(WaitEventType::Timer),
+            _ => Err(format!("Unsupported waitFor event type: '{}'", s)),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            WaitEventType::Focus => "focus",
+            WaitEventType::Page => "page",
+            WaitEventType::Tick => "tick",
+            WaitEventType::Sleep => "sleep",
+            WaitEventType::NewDevice => "newdevice",
+            WaitEventType::RemovedDevice => "removeddevice",
+            WaitEventType::Timer => "timer",
+        }
+    }
+}
+
+impl DeviceEvent {
+    /// Extract the WaitEventType from this event, if it corresponds to a waitable event
+    pub fn wait_event_type(&self) -> Option<WaitEventType> {
+        match self {
+            DeviceEvent::FocusChanges { .. } => Some(WaitEventType::Focus),
+            DeviceEvent::Tick => Some(WaitEventType::Tick),
+            DeviceEvent::Sleep { .. } => Some(WaitEventType::Sleep),
+            DeviceEvent::NewDevice { .. } => Some(WaitEventType::NewDevice),
+            DeviceEvent::RemovedDevice { .. } => Some(WaitEventType::RemovedDevice),
+            DeviceEvent::TimerComplete { .. } => Some(WaitEventType::Timer),
+            _ => None,
+        }
+    }
 }

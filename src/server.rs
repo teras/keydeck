@@ -5,6 +5,7 @@ use crate::listener_focus::listener_focus;
 use crate::listener_signal::listener_signal;
 use crate::listener_sleep::listener_sleep;
 use crate::listener_tick::listener_tick;
+use crate::listener_time::TimeManager;
 use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
 use crate::pages::KeyDeckConf;
@@ -13,6 +14,16 @@ use std::collections::HashMap;
 use std::process::exit;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+
+/// Helper function to dispatch wait events to all devices that might be waiting for them.
+/// Checks if the event can be waited for, and if so, notifies all devices.
+fn dispatch_wait_event(message: &DeviceEvent, devices: &HashMap<String, PagedDevice>) {
+    if let Some(event_type) = message.wait_event_type() {
+        for device in devices.values() {
+            device.check_pending_event(&event_type);
+        }
+    }
+}
 
 pub fn start_server() {
     ensure_lock();
@@ -25,6 +36,9 @@ pub fn start_server() {
     let (tx, rx) = std::sync::mpsc::channel::<DeviceEvent>();
     let still_active = Arc::new(AtomicBool::new(true));
     let should_reset_devices = Arc::new(AtomicBool::new(false));
+
+    // Create TimeManager for handling async wait timers
+    let time_manager = TimeManager::new(tx.clone(), still_active.clone());
 
     listener_sleep(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
@@ -85,41 +99,53 @@ pub fn start_server() {
                     device.touch_screen_swipe(start, end);
                 }
             }
-            DeviceEvent::FocusChanges { class, title } => {
-                current_class = class;
-                current_title = title;
+            ref message @ DeviceEvent::FocusChanges { ref class, ref title } => {
+                current_class = class.clone();
+                current_title = title.clone();
+                // Dispatch wait event first
+                dispatch_wait_event(message, &devices);
+                // Then handle normal focus change
                 for device in devices.values() {
                     device.focus_changed(&current_class, &current_title, false);
                 }
             }
-            DeviceEvent::Tick => {
+            ref message @ DeviceEvent::Tick => {
+                // Dispatch wait event first
+                dispatch_wait_event(message, &devices);
+                // Then handle tick
                 for device in devices.values() {
                     device.keep_alive();
+                    device.handle_tick();
                 }
             }
-            DeviceEvent::NewDevice { sn } => {
-                if devices.contains_key(&sn) {
-                    return;
-                }
-                if let Some(device) = find_device_by_serial(&sn) {
-                    let pages = if let Some(page) = conf.page_groups.get(&sn) {
-                        Some(page)
-                    } else if let Some(default_page) = conf.page_groups.get("default") {
-                        Some(default_page)
-                    } else {
-                        error_log!("Unable to match profile for device with serial number {}, or missing default profile", sn);
-                        None
-                    };
-                    if let Some(pages) = pages {
-                        let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, &conf.buttons, device, &tx);
-                        new_device.focus_changed(&current_class, &current_title, false);
-                        info_log!("Adding device {}", sn);
-                        devices.insert(sn, new_device);
+            ref message @ DeviceEvent::NewDevice { ref sn } => {
+                // Dispatch wait event first
+                dispatch_wait_event(message, &devices);
+                // Then handle new device
+                if !devices.contains_key(sn) {
+                    if let Some(device) = find_device_by_serial(sn) {
+                        let pages = if let Some(page) = conf.page_groups.get(sn) {
+                            Some(page)
+                        } else if let Some(default_page) = conf.page_groups.get("default") {
+                            Some(default_page)
+                        } else {
+                            error_log!("Unable to match profile for device with serial number {}, or missing default profile", sn);
+                            None
+                        };
+                        if let Some(pages) = pages {
+                            let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, &conf.buttons, &conf.macros, device, &tx, &time_manager);
+                            new_device.focus_changed(&current_class, &current_title, false);
+                            info_log!("Adding device {}", sn);
+                            devices.insert(sn.clone(), new_device);
+                        }
                     }
                 }
             }
-            DeviceEvent::RemovedDevice { sn } => {
-                if let Some(device) = devices.remove(&sn) {
+            ref message @ DeviceEvent::RemovedDevice { ref sn } => {
+                // Dispatch wait event first
+                dispatch_wait_event(message, &devices);
+                // Then handle device removal
+                if let Some(device) = devices.remove(sn) {
                     info_log!("Removing device {}", sn);
                     device.disable();
                 }
@@ -133,7 +159,10 @@ pub fn start_server() {
                 cleanup_lock();
                 exit(0);
             }
-            DeviceEvent::Sleep { sleep } => {
+            ref message @ DeviceEvent::Sleep { sleep } => {
+                // Dispatch wait event first
+                dispatch_wait_event(message, &devices);
+                // Handle sleep event
                 if sleep {
                     verbose_log!("Sleeping");
                     for device in devices.values() {
@@ -143,6 +172,11 @@ pub fn start_server() {
                 } else {
                     verbose_log!("Waking up");
                 }
+            }
+            ref message @ DeviceEvent::TimerComplete { ref sn } => {
+                // Dispatch wait event to the specific device waiting for this timer
+                dispatch_wait_event(message, &devices);
+                verbose_log!("Timer completed for device {}", sn);
             }
         }
     }

@@ -19,7 +19,6 @@ pub fn button_listener(sn: &String, tx: &Sender<DeviceEvent>, active: &Arc<Atomi
                 if let Ok(updates) = device.get_reader().read(Some(Duration::from_secs_f64(10.0))) {
                     for update in updates {
                         let sn = serial.clone();
-                        verbose_log!("Received update for device {}: {:?}", serial, update);
                         match update {
                             DeviceStateUpdate::ButtonDown(button_id) => send(&tx, DeviceEvent::ButtonDown { sn, button_id: button_id + 1 }),
                             DeviceStateUpdate::ButtonUp(button_id) => send(&tx, DeviceEvent::ButtonUp { sn, button_id: button_id + 1 }),

@@ -6,6 +6,7 @@ mod focus_property_wayland;
 mod event;
 mod listener_button;
 mod listener_device;
+mod listener_time;
 mod paged_device;
 mod utils;
 mod listener_focus;
@@ -70,10 +71,21 @@ fn main() {
     while let Some(arg) = arg_iter.next() {
         match arg.as_str() {
             "--help" => print_help(),
-            "-g" | "--grab" => manager.grab_event().unwrap(),
+            "-g" | "--grab" => {
+                if let Err(e) = manager.grab_event() {
+                    error_log!("Error: {}", e);
+                }
+            }
             "-i" | "--image" => {
                 if let (Some(index), Some(path)) = (arg_iter.next(), arg_iter.next()) {
-                    manager.set_button_image(index.parse().expect("Failed to parse button number"), path.to_string()).unwrap();
+                    match index.parse() {
+                        Ok(button_num) => {
+                            if let Err(e) = manager.set_button_image(button_num, path.to_string()) {
+                                error_log!("Error: {}", e);
+                            }
+                        }
+                        Err(_) => error_log!("Error: Invalid button number '{}', expected a number", index),
+                    }
                 } else {
                     error_log!("Error: Setting button image requires two arguments, button number and image path");
                 }
@@ -85,46 +97,86 @@ fn main() {
                     error_log!("Error: Setting the directory where the images are searched requires an argument");
                 }
             }
-            "-c" | "--clear" => manager.clear_all_button_images().unwrap(),
+            "-c" | "--clear" => {
+                if let Err(e) = manager.clear_all_button_images() {
+                    error_log!("Error: {}", e);
+                }
+            }
             "-cb" | "--clear-button" => {
                 if let Some(arg1) = arg_iter.next() {
-                    manager.clear_button_image(arg1.parse().expect("Failed to parse button number")).unwrap();
+                    match arg1.parse() {
+                        Ok(button_num) => {
+                            if let Err(e) = manager.clear_button_image(button_num) {
+                                error_log!("Error: {}", e);
+                            }
+                        }
+                        Err(_) => error_log!("Error: Invalid button number '{}', expected a number", arg1),
+                    }
                 } else {
                     error_log!("Error: Clearing button image requires an argument");
                 }
             }
             "-b" | "--brightness" => {
                 if let Some(arg1) = arg_iter.next() {
-                    manager.set_brightness(arg1.parse().expect("Failed to parse brightness")).unwrap();
+                    match arg1.parse() {
+                        Ok(brightness) => {
+                            if let Err(e) = manager.set_brightness(brightness) {
+                                error_log!("Error: {}", e);
+                            }
+                        }
+                        Err(_) => error_log!("Error: Invalid brightness '{}', expected a number 0-100", arg1),
+                    }
                 } else {
                     error_log!("Error: Setting brightness requires an argument");
                 }
             }
             "-l" | "--logo" => {
                 if let Some(arg1) = arg_iter.next() {
-                    manager.set_logo_image(arg1.to_string()).unwrap();
+                    if let Err(e) = manager.set_logo_image(arg1.to_string()) {
+                        error_log!("Error: {}", e);
+                    }
                 } else {
                     error_log!("Error: Setting logo image requires an argument");
                 }
             }
-            "-s" | "--sleep" => manager.sleep_devices().unwrap(),
+            "-s" | "--sleep" => {
+                if let Err(e) = manager.sleep_devices() {
+                    error_log!("Error: {}", e);
+                }
+            }
             "-1" | "--enable" => {
                 if let Some(arg1) = arg_iter.next() {
-                    manager.enable_device(arg1.to_uppercase()).unwrap();
+                    if let Err(e) = manager.enable_device(arg1.to_uppercase()) {
+                        error_log!("Error: {}", e);
+                    }
                 } else {
                     error_log!("Error: Adding device requires an argument");
                 }
             }
             "-0" | "--disable" => {
                 if let Some(arg1) = arg_iter.next() {
-                    manager.disable_device(arg1.to_uppercase()).unwrap();
+                    if let Err(e) = manager.disable_device(arg1.to_uppercase()) {
+                        error_log!("Error: {}", e);
+                    }
                 } else {
                     error_log!("Error: Removing device requires an argument");
                 }
             }
-            "--flush" => manager.flush_devices().unwrap(),
-            "--reset" => manager.reset_devices().unwrap(),
-            "--shutdown" => manager.shutdown_devices().unwrap(),
+            "--flush" => {
+                if let Err(e) = manager.flush_devices() {
+                    error_log!("Error: {}", e);
+                }
+            }
+            "--reset" => {
+                if let Err(e) = manager.reset_devices() {
+                    error_log!("Error: {}", e);
+                }
+            }
+            "--shutdown" => {
+                if let Err(e) = manager.shutdown_devices() {
+                    error_log!("Error: {}", e);
+                }
+            }
             "--list" => manager.list_devices(),
             "--quiet" | "--verbose" => {}, // Already processed in first pass
             "--server" => should_start_server = true,

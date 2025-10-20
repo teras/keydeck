@@ -4,6 +4,34 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Macro {
+    /// Optional default parameter values for the macro.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<HashMap<String, String>>,
+
+    /// Actions to execute when the macro is called. Stored as raw YAML value
+    /// to allow parameter substitution before parsing into Action types.
+    pub actions: serde_yaml_ng::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum MacroCall {
+    /// Simple macro call with just the macro name, no parameters.
+    Simple(String),
+
+    /// Macro call with parameters.
+    WithParams {
+        /// Name of the macro to call.
+        call: String,
+
+        /// Parameters to pass to the macro. Merged with macro's default params.
+        #[serde(flatten)]
+        params: HashMap<String, String>,
+    },
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KeyDeckConf {
     /// Optional directory for storing images referenced in button configurations. Otherwise, images are expected to be in the current working directory.
@@ -26,6 +54,10 @@ pub struct KeyDeckConf {
     /// Map of services with external commands that can be executed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub services: Option<HashMap<String, Service>>,
+
+    /// Map of macros, which are reusable action sequences with optional parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macros: Option<HashMap<String, Macro>>,
 
     /// A collection of pages, each group identified by the device serial number. When a
     /// device is connected, the corresponding page group is loaded.
@@ -93,6 +125,11 @@ pub struct Page {
     #[serde(skip_serializing_if = "Option::is_none")]
     templates: Option<Vec<String>>,
 
+    /// Actions to execute on each tick event (fires every 1 second).
+    /// Useful for periodic updates, status checks, or time-based automations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_tick: Option<Vec<Action>>,
+
     /// Map of button configurations for this page, referenced by button index in the form
     /// of "button#", where "#" is the button index starting from 1.
     #[serde(flatten)]
@@ -157,48 +194,36 @@ pub enum TextConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
-pub enum FocusAction {
-    /// Simple string: focus: "firefox"
+pub enum WaitForConfig {
+    /// Simple string: just the event type
     Simple(String),
 
-    /// Detailed config: focus: { target: "firefox", verify: true, timeout: 2.0 }
+    /// Detailed config with timeout
     Detailed {
-        target: String,
-        #[serde(default)]
-        verify: bool,
-        #[serde(default = "default_verify_timeout")]
-        timeout: f64,  // seconds, default 1.0
+        event: String,
+        #[serde(default = "default_waitfor_timeout")]
+        timeout: f64,
     },
 }
 
-fn default_verify_timeout() -> f64 {
-    1.0
-}
-
-impl FocusAction {
-    /// Get the target window class/title
-    pub fn target(&self) -> &str {
+impl WaitForConfig {
+    pub fn event(&self) -> &str {
         match self {
-            FocusAction::Simple(s) => s,
-            FocusAction::Detailed { target, .. } => target,
+            WaitForConfig::Simple(e) => e,
+            WaitForConfig::Detailed { event, .. } => event,
         }
     }
 
-    /// Check if verification is required
-    pub fn should_verify(&self) -> bool {
-        match self {
-            FocusAction::Simple(_) => false,
-            FocusAction::Detailed { verify, .. } => *verify,
-        }
-    }
-
-    /// Get the verification timeout in seconds (only relevant if verify=true)
     pub fn timeout(&self) -> f64 {
         match self {
-            FocusAction::Simple(_) => 1.0,
-            FocusAction::Detailed { timeout, .. } => *timeout,
+            WaitForConfig::Simple(_) => default_waitfor_timeout(),
+            WaitForConfig::Detailed { timeout, .. } => *timeout,
         }
     }
+}
+
+fn default_waitfor_timeout() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -214,14 +239,17 @@ pub enum Action {
     AutoJump { autojump: () },
 
     /// Focuses on an application specified by window class.
-    /// Can be either a simple string or a detailed configuration with verification.
-    Focus { focus: FocusAction },
+    /// Simple string action that attempts to focus the window.
+    /// Returns error if focus operation fails (can be caught with try/else).
+    Focus { focus: String },
 
-    /// Verifies that the specified window is currently focused.
-    /// Checks immediately against current focus. If not matched, aborts action sequence.
-    /// This is automatically injected when using focus with verify=true, but can also
-    /// be used standalone in config: verify_focus: "ferdium"
-    VerifyFocus { verify_focus: String },
+    /// Waits for a specific event to occur, with a timeout.
+    /// If the event doesn't occur within the timeout, returns an error.
+    /// Can be caught with try/else for error handling.
+    WaitFor {
+        #[serde(rename = "waitFor")]
+        wait_for: WaitForConfig,
+    },
 
     /// Sends a keyboard shortcut event. Some examples include "LCtrl+LShift+z" or "F12".
     /// The value is case-insensitive and can be a single character or a key name.
@@ -234,6 +262,61 @@ pub enum Action {
 
     /// Waits for a specified time in seconds before executing the next action.
     Wait { wait: f32 },
+
+    /// Try/else block for error handling.
+    /// Executes try_actions sequentially, stopping on first error.
+    /// If try fails and else_actions is present, executes else block.
+    /// If try fails and no else, continues to next action (error swallowed).
+    Try {
+        #[serde(rename = "try")]
+        try_actions: Vec<Action>,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "else")]
+        else_actions: Option<Vec<Action>>,
+    },
+
+    /// Calls a macro with optional parameters.
+    /// Parameters are substituted in the macro's actions before execution.
+    Macro {
+        #[serde(rename = "macro")]
+        macro_call: MacroCall,
+    },
+
+    /// Returns successfully from the current action sequence.
+    /// Stops execution of remaining actions without triggering error handlers.
+    Return {
+        #[serde(rename = "return")]
+        return_unit: (),
+    },
+
+    /// Fails and stops execution of the current action sequence.
+    /// Triggers error handling in try/else blocks.
+    Fail {
+        #[serde(rename = "fail")]
+        fail_unit: (),
+    },
+
+    /// Executes actions sequentially. Returns Ok if ALL succeed, Err on first failure.
+    /// Short-circuits on first error. Useful for expressing complex conditions.
+    And {
+        #[serde(rename = "and")]
+        and_actions: Vec<Action>,
+    },
+
+    /// Executes actions sequentially. Returns Ok on FIRST success, Err if all fail.
+    /// Short-circuits on first success. Useful for fallback logic.
+    Or {
+        #[serde(rename = "or")]
+        or_actions: Vec<Action>,
+    },
+
+    /// Inverts the result of a single action. Returns Ok if action fails, Err if succeeds.
+    /// Useful for checking that something is NOT running or available.
+    Not {
+        #[serde(rename = "not")]
+        not_action: Box<Action>,
+    },
 }
 
 impl KeyDeckConf {

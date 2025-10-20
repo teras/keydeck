@@ -46,11 +46,11 @@ fn calculate_optimal_font_size(
     let line_count = lines.len();
 
     let mut min_size = 6.0;
-    let mut max_size = 54.0;
+    let mut max_size = 32.0;
     let mut best_size = min_size;
 
-    // Binary search for optimal font size, starting at 12
-    let mut test_size = 12.0;
+    // Binary search for optimal font size, starting at 32
+    let mut test_size = 32.0;
 
     // First, check if 12 fits
     let scale = PxScale::from(test_size);
@@ -67,11 +67,11 @@ fn calculate_optimal_font_size(
     let total_text_height = line_height * line_count as f32;
 
     if max_line_width <= target_width && total_text_height <= target_height {
-        // 12 fits, search upward (12-200)
+        // 32 fits, use it
         best_size = test_size;
         min_size = test_size;
     } else {
-        // 12 doesn't fit, search downward (6-12)
+        // 32 doesn't fit, search downward (6-32)
         max_size = test_size;
     }
 

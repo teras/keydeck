@@ -29,7 +29,14 @@ impl KeyDeckDevice {
         self.deck.borrow_mut().get_or_insert_with(|| {
             Arc::new(
                 StreamDeck::connect(&self.hid_api, self.kind, &self.serial)
-                    .expect("Failed to connect to device"),
+                    .unwrap_or_else(|e| {
+                        error_log!("Failed to connect to Stream Deck device '{}': {}", self.serial, e);
+                        error_log!("This may be due to:");
+                        error_log!("  - Device was unplugged");
+                        error_log!("  - Insufficient USB permissions");
+                        error_log!("  - Device busy/in use by another process");
+                        panic!("Cannot continue without device connection");
+                    }),
             )
         }).clone()
     }
@@ -42,62 +49,62 @@ impl KeyDeckDevice {
             *self.reader.borrow_mut() = Some(deck.get_reader());
         }
 
-        // Borrow immutably to clone the reader
-        self.reader.borrow().as_ref().unwrap().clone()
+        // Borrow immutably to clone the reader - safe because we just initialized it above
+        self.reader.borrow().as_ref().expect("Reader should be initialized").clone()
     }
 
     pub fn shutdown(&self) -> Result<(), String> {
         let deck = self.get_deck();
         verbose_log!("Shutting down device '{}'", self.serial);
-        deck.shutdown().map_err(|e| format!("Failed to shutdown device '{}': {}", deck.serial_number().unwrap(), e))
+        deck.shutdown().map_err(|e| format!("Failed to shutdown device '{}': {}", self.serial, e))
     }
 
     pub fn reset(&self) -> Result<(), String> {
         let deck = self.get_deck();
         verbose_log!("Resetting device '{}'", self.serial);
-        deck.reset().map_err(|e| format!("Failed to reset device '{}': {}", deck.serial_number().unwrap(), e))
+        deck.reset().map_err(|e| format!("Failed to reset device '{}': {}", self.serial, e))
     }
 
     pub fn sleep(&self) -> Result<(), String> {
         let deck = self.get_deck();
         verbose_log!("Sleeping device '{}'", self.serial);
-        deck.sleep().map_err(|e| format!("Failed to sleep device '{}': {}", deck.serial_number().unwrap(), e))
+        deck.sleep().map_err(|e| format!("Failed to sleep device '{}': {}", self.serial, e))
     }
 
     pub fn set_logo_image_cached(&self, image: DynamicImage) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!("Setting logo image on device '{}'",  deck.serial_number().unwrap());
-        deck.set_logo_image(image).map_err(|e| format!("Failed to set logo image on device '{}': {}", deck.serial_number().unwrap(), e))
+        verbose_log!("Setting logo image on device '{}'", self.serial);
+        deck.set_logo_image(image).map_err(|e| format!("Failed to set logo image on device '{}': {}", self.serial, e))
     }
 
     pub fn clear_button_image(&self, button_idx: u8) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!("Clearing button image on device '{}' from button {}", deck.serial_number().unwrap(), button_idx);
-        deck.clear_button_image(button_idx).map_err(|e| format!("Failed to clear button image on device '{}' from button {}: {}", deck.serial_number().unwrap(), button_idx, e))
+        verbose_log!("Clearing button image on device '{}' from button {}", self.serial, button_idx);
+        deck.clear_button_image(button_idx).map_err(|e| format!("Failed to clear button image on device '{}' from button {}: {}", self.serial, button_idx, e))
     }
 
     pub fn set_button_image(&self, button_idx: u8, image: DynamicImage) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!("Setting button image on device '{}' to button {}", deck.serial_number().unwrap(), button_idx);
-        deck.set_button_image(button_idx, image).map_err(|e| format!("Failed to set button image on device '{}' to button {}: {}", deck.serial_number().unwrap(), button_idx, e))
+        verbose_log!("Setting button image on device '{}' to button {}", self.serial, button_idx);
+        deck.set_button_image(button_idx, image).map_err(|e| format!("Failed to set button image on device '{}' to button {}: {}", self.serial, button_idx, e))
     }
 
     pub fn flush(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!("Flushing device '{}'", deck.serial_number().unwrap());
-        deck.flush().map_err(|e| format!("Failed to flush device '{}': {}", deck.serial_number().unwrap(), e))
+        verbose_log!("Flushing device '{}'", self.serial);
+        deck.flush().map_err(|e| format!("Failed to flush device '{}': {}", self.serial, e))
     }
 
     pub fn set_brightness(&self, brightness: u8) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!("Setting brightness {} on device '{}'", brightness, deck.serial_number().unwrap());
-        deck.set_brightness(brightness).map_err(|e| format!("Failed to set brightness on device '{}': {}", deck.serial_number().unwrap(), e))
+        verbose_log!("Setting brightness {} on device '{}'", brightness, self.serial);
+        deck.set_brightness(brightness).map_err(|e| format!("Failed to set brightness on device '{}': {}", self.serial, e))
     }
 
     pub fn clear_all_button_images(&self) -> Result<(), String> {
         let deck = self.get_deck();
-        verbose_log!("Cleared all button images on device '{}'", deck.serial_number().unwrap());
-        deck.clear_all_button_images().map_err(|e| format!("Failed to clear all button images on device '{}': {}", deck.serial_number().unwrap(), e))
+        verbose_log!("Cleared all button images on device '{}'", self.serial);
+        deck.clear_all_button_images().map_err(|e| format!("Failed to clear all button images on device '{}': {}", self.serial, e))
     }
 
     pub fn get_button_count(&self) -> u8 {
@@ -297,7 +304,13 @@ pub fn find_path(file: &str, dir: Option<String>) -> Option<String> {
 }
 
 pub fn find_device_by_serial(device_sn: &str) -> Option<KeyDeckDevice> {
-    let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
+    let hidapi = match new_hidapi().ok() {
+        Some(api) => Arc::new(api),
+        None => {
+            error_log!("Failed to create hidapi context when searching for device");
+            return None;
+        }
+    };
     for (kind, serial) in list_devices(&hidapi) {
         if serial == device_sn {
             let device_id = format!("{:04X}:{:04X}", kind.vendor_id(), kind.product_id());

@@ -202,10 +202,13 @@ impl KWinScriptClient {
             Duration::from_millis(5000)
         );
 
+        let script_path_str = script_file_path.to_str()
+            .ok_or_else(|| Error::DBusError(format!("Script path contains invalid UTF-8: {:?}", script_file_path)))?;
+
         let (script_id,): (i32,) = kwin_proxy.method_call(
             "org.kde.kwin.Scripting",
             "loadScript",
-            (script_file_path.to_str().unwrap(), script_name.as_str()),
+            (script_path_str, script_name.as_str()),
         ).map_err(|e| Error::DBusError(format!("Failed to load script: {}", e)))?;
 
         let script_path = format!("/Scripting/Script{}", script_id);
@@ -369,10 +372,13 @@ impl KWinScriptClient {
             Duration::from_millis(5000)
         );
 
+        let script_path_str = script_file_path.to_str()
+            .ok_or_else(|| Error::DBusError(format!("Listener script path contains invalid UTF-8: {:?}", script_file_path)))?;
+
         let (script_id,): (i32,) = kwin_proxy.method_call(
             "org.kde.kwin.Scripting",
             "loadScript",
-            (script_file_path.to_str().unwrap(), script_name.as_str()),
+            (script_path_str, script_name.as_str()),
         ).map_err(|e| Error::DBusError(format!("Failed to load listener script: {}", e)))?;
 
         // Store script ID, name, and method name for later unloading

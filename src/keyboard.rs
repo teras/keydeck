@@ -12,6 +12,11 @@ use x11rb::{
 const KEY_PRESS: u8 = 2;
 const KEY_RELEASE: u8 = 3;
 
+/// Delay in milliseconds between key press/release events.
+/// This ensures the X server has time to process each key event properly.
+/// Reducing this value makes key sending faster but may cause issues on slower systems.
+const KEY_EVENT_DELAY_MS: u64 = 5;
+
 // Modifier keys as an enum with direct mapping to keysyms
 #[derive(Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -143,6 +148,9 @@ fn press_key_combination(combo: &str, conn: &RustConnection, keyboard_mapping: &
     let parts: Vec<&str> = combo.split('+').collect();
     let mut keycodes: Vec<u8> = Vec::new();
     for part in parts {
+        if part.is_empty() {
+            return Err("Empty key part in key combination".to_string());
+        }
         let keysym = if part.len() == 1 {
             let (keysym, _) = keysym_for_char(part.chars().next().unwrap())?;
             keysym
@@ -155,11 +163,11 @@ fn press_key_combination(combo: &str, conn: &RustConnection, keyboard_mapping: &
     // Press each modifier key in the specified order
     for keycode in &keycodes {
         send_key_event(keycode, conn, KEY_PRESS)?;
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
     }
     for keycode in keycodes.iter().rev() {
         send_key_event(keycode, conn, KEY_RELEASE)?;
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
     }
     Ok(())
 }
@@ -283,9 +291,9 @@ pub fn send_string(text: &str) -> Result<(), String> {
             // Control characters don't need Shift
             let keycode = keysym_to_keycode(control_keysym, &keysym_mapping, min_keycode)?;
             send_key_event(&keycode, &conn, KEY_PRESS)?;
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
             send_key_event(&keycode, &conn, KEY_RELEASE)?;
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
         } else {
             // Regular characters - check if Shift is needed
             let (keysym, needs_shift) = keysym_for_char(ch)?;
@@ -294,19 +302,19 @@ pub fn send_string(text: &str) -> Result<(), String> {
             if needs_shift {
                 // Press Shift first
                 send_key_event(&shift_keycode, &conn, KEY_PRESS)?;
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
             }
 
             // Press and release the key
             send_key_event(&keycode, &conn, KEY_PRESS)?;
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
             send_key_event(&keycode, &conn, KEY_RELEASE)?;
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
 
             if needs_shift {
                 // Release Shift
                 send_key_event(&shift_keycode, &conn, KEY_RELEASE)?;
-                thread::sleep(Duration::from_millis(10));
+                thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
             }
         }
     }

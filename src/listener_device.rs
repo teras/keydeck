@@ -19,7 +19,14 @@ pub fn listener_device(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>, shoul
                 devices.clear();
                 should_reset.store(false, std::sync::atomic::Ordering::Relaxed);
             }
-            let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
+            let hidapi = match new_hidapi().ok() {
+                Some(api) => Arc::new(api),
+                None => {
+                    verbose_log!("Failed to create hidapi context, retrying in 2 seconds...");
+                    thread::sleep(std::time::Duration::from_secs_f64(2.0));
+                    continue;
+                }
+            };
             let mut current = devices.clone();
             for (_, serial) in list_devices(&hidapi) {
                 if current.contains(&serial) {

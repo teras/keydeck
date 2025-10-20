@@ -1,9 +1,10 @@
 use crate::listener_button::button_listener;
+use crate::listener_time::TimeManager;
 use crate::device_manager::{find_path, KeyDeckDevice};
-use crate::event::DeviceEvent;
+use crate::event::{DeviceEvent, WaitEventType};
 use crate::focus_property::set_focus;
 use crate::keyboard::{send_key_combination, send_string};
-use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, Page, Pages, TextConfig};
+use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, MacroCall, Page, Pages, TextConfig};
 use crate::text_renderer;
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
@@ -13,19 +14,19 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
-use std::thread;
 use std::time::{Duration, Instant};
 
-/// Represents a queue of actions waiting to be executed after a focus verification event.
-/// Created when a verified focus action is executed, and resumed when the corresponding
-/// FocusChanges event arrives.
+/// Represents a queue of actions waiting to be executed after an event occurs.
+/// Created when a WaitFor action is executed, and resumed when the corresponding event arrives.
 struct PendingActionQueue {
-    /// Remaining actions to execute, with VerifyFocus at the front
+    /// Remaining actions to execute after the event
     actions: Vec<Action>,
     /// Timestamp when this queue was last modified, used for timeout detection
     last_modified: Instant,
-    /// Maximum time to wait for the verification event before dropping the queue
+    /// Maximum time to wait for the event before dropping the queue
     timeout: Duration,
+    /// The event type we're waiting for
+    event_type: WaitEventType,
 }
 
 pub struct PagedDevice<'a> {
@@ -33,6 +34,7 @@ pub struct PagedDevice<'a> {
     pages: &'a Pages,
     colors: &'a Option<HashMap<String, String>>,
     button_templates: &'a Option<HashMap<String, Button>>,
+    macros: &'a Option<HashMap<String, crate::pages::Macro>>,
     image_dir: Option<String>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
@@ -42,6 +44,7 @@ pub struct PagedDevice<'a> {
     current_class: RefCell<String>,
     current_title: RefCell<String>,
     pending_actions: RefCell<Option<PendingActionQueue>>,
+    time_manager: &'a TimeManager,
 }
 
 impl<'a> PagedDevice<'a> {
@@ -49,8 +52,10 @@ impl<'a> PagedDevice<'a> {
                image_dir: Option<String>,
                colors: &'a Option<HashMap<String, String>>,
                button_templates: &'a Option<HashMap<String, Button>>,
+               macros: &'a Option<HashMap<String, crate::pages::Macro>>,
                device: KeyDeckDevice,
-               tx: &Sender<DeviceEvent>) -> Self {
+               tx: &Sender<DeviceEvent>,
+               time_manager: &'a TimeManager) -> Self {
         let button_count = { device.get_button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&device.serial, tx, &active_events);
@@ -61,6 +66,7 @@ impl<'a> PagedDevice<'a> {
             pages,
             colors,
             button_templates,
+            macros,
             image_dir,
             // Initialize to sentinel value so first set_page() will trigger refresh
             current_page_ref: RefCell::new(usize::MAX),
@@ -71,6 +77,7 @@ impl<'a> PagedDevice<'a> {
             current_class: RefCell::new(String::new()),
             current_title: RefCell::new(String::new()),
             pending_actions: RefCell::new(None),
+            time_manager,
         };
 
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
@@ -89,6 +96,17 @@ impl<'a> PagedDevice<'a> {
         self.device.keep_alive();
     }
 
+    pub fn handle_tick(&self) {
+        let current_page = { self.current_page_ref.borrow().clone() };
+        let page = self.find_page(current_page);
+
+        if let Some(actions) = &page.on_tick {
+            if let Err(e) = self.execute_actions(actions.clone()) {
+                error_log!("Error executing tick actions: {}", e);
+            }
+        }
+    }
+
     pub fn disable(&self) {
         self.active_events.store(false, std::sync::atomic::Ordering::Relaxed);
     }
@@ -98,36 +116,136 @@ impl<'a> PagedDevice<'a> {
         self.device.shutdown().unwrap_or_else(|e| { error_log!("Error while shutting down device: {}", e) });
     }
 
+    /// Check if there are pending actions waiting for a specific event.
+    /// If event type matches, resume action execution. Returns true if event was consumed.
+    pub fn check_pending_event(&self, event_type: &WaitEventType) -> bool {
+        // Take the pending actions if any exist
+        let pending = {
+            self.pending_actions.borrow_mut().take()
+        }; // Borrow ends here
+
+        if let Some(pending) = pending {
+            // Check timeout
+            if pending.last_modified.elapsed() > pending.timeout {
+                verbose_log!("Pending action queue timed out for event '{}'", pending.event_type.as_str());
+                return false;
+            }
+
+            // Check if event type matches
+            if &pending.event_type != event_type {
+                // Different event type, put queue back
+                *self.pending_actions.borrow_mut() = Some(pending);
+                return false;
+            }
+
+            // Event type matches, resume actions
+            verbose_log!("WaitFor condition met for event '{}', resuming actions", event_type.as_str());
+            if let Err(e) = self.execute_actions(pending.actions) {
+                error_log!("{}", e);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Cancels any pending action queue.
+    /// This is called when user interacts with the device (button press, encoder twist, etc.)
+    /// to clear any actions that were waiting for events. Provides a central location
+    /// for future conditional logic if needed.
+    fn cancel_pending_actions(&self) {
+        if let Some(pending) = self.pending_actions.borrow_mut().take() {
+            verbose_log!("Canceling pending actions that were waiting for event '{}'",
+                       pending.event_type.as_str());
+        }
+    }
+
     pub fn button_down(&self, _button_id: u8) {}
 
     pub fn button_up(&self, button_id: u8) {
-        // Clear any pending actions - new button press cancels waiting actions
-        self.pending_actions.borrow_mut().take();
-
+        self.cancel_pending_actions();
         let current_page = { self.current_page_ref.borrow().clone() };
         if let Some(button) = self.find_button(current_page, button_id) {
             if let Some(actions) = &button.actions {
-                self.execute_actions(actions.clone());
+                if let Err(e) = self.execute_actions(actions.clone()) {
+                    error_log!("{}", e);
+                }
             }
         }
     }
 
+    /// Recursively substitutes ${param} placeholders in a YAML Value with provided parameters.
+    fn substitute_in_value(value: &mut serde_yaml_ng::Value, params: &HashMap<String, String>) {
+        match value {
+            serde_yaml_ng::Value::String(s) => {
+                // Replace all ${param} patterns in the string
+                for (key, val) in params {
+                    let pattern = format!("${{{}}}", key);
+                    *s = s.replace(&pattern, val);
+                }
+            }
+            serde_yaml_ng::Value::Sequence(seq) => {
+                for item in seq {
+                    Self::substitute_in_value(item, params);
+                }
+            }
+            serde_yaml_ng::Value::Mapping(map) => {
+                for (_, v) in map {
+                    Self::substitute_in_value(v, params);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Expands a single macro call into a sequence of actions.
+    /// This performs parameter substitution and parses the macro's actions.
+    fn expand_single_macro(&self, macro_call: MacroCall) -> Result<Vec<Action>, String> {
+        // Extract macro name and provided parameters
+        let (macro_name, provided_params) = match macro_call {
+            MacroCall::Simple(name) => (name, HashMap::new()),
+            MacroCall::WithParams { call, params } => (call, params),
+        };
+
+        // Find the macro definition
+        let macros = self.macros.as_ref()
+            .ok_or_else(|| format!("No macros defined"))?;
+        let macro_def = macros.get(&macro_name)
+            .ok_or_else(|| format!("Macro '{}' not found", macro_name))?;
+
+        // Merge provided params with default params (provided params override defaults)
+        let mut final_params = macro_def.params.clone().unwrap_or_default();
+        for (key, value) in provided_params {
+            final_params.insert(key, value);
+        }
+
+        // Clone the macro's actions Value for substitution
+        let mut actions_value = macro_def.actions.clone();
+
+        // Substitute parameters in the YAML value
+        Self::substitute_in_value(&mut actions_value, &final_params);
+
+        // Parse the substituted YAML into Vec<Action>
+        let actions: Vec<Action> = serde_yaml_ng::from_value(actions_value)
+            .map_err(|e| format!("Failed to parse macro '{}' actions after parameter substitution: {}", macro_name, e))?;
+
+        verbose_log!("Expanded macro '{}' with {} actions", macro_name, actions.len());
+        Ok(actions)
+    }
+
     /// Execute a sequence of actions. Returns when actions are complete, or pauses
-    /// when a verified focus action needs to wait for a FocusChanges event.
-    fn execute_actions(&self, actions: Vec<Action>) {
+    /// when a waitFor action needs to wait for an event to occur.
+    /// Returns Ok(()) if all actions succeed, Err(message) on failure.
+    fn execute_actions(&self, actions: Vec<Action>) -> Result<(), String> {
         let mut actions_iter = actions.into_iter();
 
         while let Some(action) = actions_iter.next() {
             match action {
                 Action::Exec { exec } => {
-                    std::process::Command::new("bash").arg("-c").arg(exec).spawn()
-                        .expect("Failed to execute command");
+                    std::process::Command::new("bash").arg("-c").arg(&exec).spawn()
+                        .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;
                 }
                 Action::Jump { jump } => {
-                    if let Err(e) = self.set_page(&jump, false) {
-                        error_log!("{}", e);
-                        return; // Abort sequence on error
-                    }
+                    self.set_page(&jump, false)?;
                 }
                 Action::AutoJump { autojump: _ } => {
                     let class = { self.current_class.borrow().clone() };
@@ -135,109 +253,171 @@ impl<'a> PagedDevice<'a> {
                     self.focus_changed(&class, &title, true)
                 }
                 Action::Focus { focus } => {
-                    let target = focus.target();
-                    let should_verify = focus.should_verify();
-
-                    // Always check if we already have the correct focus
-                    let current_class = { self.current_class.borrow().clone() };
-                    let current_title = { self.current_title.borrow().clone() };
-                    let target_lower = target.to_lowercase();
-                    let already_focused = current_class.to_lowercase().contains(&target_lower) ||
-                                        current_title.to_lowercase().contains(&target_lower);
-
-                    if already_focused {
-                        verbose_log!("Focus already on '{}', skipping focus request", target);
-                        // Continue to next action without requesting focus
-                    } else if should_verify {
-                        // Not focused, need to request and verify
-                        if let Err(e) = set_focus(&target.to_string(), &"".to_string()) {
-                            error_log!("{}", e);
-                            return; // Abort if focus fails
-                        }
-
-                        // Inject VerifyFocus action and pause queue
-                        let mut remaining: Vec<Action> = vec![
-                            Action::VerifyFocus { verify_focus: target.to_string() }
-                        ];
-                        remaining.extend(actions_iter);
-
-                        // Store pending queue and wait for FocusChanges event
-                        *self.pending_actions.borrow_mut() = Some(PendingActionQueue {
-                            actions: remaining,
-                            last_modified: Instant::now(),
-                            timeout: Duration::from_secs_f64(focus.timeout()),
-                        });
-
-                        verbose_log!("Focus action paused, waiting for FocusChanges event for '{}'", target);
-                        return; // Pause execution, will resume on FocusChanges
-                    } else {
-                        // Not focused, no verification: just request and continue
-                        if let Err(e) = set_focus(&target.to_string(), &"".to_string()) {
-                            error_log!("{}", e);
-                            return; // Abort if focus fails
-                        }
-                    }
+                    // Simple focus action: just request focus, no verification
+                    set_focus(&focus, &"".to_string())?;
+                    verbose_log!("Requested focus for '{}'", focus);
                 }
-                Action::VerifyFocus { verify_focus } => {
-                    // Check current focus immediately
-                    let current_class = { self.current_class.borrow().clone() };
-                    let current_title = { self.current_title.borrow().clone() };
+                Action::WaitFor { wait_for } => {
+                    let event_type = WaitEventType::from_str(wait_for.event())?;
 
-                    let target_lower = verify_focus.to_lowercase();
-                    let matches = current_class.to_lowercase().contains(&target_lower) ||
-                                 current_title.to_lowercase().contains(&target_lower);
+                    // Pause and wait for the event to occur
+                    let remaining: Vec<Action> = actions_iter.collect();
 
-                    if !matches {
-                        error_log!("VerifyFocus failed: expected '{}' but current is class='{}' title='{}'",
-                                  verify_focus, current_class, current_title);
-                        return; // Abort sequence
-                    }
+                    *self.pending_actions.borrow_mut() = Some(PendingActionQueue {
+                        actions: remaining,
+                        last_modified: Instant::now(),
+                        timeout: Duration::from_secs_f64(wait_for.timeout()),
+                        event_type: event_type.clone(),
+                    });
 
-                    verbose_log!("VerifyFocus succeeded for '{}'", verify_focus);
+                    verbose_log!("WaitFor paused, waiting for event '{}' (timeout: {}s)",
+                               event_type.as_str(), wait_for.timeout());
+                    return Ok(()); // Pause execution, will resume when event arrives
                 }
                 Action::Wait { wait } => {
-                    thread::sleep(Duration::from_millis((wait * 1000.0) as u64));
+                    // Schedule an async timer event instead of blocking
+                    self.time_manager.schedule_timer(
+                        self.device.serial.clone(),
+                        Duration::from_secs_f64(wait as f64)
+                    );
+
+                    // Pause and wait for the TimerComplete event
+                    let remaining: Vec<Action> = actions_iter.collect();
+
+                    *self.pending_actions.borrow_mut() = Some(PendingActionQueue {
+                        actions: remaining,
+                        last_modified: Instant::now(),
+                        timeout: Duration::from_secs_f64((wait as f64) * 2.0), // Generous timeout
+                        event_type: WaitEventType::Timer,
+                    });
+
+                    verbose_log!("Wait scheduled for {}s (non-blocking)", wait);
+                    return Ok(()); // Non-blocking return, will resume when TimerComplete arrives
                 }
                 Action::Key { key } => {
-                    send_key_combination(&key).unwrap_or_else(|e| { error_log!("{}", e) });
+                    send_key_combination(&key)?;
                 }
                 Action::Text { text } => {
-                    send_string(&text).unwrap_or_else(|e| { error_log!("{}", e) });
+                    send_string(&text)?;
+                }
+                Action::Try { try_actions, else_actions } => {
+                    // Execute try block
+                    let try_result = self.execute_actions(try_actions);
+
+                    if try_result.is_err() {
+                        // Try block failed
+                        if let Some(error_msg) = try_result.as_ref().err() {
+                            verbose_log!("Try block failed: {}", error_msg);
+                        }
+
+                        if let Some(else_acts) = else_actions {
+                            verbose_log!("Executing else block");
+                            // Execute else block - errors propagate
+                            self.execute_actions(else_acts)?;
+                        } else {
+                            // No else block, swallow error and continue
+                            verbose_log!("No else block, continuing");
+                        }
+                    }
+                    // If try succeeded, skip else block and continue
+                }
+                Action::Macro { macro_call } => {
+                    // Expand this macro only
+                    let expanded_actions = self.expand_single_macro(macro_call)?;
+
+                    // Prepend expanded actions to remaining actions
+                    let remaining: Vec<Action> = actions_iter.collect();
+                    let mut new_queue = expanded_actions;
+                    new_queue.extend(remaining);
+
+                    // Recursively execute the new queue
+                    return self.execute_actions(new_queue);
+                }
+                Action::Return { .. } => {
+                    verbose_log!("Return action: stopping execution successfully");
+                    return Ok(());
+                }
+                Action::Fail { .. } => {
+                    verbose_log!("Fail action: stopping execution with error");
+                    return Err("Fail action executed".to_string());
+                }
+                Action::And { and_actions } => {
+                    // Execute all actions sequentially, short-circuit on first error
+                    verbose_log!("AND: executing {} conditions", and_actions.len());
+                    for action in and_actions {
+                        self.execute_actions(vec![action])?;  // Propagate first error
+                    }
+                    verbose_log!("AND: all conditions succeeded");
+                    // All succeeded, continue
+                }
+                Action::Or { or_actions } => {
+                    // Execute actions sequentially until one succeeds
+                    verbose_log!("OR: trying {} conditions", or_actions.len());
+                    let mut last_error = None;
+                    for (idx, action) in or_actions.into_iter().enumerate() {
+                        match self.execute_actions(vec![action]) {
+                            Ok(_) => {
+                                verbose_log!("OR: condition {} succeeded", idx + 1);
+                                return Ok(());  // First success, stop and succeed
+                            }
+                            Err(e) => {
+                                verbose_log!("OR: condition {} failed: {}", idx + 1, e);
+                                last_error = Some(e);  // Store error, try next
+                            }
+                        }
+                    }
+                    // All failed, return last error
+                    return Err(last_error.unwrap_or_else(|| "All OR conditions failed".to_string()));
+                }
+                Action::Not { not_action } => {
+                    // Invert the result of the action
+                    verbose_log!("NOT: inverting action result");
+                    match self.execute_actions(vec![*not_action]) {
+                        Ok(_) => {
+                            verbose_log!("NOT: action succeeded, inverting to failure");
+                            return Err("NOT condition: action succeeded (inverted to failure)".to_string());
+                        }
+                        Err(e) => {
+                            verbose_log!("NOT: action failed ({}), inverting to success", e);
+                            // Action failed, NOT inverts to success, continue
+                        }
+                    }
                 }
             }
         }
+        Ok(())
     }
 
-    pub fn encoder_down(&self, encoder_id: u8) {
-        verbose_log!("Encoder down: {}", encoder_id);
+    pub fn encoder_down(&self, _encoder_id: u8) {
+        self.cancel_pending_actions();
     }
 
-    pub fn encoder_up(&self, encoder_id: u8) {
-        verbose_log!("Encoder up: {}", encoder_id);
+    pub fn encoder_up(&self, _encoder_id: u8) {
+        self.cancel_pending_actions();
     }
 
-    pub fn encoder_twist(&self, encoder_id: u8, value: i8) {
-        verbose_log!("Encoder twist: {} {}", encoder_id, value);
+    pub fn encoder_twist(&self, _encoder_id: u8, _value: i8) {
+        self.cancel_pending_actions();
     }
 
-    pub fn touch_point_down(&self, point_id: u8) {
-        verbose_log!("Touch point down: {}", point_id);
+    pub fn touch_point_down(&self, _point_id: u8) {
+        self.cancel_pending_actions();
     }
 
-    pub fn touch_point_up(&self, point_id: u8) {
-        verbose_log!("Touch point up: {}", point_id);
+    pub fn touch_point_up(&self, _point_id: u8) {
+        self.cancel_pending_actions();
     }
 
-    pub fn touch_screen_press(&self, x: u16, y: u16) {
-        verbose_log!("Touch screen press: {} {}", x, y);
+    pub fn touch_screen_press(&self, _x: u16, _y: u16) {
+        self.cancel_pending_actions();
     }
 
-    pub fn touch_screen_long_press(&self, x: u16, y: u16) {
-        verbose_log!("Touch screen long press: {} {}", x, y);
+    pub fn touch_screen_long_press(&self, _x: u16, _y: u16) {
+        self.cancel_pending_actions();
     }
 
-    pub fn touch_screen_swipe(&self, from: (u16, u16), to: (u16, u16)) {
-        verbose_log!("Touch screen swipe: {:?} {:?}", from, to);
+    pub fn touch_screen_swipe(&self, _from: (u16, u16), _to: (u16, u16)) {
+        self.cancel_pending_actions();
     }
 
     pub fn focus_changed(&self, class: &str, title: &str, force_change: bool) {
@@ -246,27 +426,13 @@ impl<'a> PagedDevice<'a> {
             self.current_title.replace(title.to_string());
         }
 
-        // Check if we have pending actions waiting for focus verification
-        if let Some(pending) = self.pending_actions.borrow_mut().take() {
-            // Check timeout
-            if pending.last_modified.elapsed() > pending.timeout {
-                verbose_log!("Pending action queue timed out, dropping");
-                return; // Don't process normal focus change
-            }
-
-            verbose_log!("Resuming pending actions after FocusChanges event");
-            // Resume execution with the pending queue
-            self.execute_actions(pending.actions);
-            return; // Don't process normal focus change
-        }
-
         if class.is_empty() && title.is_empty() {
             return;
         }
         if !force_change {
             let old_page = { self.current_page_ref.borrow().clone() };
-            if let Some(lock) = self.pages.pages.get_index(old_page).unwrap().1.lock {
-                if lock {
+            if let Some((_, page)) = self.pages.pages.get_index(old_page) {
+                if page.lock.unwrap_or(false) {
                     return;
                 }
             }
@@ -298,11 +464,15 @@ impl<'a> PagedDevice<'a> {
                 },
                 FocusChangeRestorePolicy::Main => {
                     let main_page = match &self.pages.main_page {
-                        Some(page_name) => page_name,
-                        None => self.pages.pages.get_index(0).unwrap().0,
+                        Some(page_name) => Some(page_name),
+                        None => self.pages.pages.get_index(0).map(|(name, _)| name),
                     };
-                    if let Err(e) = self.set_page(main_page, false) {
-                        error_log!("{}", e);
+                    if let Some(main_page) = main_page {
+                        if let Err(e) = self.set_page(main_page, false) {
+                            error_log!("{}", e);
+                        }
+                    } else {
+                        error_log!("Cannot restore to main page: no pages available");
                     }
                 }
                 FocusChangeRestorePolicy::Keep => {}
@@ -311,10 +481,14 @@ impl<'a> PagedDevice<'a> {
         } else {
             if force_change {
                 let main_page = match &self.pages.main_page {
-                    Some(page_name) => page_name,
-                    None => self.pages.pages.get_index(0).unwrap().0,
+                    Some(page_name) => Some(page_name),
+                    None => self.pages.pages.get_index(0).map(|(name, _)| name),
                 };
-                self.set_page(main_page, false).unwrap_or_else(|e| { error_log!("{}", e) });
+                if let Some(main_page) = main_page {
+                    self.set_page(main_page, false).unwrap_or_else(|e| { error_log!("{}", e) });
+                } else {
+                    error_log!("Cannot force change to main page: no pages available");
+                }
             }
         }
     }
@@ -340,7 +514,6 @@ impl<'a> PagedDevice<'a> {
         // Find the icon path if provided
         let image_exists = if image.len() > 0 { find_path(image, image_path.clone()) } else { Some(image.to_string()) };
         let image_path = if let Some(image) = image_exists {
-            verbose_log!("Found image path: {}", image);
             image
         } else {
             if image.len() > 0 {
@@ -532,11 +705,14 @@ impl<'a> PagedDevice<'a> {
             let old_page = { self.current_page_ref.borrow_mut().clone() };
             if page != old_page {
                 verbose_log!("Setting page to {}", page_name);
+
                 if is_auto {
                     if self.last_active_page.borrow().is_none() {
                         // only if the page that the old_page refers to is not locked, update the active page
-                        if self.pages.pages.get_index(old_page).map_or(true, |(_, target_page)| !target_page.lock.unwrap_or(false)) {
-                            self.last_active_page.replace(Some(self.pages.pages.get_index(old_page).unwrap().0.clone()));
+                        if let Some((name, target_page)) = self.pages.pages.get_index(old_page) {
+                            if !target_page.lock.unwrap_or(false) {
+                                self.last_active_page.replace(Some(name.clone()));
+                            }
                         }
                     }
                 } else {

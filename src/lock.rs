@@ -47,5 +47,7 @@ pub fn ensure_lock() {
 }
 
 pub fn cleanup_lock() {
-    remove_file(KEYDECK_LOCK).expect("Failed to remove lock file /tmp/.keydeck.lock");
+    // Silently ignore errors during cleanup - the program is exiting anyway
+    // and we don't want to panic during cleanup (which could cause double-panic)
+    let _ = remove_file(KEYDECK_LOCK);
 }
