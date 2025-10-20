@@ -19,6 +19,7 @@ mod keyboard;
 mod lock;
 mod session;
 mod text_renderer;
+mod graphics_renderer;
 mod services;
 mod dynamic_params;
 

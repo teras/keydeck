@@ -2,23 +2,11 @@ use ab_glyph::{FontArc, PxScale, Font, ScaleFont};
 use font_kit::family_name::FamilyName;
 use font_kit::properties::Properties;
 use font_kit::source::SystemSource;
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::{Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-lazy_static::lazy_static! {
-    /// Cache for rendered text images to avoid re-rendering the same text
-    static ref TEXT_CACHE: Mutex<HashMap<String, DynamicImage>> = Mutex::new(HashMap::new());
-}
 
 /// Padding around text when auto-sizing (percentage of image dimension)
 const AUTO_SIZE_PADDING: f32 = 0.1;
-
-/// Generate a cache key from text, font size, dimensions, background color, and image presence
-fn generate_cache_key(text: &str, font_size: f32, width: u32, height: u32, bg_color: &str, has_image: bool) -> String {
-    format!("{}:{}:{}x{}:{}:{}", text, font_size, width, height, bg_color, has_image)
-}
 
 /// Calculate line width for a given text and font
 fn calculate_line_width(font: &FontArc, line: &str, scale: PxScale) -> f32 {
@@ -131,85 +119,38 @@ fn load_system_font() -> Result<FontArc, String> {
     Err("No suitable system font found. Please install DejaVu Sans or Liberation Sans fonts.".to_string())
 }
 
-/// Render text on an image with the specified parameters
+/// Render text directly onto a canvas (in-place modification)
 ///
 /// # Arguments
+/// * `canvas` - Mutable reference to the canvas to draw on
 /// * `text` - The text to render
-/// * `font_size` - Optional font size (defaults to auto-sizing)
-/// * `width` - Image width in pixels
-/// * `height` - Image height in pixels
-/// * `bg_color` - Background color as RGB array (defaults to transparent if None)
+/// * `font_size` - Optional font size (defaults to auto-sizing based on canvas dimensions)
 /// * `text_color` - Text color as Rgba (defaults to white with full opacity)
 /// * `outline_color` - Optional outline color as RGB array (draws 1px outline around text)
-/// * `background_image` - Optional background image to draw first (scaled to fit while maintaining aspect ratio)
-///
-/// # Returns
-/// A DynamicImage with the rendered text
-pub fn render_text(
+pub fn render_text_on_canvas(
+    canvas: &mut RgbaImage,
     text: &str,
     font_size: Option<f32>,
-    width: u32,
-    height: u32,
-    bg_color: Option<[u8; 3]>,
     text_color: Option<Rgba<u8>>,
     outline_color: Option<[u8; 3]>,
-    background_image: Option<&DynamicImage>,
-) -> Result<DynamicImage, String> {
+) {
     // Load system font using fontconfig
-    let font = load_system_font()?;
+    let font = match load_system_font() {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("Failed to load system font: {}", e);
+            return;
+        }
+    };
 
-    // Determine font size: use provided value, or auto-calculate, or use default
+    let width = canvas.width();
+    let height = canvas.height();
+
+    // Determine font size: use provided value, or auto-calculate
     let font_size = match font_size {
         Some(size) => size,
         None => calculate_optimal_font_size(&font, text, width, height),
     };
-
-    // Create background RGBA (transparent by default, or use RGB if provided)
-    let bg_rgba = bg_color.map_or(
-        Rgba([0, 0, 0, 0]), // Transparent background
-        |rgb| Rgba([rgb[0], rgb[1], rgb[2], 255]) // Opaque background with provided RGB
-    );
-
-    let bg_color_str = format!("{:?}", bg_rgba);
-    let cache_key = generate_cache_key(text, font_size, width, height, &bg_color_str, background_image.is_some());
-
-    // Check cache first
-    {
-        let cache = TEXT_CACHE.lock().unwrap();
-        if let Some(cached_image) = cache.get(&cache_key) {
-            return Ok(cached_image.clone());
-        }
-    }
-
-    // Create background image
-    let mut image = RgbaImage::from_pixel(width, height, bg_rgba);
-
-    // If a background image is provided, draw it first (scaled to fit while maintaining aspect ratio)
-    if let Some(bg_img) = background_image {
-        let img_width = bg_img.width();
-        let img_height = bg_img.height();
-
-        // Calculate scaling factor to fit while maintaining aspect ratio
-        let scale_x = width as f32 / img_width as f32;
-        let scale_y = height as f32 / img_height as f32;
-        let scale = scale_x.min(scale_y);
-
-        let new_width = (img_width as f32 * scale) as u32;
-        let new_height = (img_height as f32 * scale) as u32;
-
-        // Center the image
-        let x_offset = (width - new_width) / 2;
-        let y_offset = (height - new_height) / 2;
-
-        // Resize and overlay the background image
-        let resized = bg_img.resize_exact(new_width, new_height, image::imageops::FilterType::Lanczos3);
-        imageproc::drawing::draw_filled_rect_mut(
-            &mut image,
-            imageproc::rect::Rect::at(0, 0).of_size(width, height),
-            bg_rgba,
-        );
-        image::imageops::overlay(&mut image, &resized, x_offset as i64, y_offset as i64);
-    }
 
     // Calculate scale for the font
     let scale = PxScale::from(font_size);
@@ -245,7 +186,7 @@ pub fn render_text(
                 let line_width = calculate_line_width(&font, line, scale);
                 let x = ((width as f32 - line_width) / 2.0).max(0.0) as i32 + dx;
 
-                draw_text_mut(&mut image, outline_rgba, x, y, scale, &font, line);
+                draw_text_mut(canvas, outline_rgba, x, y, scale, &font, line);
                 y += line_height as i32;
             }
         }
@@ -261,7 +202,7 @@ pub fn render_text(
         let x = ((width as f32 - line_width) / 2.0).max(0.0) as i32;
 
         // Draw the line
-        draw_text_mut(&mut image, text_color, x, y, scale, &font, line);
+        draw_text_mut(canvas, text_color, x, y, scale, &font, line);
 
         // Move to next line
         y += line_height as i32;
@@ -270,21 +211,11 @@ pub fn render_text(
     // Fix alpha channel: imageproc's draw_text_mut blends with background,
     // so on transparent backgrounds it produces low-alpha pixels.
     // We need to boost the alpha channel to make text visible when overlaid.
-    for pixel in image.pixels_mut() {
+    for pixel in canvas.pixels_mut() {
         if pixel[3] > 0 {
             // If there's any alpha, set it to full opacity
             // The RGB values are already correctly anti-aliased
             pixel[3] = 255;
         }
     }
-
-    let dynamic_image = DynamicImage::ImageRgba8(image);
-
-    // Cache the result
-    {
-        let mut cache = TEXT_CACHE.lock().unwrap();
-        cache.insert(cache_key, dynamic_image.clone());
-    }
-
-    Ok(dynamic_image)
 }

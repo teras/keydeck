@@ -55,6 +55,11 @@ pub struct KeyDeckConf {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub macros: Option<HashMap<String, Macro>>,
 
+    /// Global tick interval in seconds (default: 2.0, range: 1-60).
+    /// Controls how often the tick event fires globally for all devices.
+    #[serde(default = "default_tick_time")]
+    pub tick_time: f64,
+
     /// A collection of pages, each group identified by the device serial number. When a
     /// device is connected, the corresponding page group is loaded.
     /// When no specific page group is found, the "default" page group is used.
@@ -130,6 +135,10 @@ fn default_service_timeout() -> f64 {
     5.0 // 5 seconds
 }
 
+fn default_tick_time() -> f64 {
+    2.0 // 2 seconds
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum FocusChangeRestorePolicy {
@@ -190,6 +199,10 @@ pub struct Button {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
 
+    /// Graphics drawing configuration for the button.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draw: Option<DrawConfig>,
+
     /// Text configuration for the button label or caption.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextConfig>,
@@ -237,6 +250,87 @@ pub enum TextConfig {
         #[serde(skip_serializing_if = "Option::is_none")]
         font_size: Option<f32>,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct DrawConfig {
+    /// Type of graphic to draw
+    #[serde(rename = "type")]
+    pub graphic_type: GraphicType,
+
+    /// Data source - single ${...} expression that evaluates to number(s)
+    /// For multi_bar types, evaluates to space-separated numbers
+    pub value: String,
+
+    /// Value range [min, max]
+    pub range: [f32; 2],
+
+    /// Single solid color (hex format: "#RRGGBB" or "0xRRGGBB")
+    /// Mutually exclusive with color_map
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+
+    /// Color gradient map with smooth interpolation
+    /// Format: [[threshold, color], ...] sorted by threshold
+    /// Mutually exclusive with color
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_map: Option<Vec<ColorMapEntry>>,
+
+    /// Width in pixels (default: button width - 2*padding)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+
+    /// Height in pixels (default: button height - 2*padding)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+
+    /// Position [x, y] from top-left (default: centered)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<[i32; 2]>,
+
+    /// Padding around graphic (default: 5 pixels)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub padding: Option<u32>,
+
+    /// Direction for level types (default: bottom_to_top for vertical, left_to_right for horizontal)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Direction>,
+
+    /// Number of segments for bar/level displays (default: continuous fill)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<u32>,
+
+    /// Spacing between bars for multi_bar types (default: 2 pixels)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bar_spacing: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ColorMapEntry {
+    /// Array format: [threshold, color]
+    Array([serde_yaml_ng::Value; 2]),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphicType {
+    BarHorizontal,
+    BarVertical,
+    Gauge,
+    Level,
+    MultiBarHorizontal,
+    MultiBarVertical,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    LeftToRight,
+    RightToLeft,
+    TopToBottom,
+    BottomToTop,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -435,6 +529,14 @@ impl KeyDeckConf {
             eprintln!("\nPlease check your YAML syntax.");
             std::process::exit(1);
         });
+
+        // Validate tick_time is within range (1-60 seconds)
+        if conf.tick_time < 1.0 || conf.tick_time > 60.0 {
+            eprintln!("Error: tick_time must be between 1 and 60 seconds");
+            eprintln!("Current value: {}", conf.tick_time);
+            eprintln!("\nPlease update your config file at {}", path.display());
+            std::process::exit(1);
+        }
 
         // Resolve template inheritance for all pages
         let empty_templates = HashMap::new();

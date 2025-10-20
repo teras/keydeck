@@ -45,12 +45,14 @@ Global fields are configurations that apply universally across devices. Availabl
 
 - `image_dir`: *(optional)* A string path to the directory containing button images. If unspecified, KeyDeck uses the current working directory.
 - `colors`: A dictionary of named colors, specified in hexadecimal format (`0xRRGGBB` or `0xAARRGGBB`).
+- `tick_time`: *(optional)* Global tick interval in seconds. Controls how often the tick event fires for all devices. Must be between 1 and 60 seconds. Default: 2 seconds.
 - `services`: *(optional)* A dictionary of background services that execute commands periodically and cache their results. Services provide data that can be referenced in button text via `${service:name}` syntax. See [Services](#services) for details.
 
 #### Example
 
 ```yaml
 image_dir: /home/teras/Works/System/Drivers/StreamDeck
+tick_time: 2
 colors:
   background: 0x40FFFFFF
 
@@ -147,7 +149,7 @@ A device can have multiple pages, allowing dynamic switching based on applicatio
 
 - **inherits**: *(optional)* A list of templates this page inherits from. Templates can also inherit from other templates, enabling multi-level inheritance (e.g., page → layout → common_buttons). Buttons are merged in parent-first order, with child buttons overriding parent buttons. See [Template Inheritance](#template-inheritance) for details.
 
-- **on_tick**: *(optional)* A list of actions to execute on each tick event (fires every 1 second). Useful for periodic updates, status checks, or time-based automations. Inherited from templates if not defined in the page. **Note:** If the page defines its own `on_tick`, it completely overrides (replaces) the inherited `on_tick` - actions are not merged. See [Available Actions for Buttons](#available-actions-for-buttons) for supported action types.
+- **on_tick**: *(optional)* A list of actions to execute on each tick event (fires at the interval specified by the global `tick_time` setting, default 2 seconds). Useful for periodic updates, status checks, or time-based automations. Inherited from templates if not defined in the page. **Note:** If the page defines its own `on_tick`, it completely overrides (replaces) the inherited `on_tick` - actions are not merged. See [Available Actions for Buttons](#available-actions-for-buttons) for supported action types.
 
 - **window_class**: *(optional)* Specifies a window class that, when matched, automatically activates the page. This is useful for associating a page layout with a particular application.
 
@@ -169,7 +171,7 @@ default:
           - exec: "echo 'Button pressed'"
 ```
 
-In this example, the `on_tick` handler executes every 1 second while the page is active, showing a notification. This is useful for:
+In this example, the `on_tick` handler executes at the configured tick interval (default 2 seconds) while the page is active, showing a notification. This is useful for:
 - Updating time-sensitive button displays
 - Polling system status
 - Periodic health checks
@@ -183,9 +185,16 @@ When it is based on a template, the name of the button template is used as a par
 
 - **icon**: *(optional)* Specifies the path to an image file for the button. This icon will be displayed on the button. If `image_dir` is specified in the global configuration, icons are looked up relative to this directory.
 - **background**: *(optional)* Background color for the button, in hexadecimal format or referencing a named color.
+- **draw**: *(optional)* Graphics configuration for rendering dynamic visualizations (bars, gauges, levels). Drawn after icon/background, before text. See [Graphics Rendering](#graphics-rendering).
 - **text**: *(optional)* Text to display on the button. Supports dynamic parameters (see [Dynamic Parameters](#dynamic-parameters)).
 - **dynamic**: *(optional)* Boolean flag indicating this button should be automatically refreshed by `refresh:` action (no parameters). When true, the button updates whenever `refresh:` is called (typically in `on_tick` for auto-updating content).
 - **actions**: *(optional)* List of actions to execute when the button is pressed. Actions execute in sequence.
+
+**Rendering Order**: When multiple visual elements are specified, they are layered in this order:
+1. Background color (if specified)
+2. Icon image (if specified)
+3. Graphics (if `draw` is specified)
+4. Text (if specified)
 
 ##### Available Actions for Buttons
 
@@ -245,7 +254,7 @@ Buttons support multiple actions, executed in sequence:
   **Supported Event Types:**
   - **focus**: Waits for any window focus change
   - **page**: Waits for any page change
-  - **tick**: Waits for timer tick (every 1 second)
+  - **tick**: Waits for timer tick (fires at the global `tick_time` interval, default 2 seconds)
   - **sleep**: Waits for system sleep/wake event
   - **newdevice**: Waits for a new device to connect
   - **removeddevice**: Waits for a device to disconnect
@@ -500,7 +509,7 @@ The following events are dispatched by the system and can be waited for using `w
 |------------|----------------|-----------------|
 | `focus` | Window focus changes (class or title) | Central event loop in `server.rs` |
 | `page` | Page changes on the device | `set_page()` via central loop |
-| `tick` | Timer fires (every 1 second) | Central event loop in `server.rs` |
+| `tick` | Timer fires (at global `tick_time` interval, default 2s) | Central event loop in `server.rs` |
 | `sleep` | System enters/exits sleep mode | Central event loop in `server.rs` |
 | `newdevice` | New device connected | Central event loop in `server.rs` |
 | `removeddevice` | Device disconnected | Central event loop in `server.rs` |
@@ -1102,3 +1111,361 @@ pages:
 4. **Optimize commands**: Keep service commands fast (<1s) to avoid timeouts
 5. **Share services**: Multiple buttons can reference the same service efficiently
 
+
+## Graphics Rendering
+
+The `draw` configuration enables dynamic graphical visualizations on buttons, such as progress bars, gauges, level meters, and multi-bar displays. Graphics are rendered in real-time based on data from services, creating visual dashboards for system monitoring and status indicators.
+
+**Rendering Pipeline**: Graphics are composited in this order:
+1. Background color
+2. Icon image
+3. **Graphics** (from `draw` config)
+4. Text overlay
+
+### Basic Syntax
+
+```yaml
+button1:
+  background: "#000000"    # Optional: button background
+  draw:                    # Graphics layer
+    type: bar_horizontal   # Required: graphic type
+    value: ${service:cpu}  # Required: data source
+    range: [0, 100]        # Required: [min, max] values
+    color: "#00ff00"       # Optional: solid color
+  text: "CPU"              # Optional: text overlay
+```
+
+### Graphic Types
+
+#### 1. `bar_horizontal`
+Horizontal progress bar filling from left to right.
+
+**Use cases**: Network speed, download progress, memory usage
+
+**Example**:
+```yaml
+button1:
+  background: "#1a1a1a"
+  draw:
+    type: bar_horizontal
+    value: ${service:network_speed}
+    range: [0, 100]
+    color: "#00ff00"
+  text: "Network"
+```
+
+#### 2. `bar_vertical`
+Vertical progress bar filling from bottom to top (default) or top to bottom.
+
+**Use cases**: CPU usage, volume levels, temperature
+
+**Example**:
+```yaml
+button2:
+  background: "#1a1a1a"
+  draw:
+    type: bar_vertical
+    value: ${service:cpu_usage}
+    range: [0, 100]
+    direction: bottom_to_top  # Default direction
+    color: "#ff6600"
+  text: "CPU"
+```
+
+#### 3. `gauge`
+Circular arc gauge (speedometer style), sweeping from bottom-left to bottom-right.
+
+**Use cases**: Percentage indicators, RPM, speed displays
+
+**Example**:
+```yaml
+button3:
+  draw:
+    type: gauge
+    value: ${service:disk_usage}
+    range: [0, 100]
+    color: "#00ffff"
+```
+
+#### 4. `level`
+Segmented level indicator (VU meter style), vertical or horizontal.
+
+**Use cases**: Audio levels, battery indicator, signal strength
+
+**Example**:
+```yaml
+button4:
+  draw:
+    type: level
+    value: ${service:volume}
+    range: [0, 100]
+    segments: 10           # 10 discrete LED-style segments
+    direction: bottom_to_top
+    color: "#00ff00"
+```
+
+#### 5. `multi_bar_vertical`
+Multiple vertical bars side-by-side (e.g., CPU cores, network interfaces).
+
+**Service must return space-separated values**: `"45 67 23 89"`
+
+**Example**:
+```yaml
+services:
+  cpu_cores: "top -bn1 | awk '/Cpu/ {print $2}' | head -4 | tr '\n' ' '"
+
+button5:
+  draw:
+    type: multi_bar_vertical
+    value: ${service:cpu_cores}
+    range: [0, 100]
+    color: "#ff00ff"
+    bar_spacing: 2
+  text: "Cores"
+```
+
+#### 6. `multi_bar_horizontal`
+Multiple horizontal bars stacked vertically.
+
+**Example**:
+```yaml
+button6:
+  draw:
+    type: multi_bar_horizontal
+    value: ${service:network_interfaces}
+    range: [0, 100]
+    color: "#00ffff"
+    bar_spacing: 2
+```
+
+### Configuration Parameters
+
+#### Required Parameters
+
+- **type**: Graphic type (`bar_horizontal`, `bar_vertical`, `gauge`, `level`, `multi_bar_vertical`, `multi_bar_horizontal`)
+- **value**: Data source using `${service:name}` syntax (or static number for testing)
+- **range**: Array `[min, max]` defining the value range
+
+#### Optional Parameters
+
+- **color**: Solid color in hex format (`"#RRGGBB"` or `"0xRRGGBB"`). Default: white
+- **color_map**: Gradient color map with smooth interpolation (see [Color Gradients](#color-gradients))
+- **bg_color**: Background color for graphic area. Default: transparent (shows button background)
+- **width**: Graphic width in pixels. Default: button width minus padding
+- **height**: Graphic height in pixels. Default: button height minus padding
+- **position**: Array `[x, y]` for top-left position. Default: centered
+- **padding**: Padding around graphic in pixels. Default: 5
+- **direction**: Fill direction for bars/levels (`bottom_to_top`, `top_to_bottom`, `left_to_right`, `right_to_left`)
+- **segments**: Number of discrete blocks for segmented display (VU meter style). Default: continuous fill
+- **bar_spacing**: Spacing between bars for multi_bar types in pixels. Default: 2
+
+### Color Gradients
+
+Use `color_map` instead of `color` for smooth color transitions based on value percentage.
+
+**Format**: Array of `[threshold, color]` pairs where threshold is 0-100.
+
+**Example - Traffic Light Gradient**:
+```yaml
+button1:
+  draw:
+    type: bar_vertical
+    value: ${service:cpu}
+    range: [0, 100]
+    color_map:
+      - [0, "#00ff00"]      # Green at 0%
+      - [50, "#ffff00"]     # Yellow at 50%
+      - [80, "#ff6600"]     # Orange at 80%
+      - [100, "#ff0000"]    # Red at 100%
+    # Colors interpolate smoothly between thresholds
+```
+
+### Segments (VU Meter Style)
+
+The `segments` parameter divides graphics into discrete LED-style blocks instead of continuous fill.
+
+**Without segments** (continuous):
+```yaml
+draw:
+  type: bar_horizontal
+  value: ${service:volume}
+  range: [0, 100]
+  # Fills smoothly: ████████░░░░░░
+```
+
+**With segments** (discrete blocks):
+```yaml
+draw:
+  type: bar_horizontal
+  value: ${service:volume}
+  range: [0, 100]
+  segments: 10
+  # Fills in blocks: ██ ██ ██ ░░ ░░
+```
+
+**VU Meter Example**:
+```yaml
+button_audio:
+  draw:
+    type: level
+    value: ${service:audio_level}
+    range: [0, 100]
+    direction: bottom_to_top
+    segments: 12
+    color_map:
+      - [0, "#00ff00"]     # Green for low
+      - [70, "#ffff00"]    # Yellow for medium
+      - [90, "#ff0000"]    # Red for peaks
+```
+
+### Complete Examples
+
+#### System Monitor Dashboard
+
+```yaml
+services:
+  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}' | sed 's/%Cpu(s)://'"
+  memory: "free | awk 'NR==2{printf \"%.0f\", $3*100/$2}'"
+  disk: "df -h / | tail -1 | awk '{print $5}' | sed 's/%//'"
+  network_speed: "cat /sys/class/net/eth0/statistics/rx_bytes"  # Simplified
+
+pages:
+  Dashboard:
+    on_tick:
+      - refresh:  # Update all dynamic buttons every second
+
+    button1:
+      dynamic: true
+      background: "#1a1a1a"
+      draw:
+        type: bar_vertical
+        value: ${service:cpu}
+        range: [0, 100]
+        color_map:
+          - [0, "#00ff00"]
+          - [70, "#ffff00"]
+          - [90, "#ff0000"]
+      text: "CPU\n${service:cpu}%"
+
+    button2:
+      dynamic: true
+      background: "#1a1a1a"
+      draw:
+        type: bar_vertical
+        value: ${service:memory}
+        range: [0, 100]
+        color: "#00ffff"
+      text: "RAM\n${service:memory}%"
+
+    button3:
+      dynamic: true
+      background: "#1a1a1a"
+      draw:
+        type: gauge
+        value: ${service:disk}
+        range: [0, 100]
+        color_map:
+          - [0, "#00ff00"]
+          - [80, "#ff9900"]
+          - [95, "#ff0000"]
+      text: "Disk\n${service:disk}%"
+```
+
+#### Multi-Core CPU Monitor
+
+```yaml
+services:
+  cpu_cores:
+    exec: "top -bn2 -d 0.5 | awk '/Cpu/ {print 100-$8}' | tail -4 | tr '\n' ' '"
+    interval: 1
+    timeout: 3
+
+pages:
+  Main:
+    on_tick:
+      - refresh:
+
+    button1:
+      dynamic: true
+      background: "#000000"
+      draw:
+        type: multi_bar_vertical
+        value: ${service:cpu_cores}
+        range: [0, 100]
+        color_map:
+          - [0, "#00ff00"]
+          - [75, "#ffff00"]
+          - [90, "#ff0000"]
+        bar_spacing: 2
+        segments: 10  # Each core shows as segmented bar
+      text: "CPU Cores"
+```
+
+#### Audio VU Meters (Stereo)
+
+```yaml
+services:
+  audio_left: "pactl list sinks | grep 'Volume:' | awk '{print $5}' | sed 's/%//'"
+  audio_right: "pactl list sinks | grep 'Volume:' | awk '{print $12}' | sed 's/%//'"
+
+pages:
+  Audio:
+    button1:
+      dynamic: true
+      draw:
+        type: level
+        value: ${service:audio_left}
+        range: [0, 100]
+        direction: bottom_to_top
+        segments: 15
+        color_map:
+          - [0, "#00ff00"]
+          - [80, "#ffff00"]
+          - [95, "#ff0000"]
+      text: "L"
+
+    button2:
+      dynamic: true
+      draw:
+        type: level
+        value: ${service:audio_right}
+        range: [0, 100]
+        direction: bottom_to_top
+        segments: 15
+        color_map:
+          - [0, "#00ff00"]
+          - [80, "#ffff00"]
+          - [95, "#ff0000"]
+      text: "R"
+```
+
+### Best Practices
+
+1. **Combine with services**: Graphics work best with background services providing real-time data
+2. **Mark as dynamic**: Always use `dynamic: true` for buttons with draw configs that reference services
+3. **Use on_tick for updates**: Configure `on_tick: - refresh:` in your page to auto-update graphics
+4. **Choose appropriate types**:
+   - Bars: Linear metrics (percentages, speeds)
+   - Gauges: Rotary-style indicators (RPM, speed, percentage)
+   - Levels: Segmented displays (audio, battery, signal)
+   - Multi-bars: Comparing multiple values (CPU cores, network interfaces)
+5. **Color coding**: Use `color_map` to indicate states (green=good, yellow=warning, red=critical)
+6. **Layering**: Combine graphics with text overlays for labeled displays
+
+### Troubleshooting
+
+**Graphics not showing**:
+- Verify service is defined and running
+- Check value is numeric (use `echo ${service:name}` for debugging)
+- Ensure `dynamic: true` is set
+- Confirm `on_tick` includes `refresh:`
+
+**Wrong colors**:
+- Verify hex color format: `"#RRGGBB"` or `"0xRRGGBB"`
+- Check color_map thresholds are in 0-100 range
+- Ensure thresholds are in ascending order
+
+**Multi-bar not displaying all bars**:
+- Verify service returns space-separated values
+- Check that all values are numeric
+- Ensure range accommodates all values

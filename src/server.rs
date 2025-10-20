@@ -47,7 +47,7 @@ pub fn start_server() {
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
     listener_focus(&tx, &still_active.clone());
     listener_signal(&tx);
-    listener_tick(&tx, &still_active.clone());
+    listener_tick(&tx, &still_active.clone(), conf.tick_time);
 
     let mut devices: HashMap<String, PagedDevice> = HashMap::new();
     for message in rx {

@@ -4,8 +4,9 @@ use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::{DeviceEvent, WaitEventType};
 use crate::focus_property::set_focus;
 use crate::keyboard::{send_key_combination, send_string};
-use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig};
+use crate::pages::{Action, Button, ButtonConfig, DrawConfig, FocusChangeRestorePolicy, GraphicType, Direction, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig};
 use crate::text_renderer;
+use crate::graphics_renderer;
 use crate::services::ServicesState;
 use crate::dynamic_params::evaluate_dynamic_params;
 use crate::{error_log, verbose_log};
@@ -552,6 +553,52 @@ impl<'a> PagedDevice<'a> {
         }
     }
 
+    /// Render a graphic based on DrawConfig
+    /// Evaluates dynamic parameters, parses colors, and calls appropriate renderer
+    /// Get color for a value using color_map if available, otherwise use base_color
+    fn get_color_for_value(&self, draw_config: &DrawConfig, value: f32, range: (f32, f32), base_color: (u8, u8, u8)) -> (u8, u8, u8) {
+        if let Some(ref color_map) = draw_config.color_map {
+            let percent = if range.1 > range.0 {
+                ((value - range.0) / (range.1 - range.0) * 100.0).clamp(0.0, 100.0)
+            } else {
+                0.0
+            };
+            self.parse_color_map(color_map, percent).unwrap_or(base_color)
+        } else {
+            base_color
+        }
+    }
+
+
+    /// Parse color_map into format expected by graphics_renderer
+    fn parse_color_map(&self, color_map: &[crate::pages::ColorMapEntry], value_percent: f32) -> Option<(u8, u8, u8)> {
+        let mut parsed_map: Vec<(f32, (u8, u8, u8))> = Vec::new();
+
+        for entry in color_map {
+            match entry {
+                crate::pages::ColorMapEntry::Array(arr) => {
+                    // arr[0] is threshold (number), arr[1] is color (string)
+                    if let Some(threshold) = arr[0].as_f64() {
+                        if let Some(color_str) = arr[1].as_str() {
+                            if let Ok(rgb) = graphics_renderer::parse_hex_color(color_str) {
+                                parsed_map.push((threshold as f32, rgb));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if parsed_map.is_empty() {
+            return None;
+        }
+
+        // Sort by threshold
+        parsed_map.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        Some(graphics_renderer::calculate_color_from_map(value_percent, &parsed_map))
+    }
+
     /// Invalidates cache and refreshes a single button with dynamic parameter evaluation.
     /// Returns error if button number is invalid or button doesn't exist in config.
     fn invalidate_and_refresh_button(&self, button_id: u8) -> Result<(), String> {
@@ -581,11 +628,11 @@ impl<'a> PagedDevice<'a> {
         let mut invalid_indices = Vec::new();
         if let Some(icon) = &button.icon {
             self.update_button(icon, self.image_dir.clone(), button.background.clone(),
-                              button.text.clone(), button.outline.clone(),
+                              button.draw.clone(), button.text.clone(), button.outline.clone(),
                               button.text_color.clone(), button_id, &mut invalid_indices);
         } else {
-            self.update_button("", None, button.background.clone(), button.text.clone(),
-                              button.outline.clone(), button.text_color.clone(),
+            self.update_button("", None, button.background.clone(), button.draw.clone(),
+                              button.text.clone(), button.outline.clone(), button.text_color.clone(),
                               button_id, &mut invalid_indices);
         }
 
@@ -596,7 +643,7 @@ impl<'a> PagedDevice<'a> {
         Ok(())
     }
 
-    fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
+    fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, draw: Option<DrawConfig>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
         // Get the button size from the device's image format
         let (width, height) = {
             let (w, h) = self.device.get_deck().kind().key_image_format().size;
@@ -653,91 +700,158 @@ impl<'a> PagedDevice<'a> {
             button_backgrounds[button_index as usize - 1] = bg_color_str.to_string();
         }
 
-        // If we have text but no icon, render text directly
-        if has_text && image_path.is_empty() {
-            let font_size = if let Some(TextConfig::Detailed { font_size, .. }) = text {
-                font_size
-            } else {
-                None
-            };
+        // Simple linear pipeline: Create ONE canvas, then modify it step by step
 
-            // Parse background color or default to black
-            let bg_rgb = if let Some(ref bg) = background {
-                match string_to_color(bg, &self.colors) {
-                    Ok((r, g, b)) => Some([r, g, b]),
-                    Err(_) => Some([0, 0, 0]),
-                }
-            } else {
-                Some([0, 0, 0])
-            };
-
-            // Parse outline color if provided
-            let outline_rgb = if let Some(ref outline_str) = outline {
-                match string_to_color(outline_str, &self.colors) {
-                    Ok((r, g, b)) => Some([r, g, b]),
-                    Err(_) => None,
-                }
-            } else {
-                None
-            };
-
-            // Parse text color if provided (defaults to white in renderer)
-            let text_color_rgba = if let Some(ref color_str) = text_color {
-                match string_to_color(color_str, &self.colors) {
-                    Ok((r, g, b)) => Some(image::Rgba([r, g, b, 255u8])),
-                    Err(_) => None,
-                }
-            } else {
-                None
-            };
-
-            match text_renderer::render_text(&text_str, font_size, width, height, bg_rgb, text_color_rgba, outline_rgb, None) {
-                Ok(rendered_image) => {
-                    self.device
-                        .set_button_image(button_index - 1, rendered_image)
-                        .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
-                }
-                Err(e) => {
-                    error_log!("Error rendering text: {}", e);
-                    invalid_indices.push(button_index);
-                }
+        // Step 1: Create base canvas with background color
+        let bg_rgb = if let Some(ref bg) = background {
+            match string_to_color(bg, &self.colors) {
+                Ok((r, g, b)) => [r, g, b],
+                Err(_) => [0, 0, 0],
             }
-            return;
-        }
-
-        // If no icon and no text, mark as invalid
-        if image_path.is_empty() {
-            invalid_indices.push(button_index);
-            return;
-        }
-
-        // Load the icon image
-        let mut image_data = if let Ok(image_data) = open(&image_path) {
-            image_data
         } else {
-            error_log!("Error while opening image: {}", image_path);
-            invalid_indices.push(button_index);
-            return;
+            [0, 0, 0]
         };
+        let bg_color = Rgba([bg_rgb[0], bg_rgb[1], bg_rgb[2], 255]);
+        let mut canvas = RgbaImage::from_pixel(width, height, bg_color);
 
-        // Apply background color if provided
-        if !bg_color_str.is_empty() {
-            match string_to_color(bg_color_str, &self.colors) {
-                Ok((r, g, b)) => {
-                    let bg_color = Rgba([r, g, b, 255]);
-                    let mut background = RgbaImage::from_pixel(image_data.width(), image_data.height(), bg_color);
-                    overlay(&mut background, &image_data, 0, 0);
-                    image_data = DynamicImage::from(background);
+        // Step 2: Overlay icon image if provided (scaled with Lanczos filter)
+        if !image_path.is_empty() {
+            match open(&image_path) {
+                Ok(icon_img) => {
+                    let img_width = icon_img.width();
+                    let img_height = icon_img.height();
+
+                    // Calculate scaling factor to fit while maintaining aspect ratio
+                    let scale_x = width as f32 / img_width as f32;
+                    let scale_y = height as f32 / img_height as f32;
+                    let scale = scale_x.min(scale_y);
+
+                    let new_width = (img_width as f32 * scale) as u32;
+                    let new_height = (img_height as f32 * scale) as u32;
+
+                    // Center the image
+                    let x_offset = (width - new_width) / 2;
+                    let y_offset = (height - new_height) / 2;
+
+                    // Resize and overlay with Lanczos filter
+                    let resized = icon_img.resize_exact(new_width, new_height, image::imageops::FilterType::Lanczos3);
+                    overlay(&mut canvas, &resized, x_offset as i64, y_offset as i64);
                 }
-                Err(e) => {
-                    error_log!("{}", e);
+                Err(_) => {
+                    error_log!("Error while opening image: {}", image_path);
+                    invalid_indices.push(button_index);
+                    return;
                 }
             }
         }
 
-        // If we have both icon and text, render text on top of the image
+        // Step 3: Render graphics directly on the canvas
+        if let Some(ref draw_config) = draw {
+            verbose_log!("Rendering graphic: type={:?}, value={}", draw_config.graphic_type, draw_config.value);
+
+            // Evaluate dynamic parameters in value
+            let mut value_str = draw_config.value.clone();
+            if value_str.contains("${") {
+                let params = evaluate_dynamic_params(&value_str, self.services_config, &self.services_state);
+                for (pattern, value) in params {
+                    let full_pattern = format!("${{{}}}", pattern);
+                    value_str = value_str.replace(&full_pattern, &value);
+                }
+            }
+
+            // Calculate position with padding or use explicit position
+            let (x, y) = if let Some(pos) = draw_config.position {
+                (pos[0] as i64, pos[1] as i64)
+            } else {
+                let padding = draw_config.padding.unwrap_or(5) as i64;
+                (padding, padding)
+            };
+
+            // Calculate dimensions
+            let padding = draw_config.padding.unwrap_or(5);
+            let draw_width = draw_config.width.unwrap_or(width.saturating_sub(2 * padding));
+            let draw_height = draw_config.height.unwrap_or(height.saturating_sub(2 * padding));
+
+            // Parse color
+            let base_color = if let Some(ref color_str) = draw_config.color {
+                match graphics_renderer::parse_hex_color(color_str) {
+                    Ok(rgb) => rgb,
+                    Err(e) => {
+                        error_log!("Error parsing draw color: {}", e);
+                        (255, 255, 255)
+                    }
+                }
+            } else {
+                (255, 255, 255)
+            };
+
+            let range = (draw_config.range[0], draw_config.range[1]);
+
+            // Render based on graphic type
+            match &draw_config.graphic_type {
+                GraphicType::BarHorizontal => {
+                    if let Ok(value) = value_str.trim().parse::<f32>() {
+                        let color = self.get_color_for_value(draw_config, value, range, base_color);
+                        graphics_renderer::render_bar_horizontal(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments);
+                    }
+                }
+                GraphicType::BarVertical => {
+                    if let Ok(value) = value_str.trim().parse::<f32>() {
+                        let color = self.get_color_for_value(draw_config, value, range, base_color);
+                        let bottom_to_top = !matches!(draw_config.direction, Some(Direction::TopToBottom));
+                        graphics_renderer::render_bar_vertical(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments, bottom_to_top);
+                    }
+                }
+                GraphicType::Gauge => {
+                    if let Ok(value) = value_str.trim().parse::<f32>() {
+                        let color = self.get_color_for_value(draw_config, value, range, base_color);
+                        graphics_renderer::render_gauge(&mut canvas, x, y, value, range, draw_width, draw_height, color);
+                    }
+                }
+                GraphicType::Level => {
+                    if let Ok(value) = value_str.trim().parse::<f32>() {
+                        let color = self.get_color_for_value(draw_config, value, range, base_color);
+                        let segments = draw_config.segments.unwrap_or(10);
+                        let reverse = !matches!(draw_config.direction, Some(Direction::TopToBottom));
+                        graphics_renderer::render_level(&mut canvas, x, y, value, range, draw_width, draw_height, color, segments, true, reverse);
+                    }
+                }
+                GraphicType::MultiBarVertical => {
+                    let values: Vec<f32> = value_str.split_whitespace()
+                        .filter_map(|s| s.parse::<f32>().ok())
+                        .collect();
+                    if !values.is_empty() {
+                        let bar_spacing = draw_config.bar_spacing.unwrap_or(2);
+
+                        // Calculate color for each bar based on its value
+                        let colors: Vec<(u8, u8, u8)> = values.iter()
+                            .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
+                            .collect();
+
+                        graphics_renderer::render_multi_bar_vertical_colored(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments);
+                    }
+                }
+                GraphicType::MultiBarHorizontal => {
+                    let values: Vec<f32> = value_str.split_whitespace()
+                        .filter_map(|s| s.parse::<f32>().ok())
+                        .collect();
+                    if !values.is_empty() {
+                        let bar_spacing = draw_config.bar_spacing.unwrap_or(2);
+
+                        // Calculate color for each bar based on its value
+                        let colors: Vec<(u8, u8, u8)> = values.iter()
+                            .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
+                            .collect();
+
+                        graphics_renderer::render_multi_bar_horizontal_colored(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments);
+                    }
+                }
+            }
+        }
+
+        // Step 4: Render text on the canvas
         if has_text {
-            verbose_log!("Overlaying text '{}' on image", text_str);
+            verbose_log!("Rendering text '{}' on canvas", text_str);
             let font_size = if let Some(TextConfig::Detailed { font_size, .. }) = text {
                 font_size
             } else {
@@ -764,21 +878,11 @@ impl<'a> PagedDevice<'a> {
                 None
             };
 
-            // Render text with the image as background (button dimensions, image scaled to fit)
-            match text_renderer::render_text(&text_str, font_size, width, height, background.as_ref().and_then(|bg| {
-                match string_to_color(bg, &self.colors) {
-                    Ok((r, g, b)) => Some([r, g, b]),
-                    Err(_) => Some([0, 0, 0]),
-                }
-            }), text_color_rgba, outline_rgb, Some(&image_data)) {
-                Ok(combined_image) => {
-                    image_data = combined_image;
-                }
-                Err(e) => {
-                    error_log!("Error rendering text with image: {}", e);
-                }
-            }
+            // Render text directly onto the canvas
+            text_renderer::render_text_on_canvas(&mut canvas, &text_str, font_size, text_color_rgba, outline_rgb);
         }
+
+        let image_data = DynamicImage::ImageRgba8(canvas);
 
         // Set the final button image
         self.device
@@ -793,12 +897,12 @@ impl<'a> PagedDevice<'a> {
         for button_index in 1..=button_count {
             if let Some(button) = self.find_button(current_page, button_index).as_ref() {
                 if let Some(icon) = &button.icon {
-                    self.update_button(icon, self.image_dir.clone(), button.background.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
+                    self.update_button(icon, self.image_dir.clone(), button.background.clone(), button.draw.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
                 } else {
-                    self.update_button("", None, button.background.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
+                    self.update_button("", None, button.background.clone(), button.draw.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
                 }
             } else {
-                self.update_button("", None, None, None, None, None, button_index, &mut invalid_indices);
+                self.update_button("", None, None, None, None, None, None, button_index, &mut invalid_indices);
             }
         }
         self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
