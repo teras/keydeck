@@ -46,6 +46,7 @@ pub struct PagedDevice<'a> {
     button_backgrounds: RefCell<Vec<String>>,
     active_events: Arc<AtomicBool>,
     last_active_page: RefCell<Option<String>>,
+    last_auto_target_page: RefCell<Option<String>>,
     current_class: RefCell<String>,
     current_title: RefCell<String>,
     pending_actions: RefCell<Option<PendingActionQueue>>,
@@ -83,6 +84,7 @@ impl<'a> PagedDevice<'a> {
             button_backgrounds: RefCell::new(vec![String::new(); button_count]),
             active_events,
             last_active_page: RefCell::new(None),
+            last_auto_target_page: RefCell::new(None),
             current_class: RefCell::new(String::new()),
             current_title: RefCell::new(String::new()),
             pending_actions: RefCell::new(None),
@@ -497,58 +499,75 @@ impl<'a> PagedDevice<'a> {
                 }
             }
         }
+
+        // Determine what page the auto-matching logic would select
+        let mut target_page: Option<String> = None;
         for (name, page) in &self.pages.pages {
             if let Some(class_pattern) = &page.window_class {
                 if class.to_lowercase().contains(&class_pattern.to_lowercase()) {
-                    if let Err(error) = self.set_page(name, true) {
-                        error_log!("{}", error);
-                    }
-                    return;
+                    target_page = Some(name.clone());
+                    break;
                 }
             }
             if let Some(title_pattern) = &page.window_title {
                 if title.to_lowercase().contains(&title_pattern.to_lowercase()) {
-                    if let Err(error) = self.set_page(name, true) {
-                        error_log!("{}", error);
-                    }
-                    return;
+                    target_page = Some(name.clone());
+                    break;
                 }
             }
         }
-        // Roll back last page if no application matches
-        let last_active_page = { self.last_active_page.borrow().clone() };
-        if let Some(last_active_page) = last_active_page {
-            match self.pages.restore_mode {
-                FocusChangeRestorePolicy::Last => if let Err(e) = self.set_page(&last_active_page, false) {
-                    error_log!("{}", e);
-                },
-                FocusChangeRestorePolicy::Main => {
-                    let main_page = match &self.pages.main_page {
-                        Some(page_name) => Some(page_name),
-                        None => self.pages.pages.get_index(0).map(|(name, _)| name),
-                    };
-                    if let Some(main_page) = main_page {
-                        if let Err(e) = self.set_page(main_page, false) {
-                            error_log!("{}", e);
-                        }
-                    } else {
-                        error_log!("Cannot restore to main page: no pages available");
-                    }
-                }
-                FocusChangeRestorePolicy::Keep => {}
+
+        // Compare with the last auto-selected target page (skip if force_change=true, e.g., from auto_jump)
+        if !force_change {
+            let last_target = { self.last_auto_target_page.borrow().clone() };
+            if target_page == last_target {
+                // Target hasn't changed, swallow the event
+                verbose_log!("Focus event: target page unchanged ({:?}), staying on current page", target_page);
+                return;
             }
-            self.last_active_page.take();
-        } else {
-            if force_change {
+        }
+
+        // Target has changed (or force_change=true), update tracking and proceed with page change
+        verbose_log!("Focus event: target page changed to {:?} (force_change={})", target_page, force_change);
+        self.last_auto_target_page.replace(target_page.clone());
+
+        // If we found a matching page, switch to it
+        if let Some(page_name) = target_page {
+            if let Err(error) = self.set_page(&page_name, true) {
+                error_log!("{}", error);
+            }
+            return;
+        }
+
+        // No matching page found - apply restore policy based on restore_mode
+        match self.pages.restore_mode {
+            FocusChangeRestorePolicy::Last => {
+                // Restore to last active page if available
+                let last_active_page = { self.last_active_page.borrow().clone() };
+                if let Some(last_active_page) = last_active_page {
+                    if let Err(e) = self.set_page(&last_active_page, false) {
+                        error_log!("{}", e);
+                    }
+                    self.last_active_page.take();
+                }
+            }
+            FocusChangeRestorePolicy::Main => {
+                // Always restore to main page when no match found
                 let main_page = match &self.pages.main_page {
                     Some(page_name) => Some(page_name),
                     None => self.pages.pages.get_index(0).map(|(name, _)| name),
                 };
                 if let Some(main_page) = main_page {
-                    self.set_page(main_page, false).unwrap_or_else(|e| { error_log!("{}", e) });
+                    if let Err(e) = self.set_page(main_page, false) {
+                        error_log!("{}", e);
+                    }
                 } else {
-                    error_log!("Cannot force change to main page: no pages available");
+                    error_log!("Cannot restore to main page: no pages available");
                 }
+                self.last_active_page.take();
+            }
+            FocusChangeRestorePolicy::Keep => {
+                // Keep current page, do nothing
             }
         }
     }
