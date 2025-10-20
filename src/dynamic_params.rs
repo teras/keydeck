@@ -4,6 +4,8 @@ use chrono::Local;
 use regex::Regex;
 use std::collections::HashMap;
 use std::env;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 /// Error indicator displayed when dynamic parameter evaluation fails
 pub const ERROR_INDICATOR: &str = "⚠";
@@ -19,6 +21,7 @@ pub fn evaluate_dynamic_params(
     text: &str,
     services_config: &Option<HashMap<String, ServiceConfig>>,
     services_state: &ServicesState,
+    services_active: &Arc<AtomicBool>,
 ) -> HashMap<String, String> {
     let mut params = HashMap::new();
 
@@ -33,7 +36,7 @@ pub fn evaluate_dynamic_params(
             match provider {
                 "time" => evaluate_time_provider(arg),
                 "env" => evaluate_env_provider(arg),
-                "service" => evaluate_service_provider(arg, services_config, services_state),
+                "service" => evaluate_service_provider(arg, services_config, services_state, services_active),
                 _ => {
                     // Unknown provider
                     ERROR_INDICATOR.to_string()
@@ -72,6 +75,7 @@ fn evaluate_service_provider(
     service_name: &str,
     services_config: &Option<HashMap<String, ServiceConfig>>,
     services_state: &ServicesState,
+    services_active: &Arc<AtomicBool>,
 ) -> String {
     // Check if services are configured
     let config_map = match services_config {
@@ -80,7 +84,7 @@ fn evaluate_service_provider(
     };
 
     // Ensure service is started (lazy spawn)
-    if !ensure_service_started(service_name, config_map, services_state) {
+    if !ensure_service_started(service_name, config_map, services_state, services_active) {
         // Service not found in configuration
         return ERROR_INDICATOR.to_string();
     }
@@ -117,7 +121,8 @@ mod tests {
 
         let text = "Time: ${time:%H:%M} User: ${env:USER_TEST}";
         let services_state = new_services_state();
-        let params = evaluate_dynamic_params(text, &None, &services_state);
+        let services_active = Arc::new(AtomicBool::new(true));
+        let params = evaluate_dynamic_params(text, &None, &services_state, &services_active);
 
         assert!(params.contains_key("time:%H:%M"));
         assert!(params.contains_key("env:USER_TEST"));

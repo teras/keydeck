@@ -3,6 +3,7 @@ use crate::pages::ServiceConfig;
 use crate::{error_log, verbose_log};
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
@@ -22,7 +23,8 @@ pub fn new_services_state() -> ServicesState {
 /// * `name` - Service name (used as key in state HashMap)
 /// * `config` - Service configuration (command, interval, timeout)
 /// * `state` - Shared state HashMap for storing results
-pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState) {
+/// * `still_active` - Flag to stop the service thread gracefully
+pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState, still_active: Arc<AtomicBool>) {
     verbose_log!("Spawning service thread for '{}'", name);
 
     thread::spawn(move || {
@@ -30,7 +32,7 @@ pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState) 
         let timeout = config.timeout();
         let command = config.exec().to_string();
 
-        loop {
+        while still_active.load(std::sync::atomic::Ordering::Relaxed) {
             // Execute command with timeout
             let result = execute_with_timeout(&command, timeout);
 
@@ -54,6 +56,7 @@ pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState) 
             // Sleep until next interval
             thread::sleep(Duration::from_secs_f64(interval));
         }
+        verbose_log!("Service thread '{}' stopping", name);
     });
 }
 
@@ -113,6 +116,7 @@ fn execute_with_timeout(command: &str, timeout_secs: f64) -> Result<String, Stri
 /// * `name` - Service name
 /// * `services_config` - HashMap of all service configurations
 /// * `state` - Shared services state
+/// * `still_active` - Flag to control service thread lifecycle
 ///
 /// # Returns
 /// true if service was started (or already running), false if service not found in config
@@ -120,6 +124,7 @@ pub fn ensure_service_started(
     name: &str,
     services_config: &HashMap<String, ServiceConfig>,
     state: &ServicesState,
+    still_active: &Arc<AtomicBool>,
 ) -> bool {
     // Check if service already started (exists in state)
     {
@@ -139,7 +144,7 @@ pub fn ensure_service_started(
         }
 
         // Spawn service thread
-        spawn_service(name.to_string(), config.clone(), state.clone());
+        spawn_service(name.to_string(), config.clone(), state.clone(), still_active.clone());
         true
     } else {
         // Service not defined in config

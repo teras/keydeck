@@ -32,14 +32,15 @@ struct PendingActionQueue {
     event_type: WaitEventType,
 }
 
-pub struct PagedDevice<'a> {
+pub struct PagedDevice {
     device: KeyDeckDevice,
-    pages: &'a Pages,
-    colors: &'a Option<HashMap<String, String>>,
-    button_templates: &'a Option<HashMap<String, Button>>,
-    macros: &'a Option<HashMap<String, crate::pages::Macro>>,
-    services_config: &'a Option<HashMap<String, ServiceConfig>>,
+    pages: Arc<Pages>,
+    colors: Arc<Option<HashMap<String, String>>>,
+    button_templates: Arc<Option<HashMap<String, Button>>>,
+    macros: Arc<Option<HashMap<String, crate::pages::Macro>>>,
+    services_config: Arc<Option<HashMap<String, ServiceConfig>>>,
     services_state: ServicesState,
+    services_active: Arc<AtomicBool>,
     image_dir: Option<String>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
@@ -50,25 +51,33 @@ pub struct PagedDevice<'a> {
     current_class: RefCell<String>,
     current_title: RefCell<String>,
     pending_actions: RefCell<Option<PendingActionQueue>>,
-    time_manager: &'a TimeManager,
+    time_manager: Arc<TimeManager>,
 }
 
-impl<'a> PagedDevice<'a> {
-    pub fn new(pages: &'a Pages,
+impl PagedDevice {
+    pub fn new(pages: Arc<Pages>,
                image_dir: Option<String>,
-               colors: &'a Option<HashMap<String, String>>,
-               button_templates: &'a Option<HashMap<String, Button>>,
-               macros: &'a Option<HashMap<String, crate::pages::Macro>>,
-               services_config: &'a Option<HashMap<String, ServiceConfig>>,
+               colors: Arc<Option<HashMap<String, String>>>,
+               button_templates: Arc<Option<HashMap<String, Button>>>,
+               macros: Arc<Option<HashMap<String, crate::pages::Macro>>>,
+               services_config: Arc<Option<HashMap<String, ServiceConfig>>>,
                services_state: ServicesState,
+               services_active: Arc<AtomicBool>,
                device: KeyDeckDevice,
                tx: &Sender<DeviceEvent>,
-               time_manager: &'a TimeManager) -> Self {
+               time_manager: Arc<TimeManager>) -> Self {
         let button_count = { device.get_button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&device.serial, tx, &active_events);
+        device.reset().unwrap_or_else(|e| { error_log!("Error while resetting device: {}", e) });
         device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
         device.set_brightness(50).unwrap_or_else(|e| { error_log!("Error while setting brightness: {}", e) });
+        // Determine main page name before moving pages into struct
+        let main_page_name = match &pages.main_page {
+            Some(name) => name.clone(),
+            None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+        };
+
         let paged_device = PagedDevice {
             device,
             pages,
@@ -77,6 +86,7 @@ impl<'a> PagedDevice<'a> {
             macros,
             services_config,
             services_state,
+            services_active,
             image_dir,
             // Initialize to sentinel value so first set_page() will trigger refresh
             current_page_ref: RefCell::new(usize::MAX),
@@ -92,10 +102,6 @@ impl<'a> PagedDevice<'a> {
         };
 
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
-        let main_page_name = match &pages.main_page {
-            Some(name) => name.clone(),
-            None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
-        };
         if !main_page_name.is_empty() {
             let _ = paged_device.set_page(&main_page_name, false);
         }
@@ -216,7 +222,7 @@ impl<'a> PagedDevice<'a> {
         let provided_params = macro_call.params;
 
         // Find the macro definition
-        let macros = self.macros.as_ref()
+        let macros = self.macros.as_ref().as_ref()
             .ok_or_else(|| format!("No macros defined"))?;
         let macro_def = macros.get(&macro_name)
             .ok_or_else(|| format!("Macro '{}' not found", macro_name))?;
@@ -682,7 +688,7 @@ impl<'a> PagedDevice<'a> {
 
         // Evaluate dynamic parameters in text (${time:}, ${env:}, ${service:})
         if !text_str.is_empty() && text_str.contains("${") {
-            let params = evaluate_dynamic_params(&text_str, self.services_config, &self.services_state);
+            let params = evaluate_dynamic_params(&text_str, &self.services_config, &self.services_state, &self.services_active);
             // Substitute parameters
             for (pattern, value) in params {
                 let full_pattern = format!("${{{}}}", pattern);
@@ -771,7 +777,7 @@ impl<'a> PagedDevice<'a> {
             // Evaluate dynamic parameters in value
             let mut value_str = draw_config.value.clone();
             if value_str.contains("${") {
-                let params = evaluate_dynamic_params(&value_str, self.services_config, &self.services_state);
+                let params = evaluate_dynamic_params(&value_str, &self.services_config, &self.services_state, &self.services_active);
                 for (pattern, value) in params {
                     let full_pattern = format!("${{{}}}", pattern);
                     value_str = value_str.replace(&full_pattern, &value);
@@ -976,7 +982,7 @@ impl<'a> PagedDevice<'a> {
         if let Some(bc) = self.find_page(page_id).buttons.get(&key) {
             match bc {
                 ButtonConfig::Template(template) => {
-                    match self.button_templates.as_ref()?.get(template) {
+                    match self.button_templates.as_ref().as_ref()?.get(template) {
                         Some(button) => Some(button),
                         None => {
                             println!("Warning: Button template '{}' not found", template);

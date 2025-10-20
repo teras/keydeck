@@ -29,7 +29,15 @@ pub fn start_server() {
     ensure_lock();
     info_log!("Starting KeyDeck Server");
 
+    // Configuration - now reloadable via SIGHUP using Arc
     let conf = Arc::new(KeyDeckConf::new());
+    let mut conf_pages = Arc::new(conf.page_groups.clone());
+    let mut conf_colors = Arc::new(conf.colors.clone());
+    let mut conf_buttons = Arc::new(conf.buttons.clone());
+    let mut conf_macros = Arc::new(conf.macros.clone());
+    let mut conf_services = Arc::new(conf.services.clone());
+    let mut conf_image_dir = conf.image_dir.clone();
+
     // Initialize with empty focus - listener will send current window immediately
     let (mut current_class, mut current_title) = (String::new(), String::new());
 
@@ -38,10 +46,11 @@ pub fn start_server() {
     let should_reset_devices = Arc::new(AtomicBool::new(false));
 
     // Create TimeManager for handling async wait timers
-    let time_manager = TimeManager::new(tx.clone(), still_active.clone());
+    let time_manager = Arc::new(TimeManager::new(tx.clone(), still_active.clone()));
 
-    // Create shared services state for dynamic buttons
-    let services_state = new_services_state();
+    // Create shared services state for dynamic buttons - can be replaced on reload
+    let mut services_state = new_services_state();
+    let mut services_active = Arc::new(AtomicBool::new(true));
 
     listener_sleep(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
@@ -127,16 +136,16 @@ pub fn start_server() {
                 // Then handle new device
                 if !devices.contains_key(sn) {
                     if let Some(device) = find_device_by_serial(sn) {
-                        let pages = if let Some(page) = conf.page_groups.get(sn) {
-                            Some(page)
-                        } else if let Some(default_page) = conf.page_groups.get("default") {
-                            Some(default_page)
+                        let pages_arc = if let Some(page) = conf_pages.get(sn) {
+                            Some(Arc::new(page.clone()))
+                        } else if let Some(default_page) = conf_pages.get("default") {
+                            Some(Arc::new(default_page.clone()))
                         } else {
                             error_log!("Unable to match profile for device with serial number {}, or missing default profile", sn);
                             None
                         };
-                        if let Some(pages) = pages {
-                            let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, &conf.buttons, &conf.macros, &conf.services, services_state.clone(), device, &tx, &time_manager);
+                        if let Some(pages) = pages_arc {
+                            let new_device = PagedDevice::new(pages, conf_image_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone());
                             new_device.focus_changed(&current_class, &current_title, false);
                             info_log!("Adding device {}", sn);
                             devices.insert(sn.clone(), new_device);
@@ -152,6 +161,38 @@ pub fn start_server() {
                     info_log!("Removing device {}", sn);
                     device.disable();
                 }
+            }
+            DeviceEvent::Reload => {
+                info_log!("Reloading Configuration (SIGHUP received)");
+                info_log!("Stopping services and clearing devices...");
+
+                // Terminate all devices
+                for device in devices.values() {
+                    device.terminate();
+                }
+                devices.clear();
+
+                // Stop old services
+                services_active.store(false, std::sync::atomic::Ordering::Relaxed);
+
+                // Reload configuration from file
+                info_log!("Reloading configuration from file...");
+                let new_conf = Arc::new(KeyDeckConf::new());
+                conf_pages = Arc::new(new_conf.page_groups.clone());
+                conf_colors = Arc::new(new_conf.colors.clone());
+                conf_buttons = Arc::new(new_conf.buttons.clone());
+                conf_macros = Arc::new(new_conf.macros.clone());
+                conf_services = Arc::new(new_conf.services.clone());
+                conf_image_dir = new_conf.image_dir.clone();
+
+                // Create new services state and active flag
+                services_state = new_services_state();
+                services_active = Arc::new(AtomicBool::new(true));
+
+                // Reset device listener so it rediscovers all connected devices
+                should_reset_devices.store(true, std::sync::atomic::Ordering::Relaxed);
+
+                info_log!("Configuration reloaded - devices will reconnect with new config");
             }
             DeviceEvent::Exit => {
                 info_log!("Exiting Application");

@@ -27,7 +27,7 @@ pub struct MacroCall {
     pub params: HashMap<String, String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyDeckConf {
     /// Optional directory for storing images referenced in button configurations. Otherwise, images are expected to be in the current working directory.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,7 +67,7 @@ pub struct KeyDeckConf {
     pub page_groups: HashMap<String, Pages>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pages {
     /// Optional main page name; if provided, used as the default page in the group. Defaults
     /// to the first page in the group if not specified.
@@ -157,7 +157,7 @@ fn default_restore_mode() -> FocusChangeRestorePolicy {
     FocusChangeRestorePolicy::Main // Default is set to Main
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Page {
     /// Optional window class for associating the page layout with specific applications.
     #[serde(skip_serializing_if = "Option::is_none")]

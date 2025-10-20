@@ -54,6 +54,9 @@ pub enum DeviceEvent {
     /// Exit application
     Exit,
 
+    /// Reload configuration
+    Reload,
+
     /// System is going to sleep/will awake
     Sleep { sleep: bool },
 
