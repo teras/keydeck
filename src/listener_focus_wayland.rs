@@ -62,6 +62,11 @@ pub fn listener_focus_wayland(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>
         }
     }
 
+    // Explicitly stop and clean up the KWin script before thread exits
+    if let Err(e) = client.stop_focus_listener() {
+        error_log!("Failed to stop KWin focus listener: {}", e);
+    }
+
         verbose_log!("KWin focus listener stopped");
     });
 }

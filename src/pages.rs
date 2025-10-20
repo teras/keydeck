@@ -16,20 +16,15 @@ pub struct Macro {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum MacroCall {
-    /// Simple macro call with just the macro name, no parameters.
-    Simple(String),
+pub struct MacroCall {
+    /// Name of the macro to call.
+    #[serde(rename = "macro")]
+    pub name: String,
 
-    /// Macro call with parameters.
-    WithParams {
-        /// Name of the macro to call.
-        call: String,
-
-        /// Parameters to pass to the macro. Merged with macro's default params.
-        #[serde(flatten)]
-        params: HashMap<String, String>,
-    },
+    /// Parameters to pass to the macro. Merged with macro's default params.
+    /// All fields except "macro" are treated as parameters.
+    #[serde(flatten)]
+    pub params: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -230,7 +225,14 @@ fn default_waitfor_timeout() -> f64 {
 #[serde(untagged, deny_unknown_fields)]
 pub enum Action {
     /// Executes an external command.
-    Exec { exec: String },
+    /// By default, spawns the command asynchronously (fire-and-forget).
+    /// Set `wait: true` to wait for the command to complete and check its exit status.
+    /// When `wait: true`, returns error if command fails (exit code != 0), allowing use with try/else.
+    Exec {
+        exec: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        wait: Option<bool>,
+    },
 
     /// Jumps to a specified page.
     Jump { jump: String },
@@ -278,10 +280,7 @@ pub enum Action {
 
     /// Calls a macro with optional parameters.
     /// Parameters are substituted in the macro's actions before execution.
-    Macro {
-        #[serde(rename = "macro")]
-        macro_call: MacroCall,
-    },
+    Macro(MacroCall),
 
     /// Returns successfully from the current action sequence.
     /// Stops execution of remaining actions without triggering error handlers.

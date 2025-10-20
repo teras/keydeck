@@ -1,13 +1,14 @@
 use crate::event::DeviceEvent;
+use crate::{error_log, verbose_log};
 use dbus::arg;
 use dbus::blocking::Connection;
+use dbus::channel::MatchingReceiver;
 use dbus::message::SignalArgs;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use crate::error_log;
 
 #[derive(Debug)]
 struct PrepareForSleep {
@@ -48,19 +49,33 @@ pub fn listener_sleep(tx: &Sender<DeviceEvent>, still_active: &Arc<AtomicBool>, 
             "/org/freedesktop/login1", // Object path
             Duration::from_millis(5000),
         );
-        let _id = proxy.match_signal(move |p: PrepareForSleep, _: &Connection, _: &dbus::Message| {
+
+        // Register signal handler and store token for cleanup
+        let signal_token = match proxy.match_signal(move |p: PrepareForSleep, _: &Connection, _: &dbus::Message| {
             tx.send(DeviceEvent::Sleep { sleep: p.start }).expect("Error sending sleep event");
             if p.start {
                 should_reset.store(true, std::sync::atomic::Ordering::Relaxed);
             }
             true
-        });
+        }) {
+            Ok(token) => token,
+            Err(e) => {
+                error_log!("Failed to register sleep signal handler: {}", e);
+                return;
+            }
+        };
 
+        // Main event loop
         while still_active.load(std::sync::atomic::Ordering::Relaxed) {
             conn.process(Duration::from_millis(1000)).unwrap_or_else(|e| {
                 error_log!("Failed to process D-Bus messages: {}", e);
                 false
             });
+        }
+
+        // Clean up signal handler before exiting
+        if let Some(_) = conn.stop_receive(signal_token) {
+            verbose_log!("Sleep listener signal handler cleaned up");
         }
     });
 }

@@ -123,7 +123,14 @@ When it is based on a template, the name of the button template is used as a par
 
 Buttons support multiple actions, executed in sequence:
 - **Exec**: Executes an external command. Useful for launching applications or running scripts.
-  - **Example**: `- exec: "open /path/to/file"`
+  - By default, commands run asynchronously (fire-and-forget) and only fail if the command cannot be started.
+  - Set `wait: true` to wait for the command to complete and check its exit status. When `wait: true`, the action fails if the command exits with non-zero status, making it compatible with `try`/`else` error handling.
+  - **Example (async)**: `- exec: "firefox"`
+  - **Example (sync with wait)**:
+    ```yaml
+    - exec: "test -f /tmp/myfile"
+      wait: true
+    ```
 - **Jump**: Navigates to a specified page.
   - **Example**: `- jump: "Welcome"`
 - **AutoJump**: Re-evaluates the current window focus and switches to the appropriate page for that application. This action bypasses page locks, making it useful as an "escape" button from locked pages.
@@ -208,10 +215,9 @@ Buttons support multiple actions, executed in sequence:
   - **Example (simple)**: `- macro: my_macro_name`
   - **Example (with params)**:
     ```yaml
-    - macro:
-        call: focus_app
-        app: firefox
-        key: F5
+    - macro: focus_app
+      app: firefox
+      key: F5
     ```
 - **Return**: Stops execution of the current action sequence successfully. Remaining actions are not executed, but no error is raised.
   - **Example**: `- return:`
@@ -297,6 +303,37 @@ buttons:
           - exec: "my_app"  # Launch only if not already running
         else:
           - focus: my_app   # Already running, just focus it
+```
+
+#### Example 2.5: Using exec with wait for Conditional Logic
+
+Check if a file exists before processing:
+
+```yaml
+buttons:
+  button1:
+    actions:
+      - try:
+          - exec: "test -f /tmp/data.json"
+            wait: true  # Wait for command to complete and check exit code
+          - exec: "process-data.sh /tmp/data.json"
+          - text: "Data processed!"
+        else:
+          - text: "No data file found"
+```
+
+Run a script and handle errors:
+
+```yaml
+buttons:
+  button2:
+    actions:
+      - try:
+          - exec: "my-backup-script.sh"
+            wait: true  # Will fail if script returns non-zero exit code
+          - text: "Backup complete!"
+        else:
+          - text: "Backup failed! Check logs"
 ```
 
 #### Example 3: Complex Nested Logic
@@ -499,10 +536,9 @@ Macros are called using the `macro` action:
 - macro: macro_name
 
 # Call with parameters
-- macro:
-    call: macro_name
-    param1: custom_value1
-    param2: custom_value2
+- macro: macro_name
+  param1: custom_value1
+  param2: custom_value2
 ```
 
 #### Parameter Substitution
@@ -521,8 +557,7 @@ macros:
 buttons:
   button1:
     actions:
-      - macro:
-          call: send_greeting
+      - macro: send_greeting
           name: Alice  # Types "Hello Alice!"
 ```
 
@@ -557,8 +592,7 @@ macros:
 buttons:
   button1:
     actions:
-      - macro:
-          call: focus_and_refresh
+      - macro: focus_and_refresh
           app: chrome
           key: "Ctrl+r"
 ```
@@ -584,16 +618,14 @@ macros:
       app: firefox
       action_key: F5
     actions:
-      - macro:
-          call: safe_focus
+      - macro: safe_focus
           app: ${app}
       - key: ${action_key}
 
 buttons:
   button1:
     actions:
-      - macro:
-          call: focus_and_act
+      - macro: focus_and_act
           app: thunderbird
           action_key: "Ctrl+Shift+A"
 ```
@@ -621,8 +653,7 @@ macros:
 buttons:
   button1:
     actions:
-      - macro:
-          call: guaranteed_focus
+      - macro: guaranteed_focus
           app: ferdium
       - key: "Ctrl+1"  # Executes after focus succeeds
 ```
@@ -643,8 +674,7 @@ buttons:
   button1:
     actions:
       - try:
-          - macro:
-              call: critical_operation
+          - macro: critical_operation
               target: vscode
         else:
           - text: "Operation failed!"
@@ -679,16 +709,14 @@ macros:
 buttons:
   button1:
     actions:
-      - macro:
-          call: validate_and_act
+      - macro: validate_and_act
           app: firefox
       - text: "Done"  # Always executes
 
   button2:
     actions:
       - try:
-          - macro:
-              call: strict_validate
+          - macro: strict_validate
               app: nonexistent
         else:
           - text: "Failed!"  # Executes if macro fails
@@ -716,16 +744,14 @@ buttons:
   button1:
     icon: slack.png
     actions:
-      - macro:
-          call: switch_ferdium_channel
+      - macro: switch_ferdium_channel
           channel: "1"
           message: "Hello team!"
 
   button2:
     icon: discord.png
     actions:
-      - macro:
-          call: switch_ferdium_channel
+      - macro: switch_ferdium_channel
           channel: "2"
           message: "Status update"
 ```

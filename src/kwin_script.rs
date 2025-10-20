@@ -9,9 +9,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender as MpscSender, Receiver as MpscReceiver};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use dbus::blocking::{Connection, SyncConnection};
-use dbus::channel::{MatchingReceiver, Sender};
+use dbus::channel::{MatchingReceiver, Sender, Token};
 use dbus::Message;
 use serde::{Deserialize, Serialize};
 
@@ -53,17 +54,22 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+// Fixed script names for single-instance server
+const LISTENER_SCRIPT_NAME: &str = "keydeck-focus-listener";
+const LISTENER_METHOD_NAME: &str = "keydeck_windowActivated";
+
 /// KWin scripting client
 ///
-/// Multiple instances can run concurrently - each manages its own scripts and channels.
+/// Designed for single-instance use. Uses fixed script names and cleans up on startup/shutdown.
 pub struct KWinScriptClient {
     kwin_conn: Connection,
     temp_dir: PathBuf,
     dbus_addr: String,
     listener_script_id: Arc<RwLock<Option<i32>>>,
-    listener_script_name: Arc<RwLock<Option<String>>>,
-    listener_method_name: Arc<RwLock<Option<String>>>,
     stop_flag: Arc<AtomicBool>,
+    dbus_thread: Option<JoinHandle<()>>,
+    dbus_connection: Arc<SyncConnection>,
+    message_receiver_token: Token,
 }
 
 impl KWinScriptClient {
@@ -78,8 +84,8 @@ impl KWinScriptClient {
         let dbus_addr = self_conn.unique_name().to_string();
         let temp_dir = std::env::temp_dir();
 
-        // Set up message receiver
-        let _receiver = self_conn.start_receive(
+        // Set up message receiver - store the token to stop receiving messages on drop
+        let message_receiver_token = self_conn.start_receive(
             dbus::message::MatchRule::new_method_call(),
             Box::new(|message: Message, connection: &SyncConnection| -> bool {
                 if let Some(member) = message.member() {
@@ -126,21 +132,56 @@ impl KWinScriptClient {
         // Start background thread to process incoming messages
         let conn_clone = Arc::clone(&self_conn);
         let stop_flag_clone = Arc::clone(&stop_flag);
-        std::thread::spawn(move || {
+        let dbus_thread = std::thread::spawn(move || {
             while !stop_flag_clone.load(Ordering::Relaxed) {
                 let _ = conn_clone.process(Duration::from_millis(100));
             }
         });
 
-        Ok(Self {
+        let client = Self {
             kwin_conn,
             temp_dir,
             dbus_addr,
             listener_script_id: Arc::new(RwLock::new(None)),
-            listener_script_name: Arc::new(RwLock::new(None)),
-            listener_method_name: Arc::new(RwLock::new(None)),
             stop_flag,
-        })
+            dbus_thread: Some(dbus_thread),
+            dbus_connection: self_conn,
+            message_receiver_token,
+        };
+
+        // Clean up any stale scripts from previous runs
+        client.cleanup_stale_scripts();
+
+        Ok(client)
+    }
+
+    /// Clean up any stale scripts from previous runs
+    fn cleanup_stale_scripts(&self) {
+        Self::cleanup_stale_scripts_static();
+    }
+
+    /// Static cleanup method that can be called without an instance
+    pub fn cleanup_stale_scripts_static() {
+        // Connect to D-Bus and try to unload the listener script
+        if let Ok(conn) = Connection::new_session() {
+            let kwin_proxy = conn.with_proxy(
+                "org.kde.KWin",
+                "/Scripting",
+                Duration::from_millis(5000)
+            );
+
+            // Try to unload the listener script if it exists
+            let _: Result<(bool,), _> = kwin_proxy.method_call(
+                "org.kde.kwin.Scripting",
+                "unloadScript",
+                (LISTENER_SCRIPT_NAME,),
+            );
+        }
+
+        // Clean up any temp script files
+        let temp_dir = std::env::temp_dir();
+        let listener_file = temp_dir.join(format!("{}.js", LISTENER_SCRIPT_NAME));
+        let _ = fs::remove_file(&listener_file);
     }
 
     /// Activate a window matching the given class and title
@@ -301,23 +342,21 @@ impl KWinScriptClient {
             }
         }
 
-        // Generate unique method name for this listener
-        let method_name = format!("windowActivated_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
-
         // Create channel for events
         let (sender, receiver) = mpsc::channel();
 
-        // Store sender in global channel map
+        // Store sender in global channel map using fixed method name
         {
             let mut channels = LISTENER_CHANNELS.write().unwrap();
-            channels.insert(method_name.clone(), sender);
+            channels.insert(LISTENER_METHOD_NAME.to_string(), sender);
         }
 
-        // Create persistent listener script
+        // Create persistent listener script with fixed method name
         let script = format!(
             r#"
                 var currentClient = null;
                 var captionConnection = null;
+                var windowActivatedConnection = null;
 
                 function sendWindowInfo(client) {{
                     if (client) {{
@@ -350,18 +389,30 @@ impl KWinScriptClient {
                     }}
                 }}
 
+                function cleanup() {{
+                    // Disconnect caption listener
+                    if (captionConnection) {{
+                        captionConnection.disconnect();
+                        captionConnection = null;
+                    }}
+                    // Disconnect window activation listener
+                    if (windowActivatedConnection) {{
+                        windowActivatedConnection.disconnect();
+                        windowActivatedConnection = null;
+                    }}
+                }}
+
                 // Send initial window immediately
                 setupClient(workspace.activeWindow);
 
-                // Listen for future activations
-                workspace.windowActivated.connect(setupClient);
+                // Listen for future activations - store the connection so we can disconnect it
+                windowActivatedConnection = workspace.windowActivated.connect(setupClient);
             "#,
-            self.dbus_addr, method_name
+            self.dbus_addr, LISTENER_METHOD_NAME
         );
 
-        // Generate unique script name and write to file
-        let script_name = format!("focus2-listener-{}", uuid::Uuid::new_v4());
-        let script_file_path = self.temp_dir.join(format!("{}.js", script_name));
+        // Use fixed script name and write to file
+        let script_file_path = self.temp_dir.join(format!("{}.js", LISTENER_SCRIPT_NAME));
         fs::write(&script_file_path, script)
             .map_err(|e| Error::IOError(format!("Failed to write listener script: {}", e)))?;
 
@@ -378,21 +429,13 @@ impl KWinScriptClient {
         let (script_id,): (i32,) = kwin_proxy.method_call(
             "org.kde.kwin.Scripting",
             "loadScript",
-            (script_path_str, script_name.as_str()),
+            (script_path_str, LISTENER_SCRIPT_NAME),
         ).map_err(|e| Error::DBusError(format!("Failed to load listener script: {}", e)))?;
 
-        // Store script ID, name, and method name for later unloading
+        // Store script ID for later unloading
         {
             let mut listener_id = self.listener_script_id.write().unwrap();
             *listener_id = Some(script_id);
-        }
-        {
-            let mut listener_name = self.listener_script_name.write().unwrap();
-            *listener_name = Some(script_name.clone());
-        }
-        {
-            let mut listener_method = self.listener_method_name.write().unwrap();
-            *listener_method = Some(method_name.clone());
         }
 
         let script_path = format!("/Scripting/Script{}", script_id);
@@ -410,29 +453,21 @@ impl KWinScriptClient {
             // Remove our channel from global map
             {
                 let mut channels = LISTENER_CHANNELS.write().unwrap();
-                channels.remove(&method_name);
+                channels.remove(LISTENER_METHOD_NAME);
             }
 
             // Clean up the script before returning error
             let _: Result<(), _> = kwin_proxy.method_call(
                 "org.kde.kwin.Scripting",
                 "unloadScript",
-                (script_name.as_str(),),
+                (LISTENER_SCRIPT_NAME,),
             );
             let _ = fs::remove_file(&script_file_path);
 
-            // Clear stored IDs since we failed
+            // Clear stored ID since we failed
             {
                 let mut listener_id = self.listener_script_id.write().unwrap();
                 *listener_id = None;
-            }
-            {
-                let mut listener_name = self.listener_script_name.write().unwrap();
-                *listener_name = None;
-            }
-            {
-                let mut listener_method = self.listener_method_name.write().unwrap();
-                *listener_method = None;
             }
 
             return Err(Error::ScriptError(format!("Failed to run listener script: {}", e)));
@@ -446,17 +481,15 @@ impl KWinScriptClient {
 
     /// Stop the focus listener
     pub fn stop_focus_listener(&self) -> Result<(), Error> {
-        let (script_id, script_name, method_name) = {
+        let script_id = {
             let mut listener_id = self.listener_script_id.write().unwrap();
-            let mut listener_name = self.listener_script_name.write().unwrap();
-            let mut listener_method = self.listener_method_name.write().unwrap();
-            (listener_id.take(), listener_name.take(), listener_method.take())
+            listener_id.take()
         };
 
         // Remove our channel from the global map
-        if let Some(method) = method_name {
+        {
             let mut channels = LISTENER_CHANNELS.write().unwrap();
-            channels.remove(&method);
+            channels.remove(LISTENER_METHOD_NAME);
         }
 
         if let Some(script_id) = script_id {
@@ -471,18 +504,16 @@ impl KWinScriptClient {
             let _: Result<(), _> = script_proxy.method_call("org.kde.kwin.Script", "stop", ());
 
             // Unload the script from KWin to prevent memory leak
-            if let Some(name) = script_name {
-                let kwin_proxy = self.kwin_conn.with_proxy(
-                    "org.kde.KWin",
-                    "/Scripting",
-                    Duration::from_millis(5000)
-                );
-                let _: Result<(), _> = kwin_proxy.method_call(
-                    "org.kde.kwin.Scripting",
-                    "unloadScript",
-                    (name.as_str(),),
-                );
-            }
+            let kwin_proxy = self.kwin_conn.with_proxy(
+                "org.kde.KWin",
+                "/Scripting",
+                Duration::from_millis(5000)
+            );
+            let _: Result<(), _> = kwin_proxy.method_call(
+                "org.kde.kwin.Scripting",
+                "unloadScript",
+                (LISTENER_SCRIPT_NAME,),
+            );
         }
 
         Ok(())
@@ -491,13 +522,50 @@ impl KWinScriptClient {
 
 impl Drop for KWinScriptClient {
     fn drop(&mut self) {
-        // Stop the background thread
-        self.stop_flag.store(true, Ordering::Relaxed);
-
         // Stop the listener if it's running
         let _ = self.stop_focus_listener();
 
-        // Give the background thread time to exit
-        std::thread::sleep(Duration::from_millis(150));
+        // Stop receiving D-Bus messages
+        let _ = self.dbus_connection.stop_receive(self.message_receiver_token);
+
+        // Stop the background thread
+        self.stop_flag.store(true, Ordering::Relaxed);
+
+        // Join the background thread with timeout
+        if let Some(thread) = self.dbus_thread.take() {
+            // Give thread up to 500ms to exit gracefully
+            let start = std::time::Instant::now();
+            let timeout = Duration::from_millis(500);
+
+            loop {
+                if thread.is_finished() {
+                    let _ = thread.join();
+                    break;
+                }
+
+                if start.elapsed() >= timeout {
+                    // Thread didn't exit in time, but there's nothing we can do
+                    // The OS will clean it up when the process exits
+                    crate::error_log!("D-Bus background thread did not exit within timeout");
+                    break;
+                }
+
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        // Clear any remaining channel entries for this instance
+        // This is defensive cleanup in case any channels were leaked
+        {
+            let _activate_channels = ACTIVATE_CHANNELS.write().unwrap();
+            let mut listener_channels = LISTENER_CHANNELS.write().unwrap();
+
+            // Remove listener channel if present
+            listener_channels.remove(LISTENER_METHOD_NAME);
+
+            // Note: We can't easily identify which activate channels belong to this instance
+            // since they use UUIDs, but they should have been cleaned up already.
+            // In practice, activate operations are short-lived and clean up after themselves.
+        }
     }
 }

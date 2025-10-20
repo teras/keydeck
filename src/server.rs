@@ -11,7 +11,6 @@ use crate::paged_device::PagedDevice;
 use crate::pages::KeyDeckConf;
 use crate::{error_log, info_log, verbose_log};
 use std::collections::HashMap;
-use std::process::exit;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -156,8 +155,12 @@ pub fn start_server() {
                     device.terminate();
                 }
                 still_active.store(false, std::sync::atomic::Ordering::Relaxed);
+
+                // Clean up KWin scripts before exiting (for Wayland)
+                crate::kwin_script::KWinScriptClient::cleanup_stale_scripts_static();
+
                 cleanup_lock();
-                exit(0);
+                break; // Exit the event loop gracefully
             }
             ref message @ DeviceEvent::Sleep { sleep } => {
                 // Dispatch wait event first

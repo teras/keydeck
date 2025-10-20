@@ -201,10 +201,8 @@ impl<'a> PagedDevice<'a> {
     /// This performs parameter substitution and parses the macro's actions.
     fn expand_single_macro(&self, macro_call: MacroCall) -> Result<Vec<Action>, String> {
         // Extract macro name and provided parameters
-        let (macro_name, provided_params) = match macro_call {
-            MacroCall::Simple(name) => (name, HashMap::new()),
-            MacroCall::WithParams { call, params } => (call, params),
-        };
+        let macro_name = macro_call.name;
+        let provided_params = macro_call.params;
 
         // Find the macro definition
         let macros = self.macros.as_ref()
@@ -240,9 +238,31 @@ impl<'a> PagedDevice<'a> {
 
         while let Some(action) = actions_iter.next() {
             match action {
-                Action::Exec { exec } => {
-                    std::process::Command::new("bash").arg("-c").arg(&exec).spawn()
-                        .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;
+                Action::Exec { exec, wait } => {
+                    if wait.unwrap_or(false) {
+                        // Synchronous: wait for command to complete and check exit status
+                        let output = std::process::Command::new("bash")
+                            .arg("-c")
+                            .arg(&exec)
+                            .output()
+                            .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;
+
+                        if !output.status.success() {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            let exit_code = output.status.code().map_or("unknown".to_string(), |c| c.to_string());
+                            return Err(format!(
+                                "Command '{}' failed with exit code {}: {}",
+                                exec, exit_code, stderr.trim()
+                            ));
+                        }
+                    } else {
+                        // Asynchronous: fire and forget (original behavior)
+                        std::process::Command::new("bash")
+                            .arg("-c")
+                            .arg(&exec)
+                            .spawn()
+                            .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;
+                    }
                 }
                 Action::Jump { jump } => {
                     self.set_page(&jump, false)?;
@@ -321,9 +341,9 @@ impl<'a> PagedDevice<'a> {
                     }
                     // If try succeeded, skip else block and continue
                 }
-                Action::Macro { macro_call } => {
+                Action::Macro(macro_call) => {
                     // Expand this macro only
-                    let expanded_actions = self.expand_single_macro(macro_call)?;
+                    let expanded_actions = self.expand_single_macro(macro_call.clone())?;
 
                     // Prepend expanded actions to remaining actions
                     let remaining: Vec<Action> = actions_iter.collect();
