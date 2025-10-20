@@ -93,7 +93,7 @@ impl KWinScriptClient {
                         let member_str = member.to_string();
 
                         // Handle window activation events (from listeners)
-                        if member_str.starts_with("windowActivated_") {
+                        if member_str == "keydeck_windowActivated" {
                             // Parse the window info and send through the channel
                             let parts: Vec<&str> = arg.split('|').collect();
                             if parts.len() >= 2 {

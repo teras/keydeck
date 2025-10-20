@@ -267,7 +267,7 @@ impl<'a> PagedDevice<'a> {
                 Action::Jump { jump } => {
                     self.set_page(&jump, false)?;
                 }
-                Action::AutoJump { autojump: _ } => {
+                Action::AutoJump { auto_jump: _ } => {
                     let class = { self.current_class.borrow().clone() };
                     let title = { self.current_title.borrow().clone() };
                     self.focus_changed(&class, &title, true)
@@ -277,8 +277,9 @@ impl<'a> PagedDevice<'a> {
                     set_focus(&focus, &"".to_string())?;
                     verbose_log!("Requested focus for '{}'", focus);
                 }
-                Action::WaitFor { wait_for } => {
-                    let event_type = WaitEventType::from_str(wait_for.event())?;
+                Action::WaitFor { wait_for_event, timeout } => {
+                    let event_type = WaitEventType::from_str(&wait_for_event)?;
+                    let timeout_secs = timeout.unwrap_or(1.0);
 
                     // Pause and wait for the event to occur
                     let remaining: Vec<Action> = actions_iter.collect();
@@ -286,12 +287,12 @@ impl<'a> PagedDevice<'a> {
                     *self.pending_actions.borrow_mut() = Some(PendingActionQueue {
                         actions: remaining,
                         last_modified: Instant::now(),
-                        timeout: Duration::from_secs_f64(wait_for.timeout()),
+                        timeout: Duration::from_secs_f64(timeout_secs),
                         event_type: event_type.clone(),
                     });
 
                     verbose_log!("WaitFor paused, waiting for event '{}' (timeout: {}s)",
-                               event_type.as_str(), wait_for.timeout());
+                               event_type.as_str(), timeout_secs);
                     return Ok(()); // Pause execution, will resume when event arrives
                 }
                 Action::Wait { wait } => {
@@ -562,8 +563,8 @@ impl<'a> PagedDevice<'a> {
 
         // If we have text but no icon, render text directly
         if has_text && image_path.is_empty() {
-            let font_size = if let Some(TextConfig::Detailed { fontsize, .. }) = text {
-                fontsize
+            let font_size = if let Some(TextConfig::Detailed { font_size, .. }) = text {
+                font_size
             } else {
                 None
             };
@@ -647,8 +648,8 @@ impl<'a> PagedDevice<'a> {
         // If we have both icon and text, render text on top of the image
         if has_text {
             verbose_log!("Overlaying text '{}' on image", text_str);
-            let font_size = if let Some(TextConfig::Detailed { fontsize, .. }) = text {
-                fontsize
+            let font_size = if let Some(TextConfig::Detailed { font_size, .. }) = text {
+                font_size
             } else {
                 None
             };

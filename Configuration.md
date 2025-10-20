@@ -87,7 +87,7 @@ A device can have multiple pages, allowing dynamic switching based on applicatio
 
 - **window_title**: *(optional)* A pattern used to match window titles, enabling the page to be displayed only when certain windows are active.
 
-- **lock**: *(optional)* A boolean value that, if `true`, prevents the page from automatically switching when focus changes. This is useful for pages that you want to remain active regardless of window focus changes (e.g., a numpad page). Note: locked pages can still be exited via manual actions like `jump` or `autojump`.
+- **lock**: *(optional)* A boolean value that, if `true`, prevents the page from automatically switching when focus changes. This is useful for pages that you want to remain active regardless of window focus changes (e.g., a numpad page). Note: locked pages can still be exited via manual actions like `jump` or `auto_jump`.
 
 ##### Example: Page with Tick Handler
 
@@ -134,9 +134,9 @@ Buttons support multiple actions, executed in sequence:
 - **Jump**: Navigates to a specified page.
   - **Example**: `- jump: "Welcome"`
 - **AutoJump**: Re-evaluates the current window focus and switches to the appropriate page for that application. This action bypasses page locks, making it useful as an "escape" button from locked pages.
-  - **Use case**: On a locked page (like a numpad), add an autojump button to return to the context-appropriate page based on the currently focused window.
+  - **Use case**: On a locked page (like a numpad), add an auto_jump button to return to the context-appropriate page based on the currently focused window.
   - **Behavior**: Retrieves the current window class and title, then triggers the focus change logic with `force_change=true`, bypassing any lock on the current page.
-  - **Example**: `- autojump:` (empty value)
+  - **Example**: `- auto_jump:` (empty value)
   - **Example usage**:
     ```yaml
     pages:
@@ -145,7 +145,7 @@ Buttons support multiple actions, executed in sequence:
         button17:
           icon: back.png
           actions:
-            - autojump:  # Manual "return to context" button
+            - auto_jump:  # Manual "return to context" button
     ```
 - **Focus**: Brings a specified application window to focus by its window class or title. Returns an error if the focus operation fails, which can be caught with try/else.
   - **Example**: `- focus: "firefox"`
@@ -154,7 +154,7 @@ Buttons support multiple actions, executed in sequence:
     - try:
         - focus: ferdium
       else:
-        - waitFor: focus
+        - wait_for: focus
         - focus: ferdium
     ```
 - **Key**: Sends a keyboard shortcut or keypress.
@@ -171,8 +171,8 @@ Buttons support multiple actions, executed in sequence:
   This action pauses execution until the specified event type occurs in the system. The action queue is suspended and resumed automatically when any event of that type arrives.
 
   **Syntax:**
-  - Simple form: `waitFor: focus` (waits for any focus event with default 1.0s timeout)
-  - With timeout: `waitFor: { event: focus, timeout: 2.0 }` (waits with custom timeout)
+  - Simple form: `wait_for: focus` (waits for any focus event with default 1.0s timeout)
+  - With timeout: `wait_for: focus` with `timeout: 2.0` (compact syntax, like exec/macro)
 
   **Supported Event Types:**
   - **focus**: Waits for any window focus change
@@ -186,14 +186,13 @@ Buttons support multiple actions, executed in sequence:
 
   Simple wait for focus change (1 second timeout):
   ```yaml
-  - waitFor: focus
+  - wait_for: focus
   ```
 
   Wait for focus change with custom timeout:
   ```yaml
-  - waitFor:
-      event: focus
-      timeout: 2.0
+  - wait_for: focus
+    timeout: 2.0
   ```
 
   **Guaranteed focus pattern**:
@@ -201,7 +200,7 @@ Buttons support multiple actions, executed in sequence:
   - try:
       - focus: ferdium
     else:
-      - waitFor: focus
+      - wait_for: focus
       - focus: ferdium
   ```
 
@@ -404,7 +403,7 @@ buttons:
 
 ### Event System
 
-The following events are dispatched by the system and can be waited for using `waitFor`:
+The following events are dispatched by the system and can be waited for using `wait_for`:
 
 | Event Type | Dispatched When | Dispatched From |
 |------------|----------------|-----------------|
@@ -418,8 +417,8 @@ The following events are dispatched by the system and can be waited for using `w
 **Event Behavior:**
 - All events are dispatched through the central event loop in `server.rs`
 - Event dispatching calls `check_pending_event()` on all devices
-- If a device has a pending `waitFor` with matching event type, actions resume
-- `waitFor` matches only on event type, not on specific details
+- If a device has a pending `wait_for` with matching event type, actions resume
+- `wait_for` matches only on event type, not on specific details
 - Timeout: if event doesn't occur within timeout period, returns error (catchable with try/else)
 - User interactions (button press, encoder twist, touch events) cancel any pending action queue
 
@@ -567,7 +566,7 @@ buttons:
 macros:
   home_button:
     actions:
-      - autojump:
+      - auto_jump:
 
 buttons:
   button15:
@@ -632,7 +631,7 @@ buttons:
 
 #### Example 4: Macro with WaitFor
 
-Macros can include `waitFor` actions and will pause correctly:
+Macros can include `wait_for` actions and will pause correctly:
 
 ```yaml
 macros:
@@ -645,9 +644,8 @@ macros:
           - focus: ${app}
         else:
           - exec: "${app}"  # Launch if not running
-          - waitFor:
-              event: focus
-              timeout: 5.0
+          - wait_for: focus
+            timeout: 5.0
           - focus: ${app}
 
 buttons:

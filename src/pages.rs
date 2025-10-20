@@ -183,7 +183,7 @@ pub enum TextConfig {
 
         /// Font size for the text, optional.
         #[serde(skip_serializing_if = "Option::is_none")]
-        fontsize: Option<f32>,
+        font_size: Option<f32>,
     },
 }
 
@@ -238,19 +238,23 @@ pub enum Action {
     Jump { jump: String },
 
     /// Automatically returns to the predefined page, based on the focus change policy.
-    AutoJump { autojump: () },
+    AutoJump { auto_jump: () },
 
     /// Focuses on an application specified by window class.
     /// Simple string action that attempts to focus the window.
     /// Returns error if focus operation fails (can be caught with try/else).
     Focus { focus: String },
 
-    /// Waits for a specific event to occur, with a timeout.
+    /// Waits for a specific event to occur, with optional timeout.
     /// If the event doesn't occur within the timeout, returns an error.
     /// Can be caught with try/else for error handling.
+    /// Timeout defaults to 1.0 second if not specified.
     WaitFor {
-        #[serde(rename = "waitFor")]
-        wait_for: WaitForConfig,
+        #[serde(rename = "wait_for")]
+        wait_for_event: String,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<f64>,
     },
 
     /// Sends a keyboard shortcut event. Some examples include "LCtrl+LShift+z" or "F12".
