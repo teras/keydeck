@@ -19,6 +19,8 @@ mod keyboard;
 mod lock;
 mod session;
 mod text_renderer;
+mod services;
+mod dynamic_params;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;

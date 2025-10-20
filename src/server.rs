@@ -9,6 +9,7 @@ use crate::listener_time::TimeManager;
 use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
 use crate::pages::KeyDeckConf;
+use crate::services::new_services_state;
 use crate::{error_log, info_log, verbose_log};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -38,6 +39,9 @@ pub fn start_server() {
 
     // Create TimeManager for handling async wait timers
     let time_manager = TimeManager::new(tx.clone(), still_active.clone());
+
+    // Create shared services state for dynamic buttons
+    let services_state = new_services_state();
 
     listener_sleep(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
@@ -132,7 +136,7 @@ pub fn start_server() {
                             None
                         };
                         if let Some(pages) = pages {
-                            let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, &conf.buttons, &conf.macros, device, &tx, &time_manager);
+                            let new_device = PagedDevice::new(&pages, conf.image_dir.clone(), &conf.colors, &conf.buttons, &conf.macros, &conf.services, services_state.clone(), device, &tx, &time_manager);
                             new_device.focus_changed(&current_class, &current_title, false);
                             info_log!("Adding device {}", sn);
                             devices.insert(sn.clone(), new_device);

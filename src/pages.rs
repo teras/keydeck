@@ -46,9 +46,10 @@ pub struct KeyDeckConf {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub colors: Option<HashMap<String, String>>,
 
-    /// Map of services with external commands that can be executed.
+    /// Map of services with external commands that can be executed in background threads.
+    /// Services provide cached data that can be referenced in button text via ${service:name}.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub services: Option<HashMap<String, Service>>,
+    pub services: Option<HashMap<String, ServiceConfig>>,
 
     /// Map of macros, which are reusable action sequences with optional parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,11 +78,56 @@ pub struct Pages {
     pub pages: IndexMap<String, Page>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Service {
-    /// Command to be executed for the service.
-    pub exec: String,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum ServiceConfig {
+    /// Simple form: just the command string (uses default interval and timeout)
+    Simple(String),
+
+    /// Detailed form: command with explicit interval and timeout
+    Detailed {
+        /// Command to execute via bash
+        exec: String,
+
+        /// Update interval in seconds (how often to run the command)
+        #[serde(default = "default_service_interval")]
+        interval: f64,
+
+        /// Command timeout in seconds (kill if exceeds this)
+        #[serde(default = "default_service_timeout")]
+        timeout: f64,
+    },
+}
+
+impl ServiceConfig {
+    pub fn exec(&self) -> &str {
+        match self {
+            ServiceConfig::Simple(cmd) => cmd,
+            ServiceConfig::Detailed { exec, .. } => exec,
+        }
+    }
+
+    pub fn interval(&self) -> f64 {
+        match self {
+            ServiceConfig::Simple(_) => default_service_interval(),
+            ServiceConfig::Detailed { interval, .. } => *interval,
+        }
+    }
+
+    pub fn timeout(&self) -> f64 {
+        match self {
+            ServiceConfig::Simple(_) => default_service_timeout(),
+            ServiceConfig::Detailed { timeout, .. } => *timeout,
+        }
+    }
+}
+
+fn default_service_interval() -> f64 {
+    1.0 // 1 second
+}
+
+fn default_service_timeout() -> f64 {
+    5.0 // 5 seconds
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -116,9 +162,10 @@ pub struct Page {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lock: Option<bool>,
 
-    /// List of templates to apply to this page layout. All extra configurations (including redefined buttons) are merged with the template.
+    /// List of templates this page/template inherits from. Buttons are merged in order (parent first, child overrides).
+    /// Templates can also inherit from other templates, enabling multi-level inheritance.
     #[serde(skip_serializing_if = "Option::is_none")]
-    templates: Option<Vec<String>>,
+    inherits: Option<Vec<String>>,
 
     /// Actions to execute on each tick event (fires every 1 second).
     /// Useful for periodic updates, status checks, or time-based automations.
@@ -155,6 +202,11 @@ pub struct Button {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_color: Option<String>,
 
+    /// Whether this button should be refreshed automatically by the `refresh:` action (no parameters).
+    /// When true, the button will be included in automatic refresh cycles (e.g., on_tick).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<bool>,
+
     /// List of actions that will be executed when the button is pressed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub actions: Option<Vec<Action>>,
@@ -189,36 +241,12 @@ pub enum TextConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
-pub enum WaitForConfig {
-    /// Simple string: just the event type
-    Simple(String),
+pub enum RefreshTarget {
+    /// Refresh a single button by index
+    Single(u8),
 
-    /// Detailed config with timeout
-    Detailed {
-        event: String,
-        #[serde(default = "default_waitfor_timeout")]
-        timeout: f64,
-    },
-}
-
-impl WaitForConfig {
-    pub fn event(&self) -> &str {
-        match self {
-            WaitForConfig::Simple(e) => e,
-            WaitForConfig::Detailed { event, .. } => event,
-        }
-    }
-
-    pub fn timeout(&self) -> f64 {
-        match self {
-            WaitForConfig::Simple(_) => default_waitfor_timeout(),
-            WaitForConfig::Detailed { timeout, .. } => *timeout,
-        }
-    }
-}
-
-fn default_waitfor_timeout() -> f64 {
-    1.0
+    /// Refresh multiple buttons by index
+    Multiple(Vec<u8>),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -320,9 +348,75 @@ pub enum Action {
         #[serde(rename = "not")]
         not_action: Box<Action>,
     },
+
+    /// Refreshes button(s) to update their visual content.
+    /// - No parameter: refreshes all buttons marked with `dynamic: true`
+    /// - Single number: refreshes that specific button
+    /// - Array of numbers: refreshes those specific buttons
+    /// Returns error if button number is invalid or button doesn't exist.
+    Refresh {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        refresh: Option<RefreshTarget>,
+    },
 }
 
 impl KeyDeckConf {
+    /// Recursively resolves a template and all its parent templates, with cycle detection.
+    /// Returns merged buttons and on_tick actions in parent-first order (grandparent -> parent -> child).
+    fn resolve_template_recursive(
+        template_name: &str,
+        templates: &HashMap<String, Page>,
+        visited: &mut Vec<String>,
+    ) -> Result<(HashMap<String, ButtonConfig>, Option<Vec<Action>>), String> {
+        // Check for circular inheritance
+        if visited.contains(&template_name.to_string()) {
+            visited.push(template_name.to_string());
+            let cycle_path = visited.join(" → ");
+            return Err(format!("Circular template inheritance detected: {}", cycle_path));
+        }
+
+        // Get the template
+        let template = templates.get(template_name).ok_or_else(|| {
+            format!("Template '{}' not found", template_name)
+        })?;
+
+        // Mark as visited for cycle detection
+        visited.push(template_name.to_string());
+
+        let mut merged_buttons = HashMap::new();
+        let mut merged_on_tick: Option<Vec<Action>> = None;
+
+        // First, recursively resolve parent templates
+        if let Some(parent_templates) = &template.inherits {
+            for parent_name in parent_templates {
+                let (parent_buttons, parent_on_tick) = Self::resolve_template_recursive(
+                    parent_name,
+                    templates,
+                    visited,
+                )?;
+                // Merge parent buttons (later parents override earlier ones)
+                merged_buttons.extend(parent_buttons);
+                // on_tick is overridden by later parents (not merged)
+                if parent_on_tick.is_some() {
+                    merged_on_tick = parent_on_tick;
+                }
+            }
+        }
+
+        // Then merge this template's buttons (overriding parent buttons)
+        merged_buttons.extend(template.buttons.clone());
+
+        // on_tick is overridden by child (not merged)
+        if template.on_tick.is_some() {
+            merged_on_tick = template.on_tick.clone();
+        }
+
+        // Remove from visited (backtrack for DFS)
+        visited.pop();
+
+        Ok((merged_buttons, merged_on_tick))
+    }
+
     pub fn new() -> Self {
         let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
         path.push(".config/keydeck.yaml");
@@ -342,16 +436,34 @@ impl KeyDeckConf {
             std::process::exit(1);
         });
 
+        // Resolve template inheritance for all pages
+        let empty_templates = HashMap::new();
         for (_, pages) in &mut conf.page_groups {
-            for (_, page) in &mut pages.pages {
-                // Safely iterate over templates if it exists
-                for template_name in page.templates.as_ref().unwrap_or(&Vec::new()) {
-                    if let Some(template_page) = conf.templates.as_ref().and_then(|templates| templates.get(template_name)) {
-                        for (button_name, template_button) in &template_page.buttons {
-                            // Copy button only if it doesn't exist in the page
-                            page.buttons
-                                .entry(button_name.clone())
-                                .or_insert_with(|| template_button.clone());
+            for (page_name, page) in &mut pages.pages {
+                // Recursively resolve all inherited templates
+                if let Some(template_names) = &page.inherits {
+                    let templates_map = conf.templates.as_ref().unwrap_or(&empty_templates);
+
+                    for template_name in template_names {
+                        let mut visited = Vec::new();
+                        match Self::resolve_template_recursive(template_name, templates_map, &mut visited) {
+                            Ok((resolved_buttons, resolved_on_tick)) => {
+                                // Merge resolved buttons into page (page buttons take priority)
+                                for (button_name, button_config) in resolved_buttons {
+                                    page.buttons
+                                        .entry(button_name)
+                                        .or_insert(button_config);
+                                }
+                                // Merge on_tick (page's on_tick takes priority over template's)
+                                if page.on_tick.is_none() && resolved_on_tick.is_some() {
+                                    page.on_tick = resolved_on_tick;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error resolving templates for page '{}': {}", page_name, e);
+                                eprintln!("\nPlease check your template inheritance configuration.");
+                                std::process::exit(1);
+                            }
                         }
                     }
                 }

@@ -4,8 +4,10 @@ use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::{DeviceEvent, WaitEventType};
 use crate::focus_property::set_focus;
 use crate::keyboard::{send_key_combination, send_string};
-use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, MacroCall, Page, Pages, TextConfig};
+use crate::pages::{Action, Button, ButtonConfig, FocusChangeRestorePolicy, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig};
 use crate::text_renderer;
+use crate::services::ServicesState;
+use crate::dynamic_params::evaluate_dynamic_params;
 use crate::{error_log, verbose_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
@@ -35,6 +37,8 @@ pub struct PagedDevice<'a> {
     colors: &'a Option<HashMap<String, String>>,
     button_templates: &'a Option<HashMap<String, Button>>,
     macros: &'a Option<HashMap<String, crate::pages::Macro>>,
+    services_config: &'a Option<HashMap<String, ServiceConfig>>,
+    services_state: ServicesState,
     image_dir: Option<String>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
@@ -53,6 +57,8 @@ impl<'a> PagedDevice<'a> {
                colors: &'a Option<HashMap<String, String>>,
                button_templates: &'a Option<HashMap<String, Button>>,
                macros: &'a Option<HashMap<String, crate::pages::Macro>>,
+               services_config: &'a Option<HashMap<String, ServiceConfig>>,
+               services_state: ServicesState,
                device: KeyDeckDevice,
                tx: &Sender<DeviceEvent>,
                time_manager: &'a TimeManager) -> Self {
@@ -67,6 +73,8 @@ impl<'a> PagedDevice<'a> {
             colors,
             button_templates,
             macros,
+            services_config,
+            services_state,
             image_dir,
             // Initialize to sentinel value so first set_page() will trigger refresh
             current_page_ref: RefCell::new(usize::MAX),
@@ -404,6 +412,36 @@ impl<'a> PagedDevice<'a> {
                         }
                     }
                 }
+                Action::Refresh { refresh } => {
+                    match refresh {
+                        None => {
+                            // Refresh all dynamic buttons
+                            verbose_log!("Refresh: updating all dynamic buttons");
+                            let current_page = { self.current_page_ref.borrow().clone() };
+                            let button_count = self.device.get_button_count();
+
+                            for button_id in 1..=button_count {
+                                if let Some(button) = self.find_button(current_page, button_id) {
+                                    if button.dynamic.unwrap_or(false) {
+                                        self.invalidate_and_refresh_button(button_id)?;
+                                    }
+                                }
+                            }
+                        }
+                        Some(RefreshTarget::Single(button_id)) => {
+                            // Refresh single button
+                            verbose_log!("Refresh: updating button {}", button_id);
+                            self.invalidate_and_refresh_button(button_id)?;
+                        }
+                        Some(RefreshTarget::Multiple(button_ids)) => {
+                            // Refresh multiple buttons
+                            verbose_log!("Refresh: updating {} buttons", button_ids.len());
+                            for button_id in button_ids {
+                                self.invalidate_and_refresh_button(button_id)?;
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -514,6 +552,50 @@ impl<'a> PagedDevice<'a> {
         }
     }
 
+    /// Invalidates cache and refreshes a single button with dynamic parameter evaluation.
+    /// Returns error if button number is invalid or button doesn't exist in config.
+    fn invalidate_and_refresh_button(&self, button_id: u8) -> Result<(), String> {
+        let button_count = self.device.get_button_count();
+
+        // Validate button range
+        if button_id < 1 || button_id > button_count {
+            return Err(format!("Invalid button number: {} (valid range: 1-{})",
+                              button_id, button_count));
+        }
+
+        let current_page = { self.current_page_ref.borrow().clone() };
+
+        // Check if button exists in config
+        let button = self.find_button(current_page, button_id)
+            .ok_or_else(|| format!("Button {} not defined in configuration", button_id))?;
+
+        // Invalidate cache for this button
+        {
+            let mut button_images = self.button_images.borrow_mut();
+            let mut button_backgrounds = self.button_backgrounds.borrow_mut();
+            button_images[button_id as usize - 1] = String::new();
+            button_backgrounds[button_id as usize - 1] = String::new();
+        }
+
+        // Re-render button (update_button will evaluate dynamic params internally)
+        let mut invalid_indices = Vec::new();
+        if let Some(icon) = &button.icon {
+            self.update_button(icon, self.image_dir.clone(), button.background.clone(),
+                              button.text.clone(), button.outline.clone(),
+                              button.text_color.clone(), button_id, &mut invalid_indices);
+        } else {
+            self.update_button("", None, button.background.clone(), button.text.clone(),
+                              button.outline.clone(), button.text_color.clone(),
+                              button_id, &mut invalid_indices);
+        }
+
+        // Flush to device
+        self.device.flush()
+            .map_err(|e| format!("Failed to flush device: {}", e))?;
+
+        Ok(())
+    }
+
     fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
         // Get the button size from the device's image format
         let (width, height) = {
@@ -523,7 +605,7 @@ impl<'a> PagedDevice<'a> {
 
         // Determine if we're rendering text or using an icon
         let has_text = text.is_some();
-        let text_str = if let Some(ref text_cfg) = text {
+        let mut text_str = if let Some(ref text_cfg) = text {
             match text_cfg {
                 TextConfig::Simple(s) => s.clone(),
                 TextConfig::Detailed { value, .. } => value.clone(),
@@ -531,6 +613,16 @@ impl<'a> PagedDevice<'a> {
         } else {
             String::new()
         };
+
+        // Evaluate dynamic parameters in text (${time:}, ${env:}, ${service:})
+        if !text_str.is_empty() && text_str.contains("${") {
+            let params = evaluate_dynamic_params(&text_str, self.services_config, &self.services_state);
+            // Substitute parameters
+            for (pattern, value) in params {
+                let full_pattern = format!("${{{}}}", pattern);
+                text_str = text_str.replace(&full_pattern, &value);
+            }
+        }
 
         // Find the icon path if provided
         let image_exists = if image.len() > 0 { find_path(image, image_path.clone()) } else { Some(image.to_string()) };
@@ -599,10 +691,8 @@ impl<'a> PagedDevice<'a> {
                 None
             };
 
-            eprintln!("DEBUG: Rendering text '{}' on canvas size {}x{} (button dimensions)", text_str, width, height);
             match text_renderer::render_text(&text_str, font_size, width, height, bg_rgb, text_color_rgba, outline_rgb, None) {
                 Ok(rendered_image) => {
-                    eprintln!("DEBUG: Text rendered successfully, final image size {}x{}", rendered_image.width(), rendered_image.height());
                     self.device
                         .set_button_image(button_index - 1, rendered_image)
                         .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));

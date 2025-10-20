@@ -14,6 +14,7 @@ Each device is identified by its serial number or can use a generic `default` co
   - [Page Configuration](#page-configuration)
   - [Button Structure](#button-structure)
   - [Templates](#templates)
+  - [Template Inheritance](#template-inheritance)
   - [Buttons](#buttons)
   - [Macros](#macros)
   - [Logical Operators](#logical-operators)
@@ -44,13 +45,78 @@ Global fields are configurations that apply universally across devices. Availabl
 
 - `image_dir`: *(optional)* A string path to the directory containing button images. If unspecified, KeyDeck uses the current working directory.
 - `colors`: A dictionary of named colors, specified in hexadecimal format (`0xRRGGBB` or `0xAARRGGBB`).
+- `services`: *(optional)* A dictionary of background services that execute commands periodically and cache their results. Services provide data that can be referenced in button text via `${service:name}` syntax. See [Services](#services) for details.
 
 #### Example
 
-```
+```yaml
 image_dir: /home/teras/Works/System/Drivers/StreamDeck
 colors:
   background: 0x40FFFFFF
+
+services:
+  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  weather:
+    exec: "curl -s wttr.in/?format=%t"
+    interval: 600
+    timeout: 10
+```
+
+### Services
+
+Services are background threads that execute commands periodically and cache their results. They enable dynamic button content that updates in real-time without blocking the main thread.
+
+#### Service Configuration
+
+Services can be defined in two forms:
+
+**Simple Form** (uses defaults):
+```yaml
+services:
+  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  memory: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
+```
+- Command executes via bash every 1 second (default interval)
+- Timeout of 5 seconds (default)
+
+**Detailed Form** (explicit configuration):
+```yaml
+services:
+  weather:
+    exec: "curl -s wttr.in/?format=%t"
+    interval: 600  # Update every 10 minutes
+    timeout: 10    # Allow 10 seconds for network request
+```
+
+#### Service Fields
+
+- `exec`: *(required)* Shell command to execute via bash
+- `interval`: *(optional)* Seconds between command executions (default: 1.0)
+- `timeout`: *(optional)* Maximum seconds to wait for command (default: 5.0)
+
+#### Service Behavior
+
+- **Lazy startup**: Services start only when first referenced by a button
+- **Background execution**: Each service runs in its own thread, never blocking the UI
+- **Automatic retry**: If a command fails or times out, service shows "⚠" and retries on next interval
+- **Cached results**: Results are cached and instantly available to all buttons
+
+#### Referencing Services
+
+Services are referenced in button text using `${service:name}` syntax:
+
+```yaml
+services:
+  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+
+pages:
+  Main:
+    on_tick:
+      - refresh:  # Update all dynamic buttons every second
+
+    button1:
+      dynamic: true
+      text: "CPU: ${service:cpu}%"
 ```
 
 ### Device-Specific Configuration
@@ -79,9 +145,9 @@ A device can have multiple pages, allowing dynamic switching based on applicatio
 
 - **buttons**: A map of button configurations specific to the page.
 
-- **templates**: *(optional)* A list of templates to apply to the page layout. Each template has the same format as a page, with its buttons merged into the current page. Buttons defined in the page override those in the template.
+- **inherits**: *(optional)* A list of templates this page inherits from. Templates can also inherit from other templates, enabling multi-level inheritance (e.g., page → layout → common_buttons). Buttons are merged in parent-first order, with child buttons overriding parent buttons. See [Template Inheritance](#template-inheritance) for details.
 
-- **on_tick**: *(optional)* A list of actions to execute on each tick event (fires every 1 second). Useful for periodic updates, status checks, or time-based automations. See [Available Actions for Buttons](#available-actions-for-buttons) for supported action types.
+- **on_tick**: *(optional)* A list of actions to execute on each tick event (fires every 1 second). Useful for periodic updates, status checks, or time-based automations. Inherited from templates if not defined in the page. **Note:** If the page defines its own `on_tick`, it completely overrides (replaces) the inherited `on_tick` - actions are not merged. See [Available Actions for Buttons](#available-actions-for-buttons) for supported action types.
 
 - **window_class**: *(optional)* Specifies a window class that, when matched, automatically activates the page. This is useful for associating a page layout with a particular application.
 
@@ -117,6 +183,8 @@ When it is based on a template, the name of the button template is used as a par
 
 - **icon**: *(optional)* Specifies the path to an image file for the button. This icon will be displayed on the button. If `image_dir` is specified in the global configuration, icons are looked up relative to this directory.
 - **background**: *(optional)* Background color for the button, in hexadecimal format or referencing a named color.
+- **text**: *(optional)* Text to display on the button. Supports dynamic parameters (see [Dynamic Parameters](#dynamic-parameters)).
+- **dynamic**: *(optional)* Boolean flag indicating this button should be automatically refreshed by `refresh:` action (no parameters). When true, the button updates whenever `refresh:` is called (typically in `on_tick` for auto-updating content).
 - **actions**: *(optional)* List of actions to execute when the button is pressed. Actions execute in sequence.
 
 ##### Available Actions for Buttons
@@ -242,6 +310,29 @@ Buttons support multiple actions, executed in sequence:
     ```yaml
     - not:
         focus: unwanted_app
+    ```
+- **Refresh**: Updates button visual content by re-rendering buttons. Useful for dynamic buttons that display changing information (time, system stats, etc.).
+  - **No parameter**: Refreshes all buttons marked with `dynamic: true` on the current page
+  - **Single button**: `- refresh: 5` (refreshes button 5)
+  - **Multiple buttons**: `- refresh: [1, 3, 7]` (refreshes buttons 1, 3, and 7)
+  - Returns error if button number is invalid or button doesn't exist in configuration
+  - **Example (auto-update)**:
+    ```yaml
+    pages:
+      Dashboard:
+        on_tick:
+          - refresh:  # Auto-refresh all dynamic buttons every second
+        button1:
+          dynamic: true
+          text: "${time:%H:%M:%S}"
+    ```
+  - **Example (manual refresh)**:
+    ```yaml
+    button10:
+      actions:
+        - exec: "update-data.sh"
+          wait: true
+        - refresh: [1, 2, 3]  # Refresh specific buttons after update
     ```
 
 ### Logical Operators
@@ -449,7 +540,7 @@ The following events are dispatched by the system and can be waited for using `w
 8B840A19374D:
   restore_mode: last
   Main:
-    templates:
+    inherits:
       - home_layout
   Firefox:
     button4:
@@ -461,17 +552,19 @@ The following events are dispatched by the system and can be waited for using `w
 
 ### Templates
 
-Templates are reusable layouts applied to pages. Templates include button configurations that can be applied in the `templates` field of a page.
+Templates are reusable layouts applied to pages. Templates include button configurations that can be applied in the `inherits` field of a page.
 
 #### Template Structure
 
 The structure resembles a page configuration, with each template containing buttons and their actions.
 
 - `button#`: Each button configuration, similar to page buttons.
+- `inherits`: *(optional)* Templates can inherit from other templates, enabling multi-level inheritance.
+- `on_tick`: *(optional)* Tick actions that will be inherited by pages using this template.
 
 #### Example
 
-```
+```yaml
 templates:
   home_layout:
     button1:
@@ -485,6 +578,118 @@ templates:
         - focus: thunderbird
         - jump: Thunderbird
 ```
+
+### Template Inheritance
+
+Template inheritance allows templates to inherit from other templates, and pages to inherit from templates. This enables powerful composition patterns where common elements (like status displays) can be shared across all pages.
+
+#### How Inheritance Works
+
+1. **Multi-level inheritance**: Templates can inherit from other templates, forming inheritance chains (e.g., `page → layout → common_buttons`)
+2. **Parent-first merge order**: Buttons are merged starting from the most distant ancestor down to the child
+3. **Child overrides parent**: Buttons defined in a child override identically-named buttons from parents
+4. **on_tick override**: The `on_tick` field is **not merged** - a child's `on_tick` completely replaces the parent's
+
+#### Inheritance Chain Example
+
+```yaml
+templates:
+  # Base template - common right-side monitoring buttons
+  common_right_buttons:
+    on_tick:
+      - refresh:  # Auto-update dynamic buttons
+    button6:
+      dynamic: true
+      text: "${time:%d/%m}\n${time:%H:%M}"
+      background: "0x1a1a1a"
+      text_color: "0x00ff00"
+    button12:
+      dynamic: true
+      text: "CPU\n${service:cpu}%"
+      background: "0x1a1a1a"
+    button18:
+      dynamic: true
+      text: "RAM\n${service:memory}%"
+      background: "0x1a1a1a"
+
+  # Navigation layout inherits common buttons
+  home_layout:
+    inherits:
+      - common_right_buttons  # Gets buttons 6, 12, 18 and on_tick
+    button1:
+      icon: kitty.png
+      actions: [focus: kitty, jump: Kitty]
+    button2:
+      icon: firefox.png
+      actions: [focus: firefox, jump: Firefox]
+
+pages:
+  Main:
+    inherits:
+      - home_layout  # Gets all of home_layout + common_right_buttons
+    # Automatically has buttons 1, 2, 6, 12, 18 and on_tick
+
+  Firefox:
+    inherits:
+      - home_layout  # Gets all of home_layout + common_right_buttons
+    button2:  # Override button2 from home_layout
+      icon: firefox_custom.png
+      background: "0xFF0000"
+    window_class: firefox
+```
+
+**Result**: The `Main` page gets buttons 1, 2, 6, 12, 18 and on_tick. The `Firefox` page gets buttons 1, 6, 12, 18, on_tick, and its custom button2.
+
+#### Multiple Inheritance
+
+Pages and templates can inherit from multiple parents:
+
+```yaml
+templates:
+  common_right_buttons:
+    button12: { text: "CPU" }
+    button18: { text: "RAM" }
+
+  common_navigation:
+    button1: { icon: home.png }
+    button2: { icon: back.png }
+
+pages:
+  Main:
+    inherits:
+      - common_navigation  # Applied first
+      - common_right_buttons  # Applied second (can override)
+    # Gets all buttons from both templates
+```
+
+Parents are applied in order - later parents override earlier ones if there are conflicts.
+
+#### Cycle Detection
+
+The system detects circular inheritance and reports an error:
+
+```yaml
+templates:
+  template_a:
+    inherits: [template_b]
+  template_b:
+    inherits: [template_a]  # Error: Circular inheritance!
+```
+
+**Error message**: `Circular template inheritance detected: template_a → template_b → template_a`
+
+#### Override Behavior
+
+- **Buttons**: Child buttons completely replace parent buttons with the same name
+- **on_tick**: Child's `on_tick` completely replaces parent's `on_tick` (not merged)
+- **Other fields** (window_class, window_title, lock): Not inherited, only defined in pages
+
+#### Best Practices
+
+1. **Create a common base template** for elements that appear on all pages (date, CPU, RAM, etc.)
+2. **Use inheritance chains** for logical groupings (base → layout → page)
+3. **Keep templates focused** - each template should have a single responsibility
+4. **Document inheritance chains** in comments to help future maintenance
 
 ### Buttons
 
@@ -761,4 +966,139 @@ buttons:
 - **Type Conversion**: Parameter values are strings. When substituted into numeric fields (like `wait`), they're parsed automatically by YAML.
 - **Error Handling**: If a macro is not found or parameter substitution fails, an error is raised that can be caught with try/else.
 - **Late Binding**: Macros are expanded at button press time, not configuration load time.
+
+## Dynamic Parameters
+
+Dynamic parameters allow button text to display real-time information that updates automatically. Parameters are evaluated when buttons are refreshed and use the `${provider:argument}` syntax.
+
+### Available Providers
+
+#### 1. Time Provider (`${time:FORMAT}`)
+
+Displays current date/time using strftime format strings.
+
+**Examples:**
+- `${time:%H:%M:%S}` → "14:32:45" (hours:minutes:seconds)
+- `${time:%Y-%m-%d}` → "2025-10-20" (date)
+- `${time:%A, %B %d}` → "Monday, October 20"
+- `${time:%I:%M %p}` → "02:32 PM" (12-hour format)
+
+Common format codes:
+- `%H` - Hour (24-hour, 00-23)
+- `%I` - Hour (12-hour, 01-12)
+- `%M` - Minute (00-59)
+- `%S` - Second (00-59)
+- `%p` - AM/PM
+- `%Y` - Year (4 digits)
+- `%m` - Month (01-12)
+- `%d` - Day (01-31)
+- `%A` - Weekday name
+- `%B` - Month name
+
+#### 2. Environment Variable Provider (`${env:VAR}`)
+
+Reads environment variables from the process.
+
+**Examples:**
+- `${env:USER}` → Current username
+- `${env:HOME}` → Home directory path
+- `${env:PATH}` → System PATH variable
+
+**Error Handling:** If variable doesn't exist, displays "⚠"
+
+#### 3. Service Provider (`${service:NAME}`)
+
+References a background service's cached output. Services must be defined in the global `services` section.
+
+**Example:**
+```yaml
+services:
+  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  memory: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
+
+pages:
+  Main:
+    on_tick:
+      - refresh:  # Update dynamic buttons every second
+
+    button1:
+      dynamic: true
+      text: "CPU: ${service:cpu}%"
+
+    button2:
+      dynamic: true
+      text: "RAM: ${service:memory}"
+```
+
+**Error States:**
+- "..." - Service starting (first update in progress)
+- "⚠" - Service failed or not defined
+
+### Combining Multiple Providers
+
+Multiple parameters can be combined in a single text string:
+
+```yaml
+button1:
+  dynamic: true
+  text: "${time:%H:%M} | ${env:USER} | CPU: ${service:cpu}%"
+```
+
+### Complete Example: System Monitor Dashboard
+
+```yaml
+services:
+  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  memory: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
+  disk: "df -h / | tail -1 | awk '{print $5}'"
+  uptime:
+    exec: "uptime -p | sed 's/up //'"
+    interval: 60
+
+pages:
+  Dashboard:
+    on_tick:
+      - refresh:  # Auto-update all dynamic buttons
+
+    button1:
+      dynamic: true
+      text: "${time:%H:%M:%S}"
+      background: "0x000000"
+
+    button2:
+      dynamic: true
+      text: "CPU\n${service:cpu}%"
+      background: "0x1a1a1a"
+
+    button3:
+      dynamic: true
+      text: "RAM\n${service:memory}"
+      background: "0x1a1a1a"
+
+    button4:
+      dynamic: true
+      text: "DISK\n${service:disk}"
+      background: "0x1a1a1a"
+
+    button5:
+      dynamic: true
+      text: "Uptime:\n${service:uptime}"
+      background: "0x1a1a1a"
+
+    button15:
+      text: "Refresh"
+      actions:
+        - refresh:  # Manual refresh button
+```
+
+### Dynamic Button Best Practices
+
+1. **Mark buttons as dynamic**: Use `dynamic: true` for buttons that change content
+2. **Use appropriate intervals**: Set service `interval` based on update frequency needs
+   - Fast updates (1s): CPU, memory, time
+   - Moderate (30-60s): Disk, network stats
+   - Slow (600s+): Weather, external APIs
+3. **Handle errors gracefully**: Services show "⚠" on failure and automatically retry
+4. **Optimize commands**: Keep service commands fast (<1s) to avoid timeouts
+5. **Share services**: Multiple buttons can reference the same service efficiently
 
