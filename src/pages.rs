@@ -35,25 +35,25 @@ pub struct KeyDeckConf {
 
     /// Map of template layouts, where each template can define a reusable page layout.
     #[serde(skip_serializing_if = "Option::is_none")]
-    templates: Option<HashMap<String, Page>>,
+    templates: Option<IndexMap<String, Page>>,
 
     /// Map of predefined button configurations, accessible by name for reusability across pages.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub buttons: Option<HashMap<String, Button>>,
+    pub buttons: Option<IndexMap<String, Button>>,
 
     /// Map of color settings, allowing configuration of colors (e.g., background) by name.
     /// The color format is either "0xRRGGBB" or "0xAARRGGBB".
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub colors: Option<HashMap<String, String>>,
+    pub colors: Option<IndexMap<String, String>>,
 
     /// Map of services with external commands that can be executed in background threads.
     /// Services provide cached data that can be referenced in button text via ${service:name}.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub services: Option<HashMap<String, ServiceConfig>>,
+    pub services: Option<IndexMap<String, ServiceConfig>>,
 
     /// Map of macros, which are reusable action sequences with optional parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub macros: Option<HashMap<String, Macro>>,
+    pub macros: Option<IndexMap<String, Macro>>,
 
     /// Global tick interval in seconds (default: 2.0, range: 1-60).
     /// Controls how often the tick event fires globally for all devices.
@@ -64,7 +64,7 @@ pub struct KeyDeckConf {
     /// device is connected, the corresponding page group is loaded.
     /// When no specific page group is found, the "default" page group is used.
     #[serde(flatten)]
-    pub page_groups: HashMap<String, Pages>,
+    pub page_groups: IndexMap<String, Pages>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -466,7 +466,7 @@ impl KeyDeckConf {
     /// Returns merged buttons and on_tick actions in parent-first order (grandparent -> parent -> child).
     fn resolve_template_recursive(
         template_name: &str,
-        templates: &HashMap<String, Page>,
+        templates: &IndexMap<String, Page>,
         visited: &mut Vec<String>,
     ) -> Result<(HashMap<String, ButtonConfig>, Option<Vec<Action>>), String> {
         // Check for circular inheritance
@@ -546,7 +546,7 @@ impl KeyDeckConf {
         }
 
         // Resolve template inheritance for all pages
-        let empty_templates = HashMap::new();
+        let empty_templates = IndexMap::new();
         for (_, pages) in &mut conf.page_groups {
             for (page_name, page) in &mut pages.pages {
                 // Recursively resolve all inherited templates

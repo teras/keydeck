@@ -1,6 +1,7 @@
 use crate::dynamic_params::ERROR_INDICATOR;
 use crate::pages::ServiceConfig;
 use crate::{error_log, verbose_log};
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::sync::atomic::AtomicBool;
@@ -114,7 +115,7 @@ fn execute_with_timeout(command: &str, timeout_secs: f64) -> Result<String, Stri
 ///
 /// # Arguments
 /// * `name` - Service name
-/// * `services_config` - HashMap of all service configurations
+/// * `services_config` - IndexMap of all service configurations
 /// * `state` - Shared services state
 /// * `still_active` - Flag to control service thread lifecycle
 ///
@@ -122,7 +123,7 @@ fn execute_with_timeout(command: &str, timeout_secs: f64) -> Result<String, Stri
 /// true if service was started (or already running), false if service not found in config
 pub fn ensure_service_started(
     name: &str,
-    services_config: &HashMap<String, ServiceConfig>,
+    services_config: &IndexMap<String, ServiceConfig>,
     state: &ServicesState,
     still_active: &Arc<AtomicBool>,
 ) -> bool {

@@ -1,6 +1,7 @@
 use crate::pages::ServiceConfig;
 use crate::services::{ensure_service_started, get_service_value, ServicesState};
 use chrono::Local;
+use indexmap::IndexMap;
 use regex::Regex;
 use std::collections::HashMap;
 use std::env;
@@ -19,7 +20,7 @@ pub const ERROR_INDICATOR: &str = "⚠";
 /// On error, returns ERROR_INDICATOR for that parameter.
 pub fn evaluate_dynamic_params(
     text: &str,
-    services_config: &Option<HashMap<String, ServiceConfig>>,
+    services_config: &Option<IndexMap<String, ServiceConfig>>,
     services_state: &ServicesState,
     services_active: &Arc<AtomicBool>,
 ) -> HashMap<String, String> {
@@ -73,7 +74,7 @@ fn evaluate_env_provider(var_name: &str) -> String {
 /// Lazily starts the service if not already running.
 fn evaluate_service_provider(
     service_name: &str,
-    services_config: &Option<HashMap<String, ServiceConfig>>,
+    services_config: &Option<IndexMap<String, ServiceConfig>>,
     services_state: &ServicesState,
     services_active: &Arc<AtomicBool>,
 ) -> String {

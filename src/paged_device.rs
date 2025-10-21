@@ -14,6 +14,7 @@ use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -35,10 +36,10 @@ struct PendingActionQueue {
 pub struct PagedDevice {
     device: KeyDeckDevice,
     pages: Arc<Pages>,
-    colors: Arc<Option<HashMap<String, String>>>,
-    button_templates: Arc<Option<HashMap<String, Button>>>,
-    macros: Arc<Option<HashMap<String, crate::pages::Macro>>>,
-    services_config: Arc<Option<HashMap<String, ServiceConfig>>>,
+    colors: Arc<Option<IndexMap<String, String>>>,
+    button_templates: Arc<Option<IndexMap<String, Button>>>,
+    macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
+    services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
     services_state: ServicesState,
     services_active: Arc<AtomicBool>,
     image_dir: Option<String>,
@@ -57,10 +58,10 @@ pub struct PagedDevice {
 impl PagedDevice {
     pub fn new(pages: Arc<Pages>,
                image_dir: Option<String>,
-               colors: Arc<Option<HashMap<String, String>>>,
-               button_templates: Arc<Option<HashMap<String, Button>>>,
-               macros: Arc<Option<HashMap<String, crate::pages::Macro>>>,
-               services_config: Arc<Option<HashMap<String, ServiceConfig>>>,
+               colors: Arc<Option<IndexMap<String, String>>>,
+               button_templates: Arc<Option<IndexMap<String, Button>>>,
+               macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
+               services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
                services_state: ServicesState,
                services_active: Arc<AtomicBool>,
                device: KeyDeckDevice,
@@ -440,13 +441,13 @@ impl PagedDevice {
                         RefreshTarget::Single(button_id) => {
                             // Refresh single button
                             verbose_log!("Refresh: updating button {}", button_id);
-                            self.invalidate_and_refresh_button(*button_id)?;
+                            self.invalidate_and_refresh_button(button_id)?;
                         }
                         RefreshTarget::Multiple(button_ids) => {
                             // Refresh multiple buttons
                             verbose_log!("Refresh: updating {} buttons", button_ids.len());
                             for button_id in button_ids {
-                                self.invalidate_and_refresh_button(*button_id)?;
+                                self.invalidate_and_refresh_button(button_id)?;
                             }
                         }
                     }
@@ -998,7 +999,7 @@ impl PagedDevice {
     }
 }
 
-fn string_to_color(color: &str, named_colors: &Option<HashMap<String, String>>) -> Result<(u8, u8, u8), String> {
+fn string_to_color(color: &str, named_colors: &Option<IndexMap<String, String>>) -> Result<(u8, u8, u8), String> {
     if (color.len() == 8 || color.len() == 10) && color.starts_with("0x") {
         let offset = if color.len() == 10 { 2 } else { 0 };
         let a = if color.len() == 10 { u8::from_str_radix(&color[2..4], 16).map_err(|_| format!("Invalid color format: {}", color))? } else { 255 };
