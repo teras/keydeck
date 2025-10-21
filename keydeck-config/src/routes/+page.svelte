@@ -8,6 +8,7 @@
   import ButtonEditor from "../lib/components/ButtonEditor.svelte";
   import PageEditor from "../lib/components/PageEditor.svelte";
   import TemplateEditor from "../lib/components/TemplateEditor.svelte";
+  import ActionEditor from "../lib/components/ActionEditor.svelte";
 
   interface DeviceInfo {
     device_id: string;
@@ -36,6 +37,9 @@
   let currentPage = $state<string>("");
   let currentTemplate = $state<string | null>(null);
   let selectedButton = $state<number | null>(null);
+  let currentService = $state<string | null>(null);
+  let currentMacro = $state<string | null>(null);
+  let currentButtonDef = $state<string | null>(null);
   let config = $state<any>(null);
   let error = $state<string>("");
   let isSaving = $state<boolean>(false);
@@ -129,9 +133,12 @@
   }
 
   // When device changes, auto-select initial page
+  let previousDeviceSerial = $state<string | null>(null);
   $effect(() => {
-    if (selectedDevice && config) {
+    const currentSerial = selectedDevice?.serial || null;
+    if (currentSerial !== previousDeviceSerial && config) {
       selectInitialPage();
+      previousDeviceSerial = currentSerial;
     }
   });
 
@@ -150,13 +157,19 @@
 
   function handlePageSelected(pageName: string) {
     currentPage = pageName;
-    currentTemplate = null; // Clear template selection when switching to a page
+    currentTemplate = null;
     selectedButton = null;
+    currentService = null;
+    currentMacro = null;
+    currentButtonDef = null;
   }
 
   function handleTemplateSelected(templateName: string | null, keepButtonSelection: boolean = false) {
     currentTemplate = templateName;
-    currentPage = ""; // Clear page selection when switching to a template
+    currentPage = "";
+    currentService = null;
+    currentMacro = null;
+    currentButtonDef = null;
     if (!keepButtonSelection) {
       selectedButton = null;
     }
@@ -164,6 +177,33 @@
 
   function handleButtonSelected(buttonIndex: number) {
     selectedButton = buttonIndex;
+  }
+
+  function handleServiceSelected(serviceName: string | null) {
+    currentService = serviceName;
+    currentMacro = null;
+    currentButtonDef = null;
+    currentPage = "";
+    currentTemplate = null;
+    selectedButton = null;
+  }
+
+  function handleMacroSelected(macroName: string | null) {
+    currentMacro = macroName;
+    currentService = null;
+    currentButtonDef = null;
+    currentPage = "";
+    currentTemplate = null;
+    selectedButton = null;
+  }
+
+  function handleButtonDefSelected(buttonName: string | null) {
+    currentButtonDef = buttonName;
+    currentService = null;
+    currentMacro = null;
+    currentPage = "";
+    currentTemplate = null;
+    selectedButton = null;
   }
 
   async function reloadConfig() {
@@ -312,8 +352,14 @@
       selectedDevice={selectedDevice}
       currentPage={currentPage}
       currentTemplate={currentTemplate}
+      currentService={currentService}
+      currentMacro={currentMacro}
+      currentButtonDef={currentButtonDef}
       onPageSelected={handlePageSelected}
       onTemplateSelected={handleTemplateSelected}
+      onServiceSelected={handleServiceSelected}
+      onMacroSelected={handleMacroSelected}
+      onButtonDefSelected={handleButtonDefSelected}
     />
 
     <!-- Center: Button Grid -->
@@ -357,9 +403,227 @@
           config={config}
           templateName={currentTemplate}
         />
+      {:else if currentService && config}
+        <div class="editor-panel">
+          <h2>Service: {currentService}</h2>
+          <div class="service-config">
+            {#if typeof config.services[currentService] === 'string'}
+              <div class="form-group">
+                <label>Command</label>
+                <textarea bind:value={config.services[currentService]} rows="3" placeholder='echo "your data"'></textarea>
+                <p class="help">Shell command to execute (uses default interval: 1s, timeout: 5s)</p>
+              </div>
+            {:else}
+              <div class="form-group">
+                <label>Command</label>
+                <textarea bind:value={config.services[currentService].exec} rows="3" placeholder='echo "your data"'></textarea>
+              </div>
+              <div class="form-group">
+                <label>Interval (seconds)</label>
+                <input type="number" bind:value={config.services[currentService].interval} min="0.1" step="0.1" />
+                <p class="help">How often to run the command</p>
+              </div>
+              <div class="form-group">
+                <label>Timeout (seconds)</label>
+                <input type="number" bind:value={config.services[currentService].timeout} min="1" step="1" />
+                <p class="help">Maximum time to wait for command completion</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {:else if currentMacro && config}
+        <div class="editor-panel">
+          <h2>Macro: {currentMacro}</h2>
+          <p class="help">Macros contain reusable action sequences with optional parameters</p>
+
+          {#if config.macros[currentMacro]}
+            <!-- Macro Parameters -->
+            <div class="macro-section">
+              <div class="section-header">
+                <h3>Parameters</h3>
+                <button class="add-btn" onclick={() => {
+                  const newParamName = prompt("Parameter name:");
+                  if (newParamName && newParamName.trim()) {
+                    if (!config.macros[currentMacro].params) {
+                      config.macros[currentMacro].params = {};
+                    }
+                    config.macros[currentMacro].params[newParamName.trim()] = "";
+                  }
+                }}>+</button>
+              </div>
+
+              <div class="params-list">
+                {#if config.macros[currentMacro].params && Object.keys(config.macros[currentMacro].params).length > 0}
+                  {#each Object.entries(config.macros[currentMacro].params) as [paramName, paramValue]}
+                    <div class="param-item">
+                      <div class="param-content">
+                        <div class="param-name-display">{paramName}</div>
+                        <input
+                          type="text"
+                          value={paramValue}
+                          oninput={(e) => {
+                            config.macros[currentMacro].params[paramName] = e.currentTarget.value;
+                          }}
+                          placeholder="Default value"
+                          class="param-value-input"
+                        />
+                      </div>
+                      <button
+                        class="param-delete-btn"
+                        onclick={() => {
+                          if (confirm(`Delete parameter "${paramName}"?`)) {
+                            delete config.macros[currentMacro].params[paramName];
+                            // Trigger reactivity
+                            config.macros[currentMacro].params = { ...config.macros[currentMacro].params };
+                          }
+                        }}
+                        title="Delete parameter"
+                      >×</button>
+                    </div>
+                  {/each}
+                {:else}
+                  <p class="empty">No parameters defined</p>
+                {/if}
+              </div>
+            </div>
+
+            <!-- Macro Actions -->
+            <div class="form-group">
+              <label>Actions</label>
+              <div class="actions-list">
+                {#if config.macros[currentMacro].actions && config.macros[currentMacro].actions.length > 0}
+                  {#each config.macros[currentMacro].actions as action, i (currentMacro + '-' + i)}
+                    <ActionEditor
+                      {action}
+                      index={i}
+                      {config}
+                      deviceSerial={selectedDevice?.serial}
+                      onUpdate={(newAction) => {
+                        config.macros[currentMacro].actions[i] = newAction;
+                      }}
+                      onDelete={() => {
+                        config.macros[currentMacro].actions.splice(i, 1);
+                      }}
+                    />
+                  {/each}
+                {:else}
+                  <p class="empty">No actions configured</p>
+                {/if}
+              </div>
+              <button onclick={() => {
+                if (!config.macros[currentMacro].actions) {
+                  config.macros[currentMacro].actions = [];
+                }
+                config.macros[currentMacro].actions.push({ exec: "" });
+              }}>+ Add Action</button>
+            </div>
+          {/if}
+        </div>
+      {:else if currentButtonDef && config}
+        <div class="editor-panel">
+          <h2>Button Definition: {currentButtonDef}</h2>
+          <p class="help">Button definitions are reusable button configurations</p>
+
+          {#if config.buttons[currentButtonDef]}
+            <!-- Icon, Text, Colors similar to ButtonEditor -->
+            <div class="form-group">
+              <label>Text</label>
+              <input
+                type="text"
+                value={config.buttons[currentButtonDef].text || ""}
+                oninput={(e) => {
+                  if (!config.buttons[currentButtonDef].text) {
+                    config.buttons[currentButtonDef].text = "";
+                  }
+                  config.buttons[currentButtonDef].text = e.currentTarget.value;
+                }}
+                placeholder="Button label"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Icon</label>
+              <input
+                type="text"
+                value={config.buttons[currentButtonDef].icon || ""}
+                oninput={(e) => {
+                  config.buttons[currentButtonDef].icon = e.currentTarget.value || undefined;
+                }}
+                placeholder="icon.png or path to image"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Background</label>
+              <input
+                type="text"
+                value={config.buttons[currentButtonDef].background || ""}
+                oninput={(e) => {
+                  config.buttons[currentButtonDef].background = e.currentTarget.value || undefined;
+                }}
+                placeholder="0xRRGGBB"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Text Color</label>
+              <input
+                type="text"
+                value={config.buttons[currentButtonDef].text_color || ""}
+                oninput={(e) => {
+                  config.buttons[currentButtonDef].text_color = e.currentTarget.value || undefined;
+                }}
+                placeholder="0xRRGGBB"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Outline</label>
+              <input
+                type="text"
+                value={config.buttons[currentButtonDef].outline || ""}
+                oninput={(e) => {
+                  config.buttons[currentButtonDef].outline = e.currentTarget.value || undefined;
+                }}
+                placeholder="0xRRGGBB"
+              />
+            </div>
+
+            <!-- Button Definition Actions -->
+            <div class="form-group">
+              <label>Actions</label>
+              <div class="actions-list">
+                {#if config.buttons[currentButtonDef].actions && config.buttons[currentButtonDef].actions.length > 0}
+                  {#each config.buttons[currentButtonDef].actions as action, i (currentButtonDef + '-' + i)}
+                    <ActionEditor
+                      {action}
+                      index={i}
+                      {config}
+                      deviceSerial={selectedDevice?.serial}
+                      onUpdate={(newAction) => {
+                        config.buttons[currentButtonDef].actions[i] = newAction;
+                      }}
+                      onDelete={() => {
+                        config.buttons[currentButtonDef].actions.splice(i, 1);
+                      }}
+                    />
+                  {/each}
+                {:else}
+                  <p class="empty">No actions configured</p>
+                {/if}
+              </div>
+              <button onclick={() => {
+                if (!config.buttons[currentButtonDef].actions) {
+                  config.buttons[currentButtonDef].actions = [];
+                }
+                config.buttons[currentButtonDef].actions.push({ exec: "" });
+              }}>+ Add Action</button>
+            </div>
+          {/if}
+        </div>
       {:else}
         <div class="placeholder">
-          <p>Select a button, page, or template to edit</p>
+          <p>Select a button, page, template, service, macro, or button definition to edit</p>
         </div>
       {/if}
     </aside>
@@ -533,6 +797,181 @@
     border-left: 1px solid #3e3e42;
     overflow-y: auto;
     padding: 16px;
+  }
+
+  .editor-panel h2 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    color: #cccccc;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #3e3e42;
+  }
+
+  .editor-panel .help {
+    margin: 0 0 16px 0;
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
+  }
+
+  .service-config, .editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .form-group textarea,
+  .form-group input[type="number"] {
+    padding: 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: monospace;
+  }
+
+  .form-group textarea {
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  .form-group input:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #0e639c;
+  }
+
+  .macro-section {
+    margin-bottom: 20px;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #3e3e42;
+    margin-bottom: 12px;
+  }
+
+  .section-header h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .add-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
+  }
+
+  .params-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .param-item {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .param-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background-color: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+  }
+
+  .param-name-display {
+    font-size: 11px;
+    font-weight: 600;
+    color: #4ec9b0;
+    text-transform: uppercase;
+  }
+
+  .param-value-input {
+    padding: 4px 6px;
+    background-color: #2a2a2a;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+
+  .param-value-input:focus {
+    outline: none;
+    border-color: #0e639c;
+  }
+
+  .param-delete-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background-color: #3c3c3c;
+    color: #f48771;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .param-delete-btn:hover {
+    background-color: #4a4a4a;
+    color: #ff6b6b;
+  }
+
+  .actions-list {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 8px;
+  }
+
+  .empty {
+    color: #666;
+    font-size: 12px;
+    font-style: italic;
+    margin: 8px 0;
   }
 
   .placeholder {

@@ -12,6 +12,14 @@
   let showAddTemplate = $state(false);
   let newTemplateName = $state("");
   let renameTemplateName = $state("");
+  let templateNameInput: HTMLInputElement | undefined;
+
+  function toggleAddTemplate() {
+    showAddTemplate = !showAddTemplate;
+    if (showAddTemplate) {
+      setTimeout(() => templateNameInput?.focus(), 0);
+    }
+  }
 
   // Click-outside handler for menu
   $effect(() => {
@@ -34,9 +42,12 @@
       config.templates = {};
     }
 
-    config.templates[newTemplateName] = {};
+    const templateName = newTemplateName.trim();
+    config.templates[templateName] = {};
     newTemplateName = "";
     showAddTemplate = false;
+    // Select the newly added template
+    onTemplateSelected(templateName);
   }
 
   function deleteTemplate(templateName: string) {
@@ -47,6 +58,21 @@
       }
       showTemplateMenu = null;
     }
+  }
+
+  function duplicateTemplate(templateName: string) {
+    const original = config.templates[templateName];
+    let newName = `${templateName}_copy`;
+    let counter = 1;
+    while (config.templates[newName]) {
+      newName = `${templateName}_copy${counter}`;
+      counter++;
+    }
+
+    // Deep clone the template
+    config.templates[newName] = JSON.parse(JSON.stringify(original));
+    onTemplateSelected(newName);
+    showTemplateMenu = null;
   }
 
   function startRename(templateName: string) {
@@ -75,21 +101,24 @@
 <div class="template-list">
   <div class="header">
     <h3>Templates</h3>
-    <button class="add-btn" onclick={() => showAddTemplate = !showAddTemplate}>+</button>
+    <button class="add-btn" onclick={toggleAddTemplate}>+</button>
   </div>
 
   {#if showAddTemplate}
     <div class="add-template">
       <input
         type="text"
+        bind:this={templateNameInput}
         bind:value={newTemplateName}
         placeholder="Template name"
         onkeydown={(e) => e.key === 'Enter' && addTemplate()}
       />
-      <button onclick={addTemplate}>Add</button>
-      <button onclick={() => showAddTemplate = false}>Cancel</button>
+      <button onclick={addTemplate} title="Add">✓</button>
+      <button onclick={() => showAddTemplate = false} title="Cancel">✕</button>
     </div>
   {/if}
+
+  <div class="separator"></div>
 
   <div class="templates">
     {#each templates as template}
@@ -124,8 +153,9 @@
 
         {#if showTemplateMenu === template}
           <div class="template-menu">
-            <button onclick={() => startRename(template)}>Rename</button>
-            <button onclick={() => deleteTemplate(template)}>Delete</button>
+            <button onclick={() => startRename(template)}>✏️ Rename</button>
+            <button onclick={() => duplicateTemplate(template)}>📋 Duplicate</button>
+            <button class="danger" onclick={() => deleteTemplate(template)}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -135,22 +165,18 @@
 
 <style>
   .template-list {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #3e3e42;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    padding-bottom: 12px;
   }
 
   h3 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 16px;
     color: #cccccc;
   }
 
@@ -176,7 +202,13 @@
   .add-template {
     display: flex;
     gap: 4px;
-    margin-bottom: 8px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .separator {
+    border-bottom: 1px solid #3e3e42;
+    margin-bottom: 16px;
   }
 
   .add-template input {
@@ -191,24 +223,27 @@
 
   .add-template button {
     padding: 6px 12px;
-    background-color: #0e639c;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
   }
 
-  .add-template button:hover {
-    background-color: #1177bb;
+  .add-template button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-template button:first-of-type:hover {
+    background-color: #3a9d5a;
   }
 
   .add-template button:last-child {
-    background-color: #555;
+    background-color: #7a2d2d;
   }
 
   .add-template button:last-child:hover {
-    background-color: #666;
+    background-color: #9a3d3d;
   }
 
   .templates {
@@ -240,8 +275,8 @@
   }
 
   .template-item.active {
-    background-color: #5a4a2a;
-    border-color: #d7a964;
+    background-color: #354a5f;
+    border-color: #5b9bd5;
   }
 
   .template-menu-btn {

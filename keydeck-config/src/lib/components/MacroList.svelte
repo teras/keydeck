@@ -1,15 +1,25 @@
 <script lang="ts">
   interface Props {
     config: any;
-    onMacroSelected?: (macroName: string | null) => void;
+    currentMacro: string | null;
+    onMacroSelected: (macroName: string | null) => void;
   }
 
-  let { config, onMacroSelected }: Props = $props();
+  let { config, currentMacro, onMacroSelected }: Props = $props();
 
   let macros = $derived(Object.keys(config.macros || {}));
   let showAddMacro = $state(false);
   let newMacroName = $state("");
   let showMacroMenu = $state<string | null>(null);
+  let macroNameInput: HTMLInputElement | undefined;
+  let renameMacroName = $state("");
+
+  function toggleAddMacro() {
+    showAddMacro = !showAddMacro;
+    if (showAddMacro) {
+      setTimeout(() => macroNameInput?.focus(), 0);
+    }
+  }
 
   // Click-outside handler for menu
   $effect(() => {
@@ -32,62 +42,127 @@
       config.macros = {};
     }
 
-    config.macros[newMacroName] = {
+    const macroName = newMacroName.trim();
+    config.macros[macroName] = {
       actions: []
     };
     newMacroName = "";
     showAddMacro = false;
+    // Select the newly added macro
     if (onMacroSelected) {
-      onMacroSelected(newMacroName);
+      onMacroSelected(macroName);
     }
   }
 
   function deleteMacro(macroName: string) {
     if (confirm(`Delete macro "${macroName}"?`)) {
       delete config.macros[macroName];
+      if (currentMacro === macroName) {
+        onMacroSelected(null);
+      }
       showMacroMenu = null;
     }
+  }
+
+  function duplicateMacro(macroName: string) {
+    const original = config.macros[macroName];
+    let newName = `${macroName}_copy`;
+    let counter = 1;
+    while (config.macros[newName]) {
+      newName = `${macroName}_copy${counter}`;
+      counter++;
+    }
+
+    config.macros[newName] = JSON.parse(JSON.stringify(original));
+    onMacroSelected(newName);
+    showMacroMenu = null;
+  }
+
+  function startRename(macroName: string) {
+    renameMacroName = macroName;
+    showMacroMenu = null;
+  }
+
+  function renameMacro(oldName: string) {
+    if (!renameMacroName.trim() || renameMacroName === oldName) {
+      renameMacroName = "";
+      return;
+    }
+
+    if (config.macros[renameMacroName]) {
+      alert(`Macro "${renameMacroName}" already exists!`);
+      return;
+    }
+
+    config.macros[renameMacroName] = config.macros[oldName];
+    delete config.macros[oldName];
+
+    if (currentMacro === oldName) {
+      onMacroSelected(renameMacroName);
+    }
+
+    renameMacroName = "";
   }
 </script>
 
 <div class="macro-list">
   <div class="header">
     <h3>Macros</h3>
-    <button class="add-btn" onclick={() => showAddMacro = !showAddMacro}>+</button>
+    <button class="add-btn" onclick={toggleAddMacro}>+</button>
   </div>
 
   {#if showAddMacro}
     <div class="add-macro">
       <input
         type="text"
+        bind:this={macroNameInput}
         bind:value={newMacroName}
         placeholder="Macro name"
         onkeydown={(e) => e.key === 'Enter' && addMacro()}
       />
-      <button onclick={addMacro}>Add</button>
-      <button onclick={() => showAddMacro = false}>Cancel</button>
+      <button onclick={addMacro} title="Add">✓</button>
+      <button onclick={() => showAddMacro = false} title="Cancel">✕</button>
     </div>
   {/if}
+
+  <div class="separator"></div>
 
   <div class="macros">
     {#each macros as macro}
       <div class="macro-row">
-        <button class="macro-item">
-          {macro}
-        </button>
-        <button
-          class="macro-menu-btn"
-          onclick={(e) => {
-            e.stopPropagation();
-            showMacroMenu = showMacroMenu === macro ? null : macro;
-          }}
-        >
-          ⋮
-        </button>
+        {#if renameMacroName && renameMacroName === macro}
+          <input
+            type="text"
+            bind:value={renameMacroName}
+            class="rename-input"
+            onkeydown={(e) => e.key === 'Enter' && renameMacro(macro)}
+            onblur={() => renameMacro(macro)}
+            autofocus
+          />
+        {:else}
+          <button
+            class="macro-item"
+            class:active={macro === currentMacro}
+            onclick={() => onMacroSelected(macro)}
+          >
+            {macro}
+          </button>
+          <button
+            class="macro-menu-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              showMacroMenu = showMacroMenu === macro ? null : macro;
+            }}
+          >
+            ⋮
+          </button>
+        {/if}
 
         {#if showMacroMenu === macro}
           <div class="macro-menu">
-            <button onclick={() => deleteMacro(macro)}>Delete</button>
+            <button onclick={() => startRename(macro)}>✏️ Rename</button>
+            <button onclick={() => duplicateMacro(macro)}>📋 Duplicate</button>
+            <button class="danger" onclick={() => deleteMacro(macro)}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -97,22 +172,18 @@
 
 <style>
   .macro-list {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #3e3e42;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    padding-bottom: 12px;
   }
 
   h3 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 16px;
     color: #cccccc;
   }
 
@@ -138,7 +209,13 @@
   .add-macro {
     display: flex;
     gap: 4px;
-    margin-bottom: 8px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .separator {
+    border-bottom: 1px solid #3e3e42;
+    margin-bottom: 16px;
   }
 
   .add-macro input {
@@ -153,24 +230,27 @@
 
   .add-macro button {
     padding: 6px 12px;
-    background-color: #0e639c;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
   }
 
-  .add-macro button:hover {
-    background-color: #1177bb;
+  .add-macro button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-macro button:first-of-type:hover {
+    background-color: #3a9d5a;
   }
 
   .add-macro button:last-child {
-    background-color: #555;
+    background-color: #7a2d2d;
   }
 
   .add-macro button:last-child:hover {
-    background-color: #666;
+    background-color: #9a3d3d;
   }
 
   .macros {
@@ -199,6 +279,11 @@
 
   .macro-item:hover {
     background-color: #4a4a4a;
+  }
+
+  .macro-item.active {
+    background-color: #354a5f;
+    border-color: #5b9bd5;
   }
 
   .macro-menu-btn {

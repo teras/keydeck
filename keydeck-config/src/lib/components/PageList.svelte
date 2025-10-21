@@ -20,9 +20,18 @@
 
   let newPageName = $state("");
   let showPageMenu = $state<string | null>(null);
+  let showAddPage = $state(false);
   let draggedPage = $state<string | null>(null);
   let dragOverPage = $state<string | null>(null);
   let dropPosition = $state<'before' | 'after' | null>(null);
+  let pageNameInput: HTMLInputElement | undefined;
+
+  function toggleAddPage() {
+    showAddPage = !showAddPage;
+    if (showAddPage) {
+      setTimeout(() => pageNameInput?.focus(), 0);
+    }
+  }
 
   // Close menu when clicking outside
   $effect(() => {
@@ -54,20 +63,23 @@
   function addPage() {
     if (!newPageName.trim()) return;
     const groupKey = ensurePageGroup();
+    const pageName = newPageName.trim();
 
     // Check if page already exists (pages are flattened)
-    if (config.page_groups[groupKey][newPageName]) {
-      alert(`Page "${newPageName}" already exists!`);
+    if (config.page_groups[groupKey][pageName]) {
+      alert(`Page "${pageName}" already exists!`);
       return;
     }
 
     // Pages are flattened at the same level as restore_mode
     // Buttons are also flattened on the page (no .buttons object)
-    config.page_groups[groupKey][newPageName] = {};
+    config.page_groups[groupKey][pageName] = {};
     // Also update root level since it's flattened in the actual config
-    config[groupKey][newPageName] = {};
-    onPageSelected(newPageName);
+    config[groupKey][pageName] = {};
     newPageName = "";
+    showAddPage = false;
+    // Select the newly added page
+    onPageSelected(pageName);
   }
 
   function deletePage(pageName: string) {
@@ -229,7 +241,26 @@
 </script>
 
 <div class="page-list">
-  <h3>Pages</h3>
+  <div class="header">
+    <h3>Pages</h3>
+    <button class="add-btn" onclick={toggleAddPage}>+</button>
+  </div>
+
+  {#if showAddPage}
+    <div class="add-page">
+      <input
+        type="text"
+        bind:this={pageNameInput}
+        bind:value={newPageName}
+        placeholder="Page name"
+        onkeydown={(e) => e.key === 'Enter' && addPage()}
+      />
+      <button onclick={addPage} title="Add">✓</button>
+      <button onclick={() => showAddPage = false} title="Cancel">✕</button>
+    </div>
+  {/if}
+
+  <div class="separator"></div>
 
   <div class="pages">
     {#each pages as page}
@@ -277,35 +308,95 @@
       </div>
     {/each}
   </div>
-
-  <div class="add-page">
-    <input
-      type="text"
-      placeholder="New page name"
-      bind:value={newPageName}
-      onkeydown={(e) => e.key === 'Enter' && addPage()}
-    />
-    <button onclick={addPage}>+ Add</button>
-  </div>
 </div>
 
 <style>
   .page-list {
-    margin-top: 20px;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
   }
 
   h3 {
-    margin: 0 0 12px 0;
-    font-size: 14px;
-    font-weight: 600;
+    margin: 0;
+    font-size: 16px;
     color: #cccccc;
+  }
+
+  .add-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
+  }
+
+  .add-page {
+    display: flex;
+    gap: 4px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .separator {
+    border-bottom: 1px solid #3e3e42;
+    margin-bottom: 16px;
+  }
+
+  .add-page input {
+    flex: 1;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .add-page button {
+    padding: 6px 12px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .add-page button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-page button:first-of-type:hover {
+    background-color: #3a9d5a;
+  }
+
+  .add-page button:last-child {
+    background-color: #7a2d2d;
+  }
+
+  .add-page button:last-child:hover {
+    background-color: #9a3d3d;
   }
 
   .pages {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-bottom: 12px;
   }
 
   .page-item-wrapper {
@@ -377,19 +468,19 @@
   }
 
   .page-item.active {
-    background-color: #0e639c;
-    border-color: #1177bb;
+    background-color: #354a5f;
+    border-color: #5b9bd5;
   }
 
   .page-menu-btn {
-    padding: 8px 10px;
+    width: 28px;
+    padding: 4px;
     background-color: #3c3c3c;
     color: #888;
     border: 1px solid #555;
     border-radius: 4px;
     cursor: pointer;
     font-size: 16px;
-    line-height: 1;
   }
 
   .page-menu-btn:hover {
@@ -440,27 +531,4 @@
     gap: 4px;
   }
 
-  input {
-    flex: 1;
-    padding: 8px;
-    background-color: #3c3c3c;
-    color: #cccccc;
-    border: 1px solid #555;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-
-  .add-page button {
-    padding: 8px 12px;
-    background-color: #0e639c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .add-page button:hover {
-    background-color: #1177bb;
-  }
 </style>

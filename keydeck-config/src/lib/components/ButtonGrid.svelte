@@ -206,9 +206,9 @@
       }
     }
 
-    // Replace ${...} dynamic variables with ... for preview
+    // Replace ${...} dynamic variables with ⏱ for preview
     if (text) {
-      text = text.replace(/\$\{[^}]+\}/g, '...');
+      text = text.replace(/\$\{[^}]+\}/g, '⏱');
     }
 
     return text;

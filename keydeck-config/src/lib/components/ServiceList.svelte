@@ -1,15 +1,25 @@
 <script lang="ts">
   interface Props {
     config: any;
-    onServiceSelected?: (serviceName: string | null) => void;
+    currentService: string | null;
+    onServiceSelected: (serviceName: string | null) => void;
   }
 
-  let { config, onServiceSelected }: Props = $props();
+  let { config, currentService, onServiceSelected }: Props = $props();
 
   let services = $derived(Object.keys(config.services || {}));
   let showAddService = $state(false);
   let newServiceName = $state("");
   let showServiceMenu = $state<string | null>(null);
+  let serviceNameInput: HTMLInputElement | undefined;
+  let renameServiceName = $state("");
+
+  function toggleAddService() {
+    showAddService = !showAddService;
+    if (showAddService) {
+      setTimeout(() => serviceNameInput?.focus(), 0);
+    }
+  }
 
   // Click-outside handler for menu
   $effect(() => {
@@ -32,60 +42,130 @@
       config.services = {};
     }
 
-    config.services[newServiceName] = "echo 'command here'";
+    const serviceName = newServiceName.trim();
+    config.services[serviceName] = {
+      exec: "",
+      interval: 1,
+      timeout: 5
+    };
     newServiceName = "";
     showAddService = false;
+    // Select the newly added service
     if (onServiceSelected) {
-      onServiceSelected(newServiceName);
+      onServiceSelected(serviceName);
     }
   }
 
   function deleteService(serviceName: string) {
     if (confirm(`Delete service "${serviceName}"?`)) {
       delete config.services[serviceName];
+      if (currentService === serviceName) {
+        onServiceSelected(null);
+      }
       showServiceMenu = null;
     }
+  }
+
+  function duplicateService(serviceName: string) {
+    const original = config.services[serviceName];
+    let newName = `${serviceName}_copy`;
+    let counter = 1;
+    while (config.services[newName]) {
+      newName = `${serviceName}_copy${counter}`;
+      counter++;
+    }
+
+    // Deep clone the service
+    config.services[newName] = JSON.parse(JSON.stringify(original));
+    onServiceSelected(newName);
+    showServiceMenu = null;
+  }
+
+  function startRename(serviceName: string) {
+    renameServiceName = serviceName;
+    showServiceMenu = null;
+  }
+
+  function renameService(oldName: string) {
+    if (!renameServiceName.trim() || renameServiceName === oldName) {
+      renameServiceName = "";
+      return;
+    }
+
+    if (config.services[renameServiceName]) {
+      alert(`Service "${renameServiceName}" already exists!`);
+      return;
+    }
+
+    config.services[renameServiceName] = config.services[oldName];
+    delete config.services[oldName];
+
+    if (currentService === oldName) {
+      onServiceSelected(renameServiceName);
+    }
+
+    renameServiceName = "";
   }
 </script>
 
 <div class="service-list">
   <div class="header">
     <h3>Services</h3>
-    <button class="add-btn" onclick={() => showAddService = !showAddService}>+</button>
+    <button class="add-btn" onclick={toggleAddService}>+</button>
   </div>
 
   {#if showAddService}
     <div class="add-service">
       <input
         type="text"
+        bind:this={serviceNameInput}
         bind:value={newServiceName}
         placeholder="Service name"
         onkeydown={(e) => e.key === 'Enter' && addService()}
       />
-      <button onclick={addService}>Add</button>
-      <button onclick={() => showAddService = false}>Cancel</button>
+      <button onclick={addService} title="Add">✓</button>
+      <button onclick={() => showAddService = false} title="Cancel">✕</button>
     </div>
   {/if}
+
+  <div class="separator"></div>
 
   <div class="services">
     {#each services as service}
       <div class="service-row">
-        <button class="service-item">
-          {service}
-        </button>
-        <button
-          class="service-menu-btn"
-          onclick={(e) => {
-            e.stopPropagation();
-            showServiceMenu = showServiceMenu === service ? null : service;
-          }}
-        >
-          ⋮
-        </button>
+        {#if renameServiceName && renameServiceName === service}
+          <input
+            type="text"
+            bind:value={renameServiceName}
+            class="rename-input"
+            onkeydown={(e) => e.key === 'Enter' && renameService(service)}
+            onblur={() => renameService(service)}
+            autofocus
+          />
+        {:else}
+          <button
+            class="service-item"
+            class:active={service === currentService}
+            onclick={() => onServiceSelected(service)}
+          >
+            {service}
+          </button>
+          <button
+            class="service-menu-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              showServiceMenu = showServiceMenu === service ? null : service;
+            }}
+          >
+            ⋮
+          </button>
+        {/if}
 
         {#if showServiceMenu === service}
           <div class="service-menu">
-            <button onclick={() => deleteService(service)}>Delete</button>
+            <button onclick={() => startRename(service)}>✏️ Rename</button>
+            <button onclick={() => duplicateService(service)}>📋 Duplicate</button>
+            <button class="danger" onclick={() => deleteService(service)}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -95,22 +175,18 @@
 
 <style>
   .service-list {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #3e3e42;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    padding-bottom: 12px;
   }
 
   h3 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 16px;
     color: #cccccc;
   }
 
@@ -136,7 +212,13 @@
   .add-service {
     display: flex;
     gap: 4px;
-    margin-bottom: 8px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .separator {
+    border-bottom: 1px solid #3e3e42;
+    margin-bottom: 16px;
   }
 
   .add-service input {
@@ -151,24 +233,27 @@
 
   .add-service button {
     padding: 6px 12px;
-    background-color: #0e639c;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
   }
 
-  .add-service button:hover {
-    background-color: #1177bb;
+  .add-service button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-service button:first-of-type:hover {
+    background-color: #3a9d5a;
   }
 
   .add-service button:last-child {
-    background-color: #555;
+    background-color: #7a2d2d;
   }
 
   .add-service button:last-child:hover {
-    background-color: #666;
+    background-color: #9a3d3d;
   }
 
   .services {
@@ -197,6 +282,11 @@
 
   .service-item:hover {
     background-color: #4a4a4a;
+  }
+
+  .service-item.active {
+    background-color: #354a5f;
+    border-color: #5b9bd5;
   }
 
   .service-menu-btn {

@@ -11,8 +11,14 @@
     selectedDevice: any;
     currentPage: string;
     currentTemplate: string | null;
+    currentService: string | null;
+    currentMacro: string | null;
+    currentButtonDef: string | null;
     onPageSelected: (pageName: string) => void;
     onTemplateSelected: (templateName: string | null, keepButtonSelection?: boolean) => void;
+    onServiceSelected: (serviceName: string | null) => void;
+    onMacroSelected: (macroName: string | null) => void;
+    onButtonDefSelected: (buttonName: string | null) => void;
   }
 
   let {
@@ -20,8 +26,14 @@
     selectedDevice,
     currentPage,
     currentTemplate,
+    currentService,
+    currentMacro,
+    currentButtonDef,
     onPageSelected,
-    onTemplateSelected
+    onTemplateSelected,
+    onServiceSelected,
+    onMacroSelected,
+    onButtonDefSelected
   }: Props = $props();
 
   type Tab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'system' | null;
@@ -45,12 +57,23 @@
   <div class="tab-bar">
     <button
       class="tab-button"
+      class:active={activeTab === 'system' && isOpen}
+      onclick={() => toggleTab('system')}
+      title="System Configuration"
+      disabled={!config}
+    >
+      <span class="icon">📟</span>
+      <span class="label">System</span>
+    </button>
+
+    <button
+      class="tab-button"
       class:active={activeTab === 'pages' && isOpen}
       onclick={() => toggleTab('pages')}
       title="Pages"
       disabled={!selectedDevice || !config}
     >
-      <span class="icon">📄</span>
+      <span class="icon">🗂️</span>
       <span class="label">Pages</span>
     </button>
 
@@ -61,7 +84,7 @@
       title="Templates"
       disabled={!config}
     >
-      <span class="icon">📋</span>
+      <span class="icon">🏗️</span>
       <span class="label">Templates</span>
     </button>
 
@@ -72,7 +95,7 @@
       title="Services"
       disabled={!config}
     >
-      <span class="icon">🔌</span>
+      <span class="icon">📡</span>
       <span class="label">Services</span>
     </button>
 
@@ -83,7 +106,7 @@
       title="Macros"
       disabled={!config}
     >
-      <span class="icon">🔧</span>
+      <span class="icon">🤖</span>
       <span class="label">Macros</span>
     </button>
 
@@ -96,17 +119,6 @@
     >
       <span class="icon">🔘</span>
       <span class="label">Buttons</span>
-    </button>
-
-    <button
-      class="tab-button"
-      class:active={activeTab === 'system' && isOpen}
-      onclick={() => toggleTab('system')}
-      title="System Configuration"
-      disabled={!config}
-    >
-      <span class="icon">⚙️</span>
-      <span class="label">System</span>
     </button>
   </div>
 
@@ -126,11 +138,23 @@
         onTemplateSelected={onTemplateSelected}
       />
     {:else if activeTab === 'services' && config}
-      <ServiceList config={config} />
+      <ServiceList
+        config={config}
+        currentService={currentService}
+        onServiceSelected={onServiceSelected}
+      />
     {:else if activeTab === 'macros' && config}
-      <MacroList config={config} />
+      <MacroList
+        config={config}
+        currentMacro={currentMacro}
+        onMacroSelected={onMacroSelected}
+      />
     {:else if activeTab === 'buttons' && config}
-      <ButtonDefList config={config} />
+      <ButtonDefList
+        config={config}
+        currentButtonDef={currentButtonDef}
+        onButtonDefSelected={onButtonDefSelected}
+      />
     {:else if activeTab === 'system' && config}
       <SystemConfig config={config} selectedDevice={selectedDevice} />
     {/if}
@@ -188,9 +212,9 @@
     content: '';
     position: absolute;
     left: 0;
-    top: 0;
+    right: 0;
     bottom: 0;
-    width: 2px;
+    height: 2px;
     background-color: #0e639c;
   }
 

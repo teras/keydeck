@@ -1,15 +1,25 @@
 <script lang="ts">
   interface Props {
     config: any;
-    onButtonDefSelected?: (buttonName: string | null) => void;
+    currentButtonDef: string | null;
+    onButtonDefSelected: (buttonName: string | null) => void;
   }
 
-  let { config, onButtonDefSelected }: Props = $props();
+  let { config, currentButtonDef, onButtonDefSelected }: Props = $props();
 
   let buttonDefs = $derived(Object.keys(config.buttons || {}));
   let showAddButton = $state(false);
   let newButtonName = $state("");
   let showButtonMenu = $state<string | null>(null);
+  let buttonNameInput: HTMLInputElement | undefined;
+  let renameButtonName = $state("");
+
+  function toggleAddButton() {
+    showAddButton = !showAddButton;
+    if (showAddButton) {
+      setTimeout(() => buttonNameInput?.focus(), 0);
+    }
+  }
 
   // Click-outside handler for menu
   $effect(() => {
@@ -32,62 +42,127 @@
       config.buttons = {};
     }
 
-    config.buttons[newButtonName] = {
+    const buttonName = newButtonName.trim();
+    config.buttons[buttonName] = {
       actions: []
     };
     newButtonName = "";
     showAddButton = false;
+    // Select the newly added button definition
     if (onButtonDefSelected) {
-      onButtonDefSelected(newButtonName);
+      onButtonDefSelected(buttonName);
     }
   }
 
   function deleteButton(buttonName: string) {
     if (confirm(`Delete button definition "${buttonName}"?`)) {
       delete config.buttons[buttonName];
+      if (currentButtonDef === buttonName) {
+        onButtonDefSelected(null);
+      }
       showButtonMenu = null;
     }
+  }
+
+  function duplicateButton(buttonName: string) {
+    const original = config.buttons[buttonName];
+    let newName = `${buttonName}_copy`;
+    let counter = 1;
+    while (config.buttons[newName]) {
+      newName = `${buttonName}_copy${counter}`;
+      counter++;
+    }
+
+    config.buttons[newName] = JSON.parse(JSON.stringify(original));
+    onButtonDefSelected(newName);
+    showButtonMenu = null;
+  }
+
+  function startRename(buttonName: string) {
+    renameButtonName = buttonName;
+    showButtonMenu = null;
+  }
+
+  function renameButton(oldName: string) {
+    if (!renameButtonName.trim() || renameButtonName === oldName) {
+      renameButtonName = "";
+      return;
+    }
+
+    if (config.buttons[renameButtonName]) {
+      alert(`Button definition "${renameButtonName}" already exists!`);
+      return;
+    }
+
+    config.buttons[renameButtonName] = config.buttons[oldName];
+    delete config.buttons[oldName];
+
+    if (currentButtonDef === oldName) {
+      onButtonDefSelected(renameButtonName);
+    }
+
+    renameButtonName = "";
   }
 </script>
 
 <div class="button-list">
   <div class="header">
     <h3>Button Definitions</h3>
-    <button class="add-btn" onclick={() => showAddButton = !showAddButton}>+</button>
+    <button class="add-btn" onclick={toggleAddButton}>+</button>
   </div>
 
   {#if showAddButton}
     <div class="add-button">
       <input
         type="text"
+        bind:this={buttonNameInput}
         bind:value={newButtonName}
         placeholder="Button name"
         onkeydown={(e) => e.key === 'Enter' && addButton()}
       />
-      <button onclick={addButton}>Add</button>
-      <button onclick={() => showAddButton = false}>Cancel</button>
+      <button onclick={addButton} title="Add">✓</button>
+      <button onclick={() => showAddButton = false} title="Cancel">✕</button>
     </div>
   {/if}
+
+  <div class="separator"></div>
 
   <div class="buttons">
     {#each buttonDefs as button}
       <div class="button-row">
-        <button class="button-item">
-          {button}
-        </button>
-        <button
-          class="button-menu-btn"
-          onclick={(e) => {
-            e.stopPropagation();
-            showButtonMenu = showButtonMenu === button ? null : button;
-          }}
-        >
-          ⋮
-        </button>
+        {#if renameButtonName && renameButtonName === button}
+          <input
+            type="text"
+            bind:value={renameButtonName}
+            class="rename-input"
+            onkeydown={(e) => e.key === 'Enter' && renameButton(button)}
+            onblur={() => renameButton(button)}
+            autofocus
+          />
+        {:else}
+          <button
+            class="button-item"
+            class:active={button === currentButtonDef}
+            onclick={() => onButtonDefSelected(button)}
+          >
+            {button}
+          </button>
+          <button
+            class="button-menu-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              showButtonMenu = showButtonMenu === button ? null : button;
+            }}
+          >
+            ⋮
+          </button>
+        {/if}
 
         {#if showButtonMenu === button}
           <div class="button-menu">
-            <button onclick={() => deleteButton(button)}>Delete</button>
+            <button onclick={() => startRename(button)}>✏️ Rename</button>
+            <button onclick={() => duplicateButton(button)}>📋 Duplicate</button>
+            <button class="danger" onclick={() => deleteButton(button)}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -97,22 +172,18 @@
 
 <style>
   .button-list {
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid #3e3e42;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    padding-bottom: 12px;
   }
 
   h3 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 16px;
     color: #cccccc;
   }
 
@@ -138,7 +209,13 @@
   .add-button {
     display: flex;
     gap: 4px;
-    margin-bottom: 8px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .separator {
+    border-bottom: 1px solid #3e3e42;
+    margin-bottom: 16px;
   }
 
   .add-button input {
@@ -153,24 +230,27 @@
 
   .add-button button {
     padding: 6px 12px;
-    background-color: #0e639c;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
   }
 
-  .add-button button:hover {
-    background-color: #1177bb;
+  .add-button button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-button button:first-of-type:hover {
+    background-color: #3a9d5a;
   }
 
   .add-button button:last-child {
-    background-color: #555;
+    background-color: #7a2d2d;
   }
 
   .add-button button:last-child:hover {
-    background-color: #666;
+    background-color: #9a3d3d;
   }
 
   .buttons {
@@ -199,6 +279,11 @@
 
   .button-item:hover {
     background-color: #4a4a4a;
+  }
+
+  .button-item.active {
+    background-color: #354a5f;
+    border-color: #5b9bd5;
   }
 
   .button-menu-btn {

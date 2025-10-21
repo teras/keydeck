@@ -90,13 +90,18 @@
 
   // Color management
   let newColorName = $state("");
-  let newColorValue = $state("#000000");
-  let isAddingColor = $state(false);
+  let showAddColor = $state(false);
+  let lastAddedColor = $state<string | null>(null);
+  let colorNameInput: HTMLInputElement | undefined;
 
-  function startAddingColor() {
-    newColorName = "";
-    newColorValue = "#000000";
-    isAddingColor = true;
+  function toggleAddColor() {
+    showAddColor = !showAddColor;
+    if (showAddColor) {
+      // Focus the input after it's rendered
+      setTimeout(() => {
+        colorNameInput?.focus();
+      }, 0);
+    }
   }
 
   function addColor() {
@@ -106,16 +111,47 @@
       config.colors = {};
     }
 
-    config.colors[newColorName.trim()] = newColorValue;
-    isAddingColor = false;
+    const colorName = newColorName.trim();
+    config.colors[colorName] = "0x888888";
+    lastAddedColor = colorName;
     newColorName = "";
-    newColorValue = "#000000";
+    showAddColor = false;
+
+    // Focus the color input after a brief delay to let the DOM update
+    setTimeout(() => {
+      const colorInput = document.querySelector(`input[data-color-name="${colorName}"]`) as HTMLInputElement;
+      if (colorInput) {
+        colorInput.focus();
+        // Place cursor at the end
+        colorInput.setSelectionRange(colorInput.value.length, colorInput.value.length);
+      }
+      lastAddedColor = null;
+    }, 50);
   }
 
-  function updateColor(name: string, value: string) {
+  function updateColorFromText(name: string, value: string) {
     if (config.colors) {
+      // If user enters #RRGGBB, convert to 0xRRGGBB
+      if (value.startsWith('#')) {
+        value = '0x' + value.slice(1);
+      }
       config.colors[name] = value;
     }
+  }
+
+  function updateColorFromPicker(name: string, value: string) {
+    if (config.colors) {
+      // Color picker gives #RRGGBB, convert to 0xRRGGBB
+      config.colors[name] = '0x' + value.slice(1);
+    }
+  }
+
+  function colorToHex(color: string): string {
+    // Convert 0xRRGGBB to #RRGGBB for color picker
+    if (color.startsWith('0x')) {
+      return '#' + color.slice(2);
+    }
+    return color.startsWith('#') ? color : '#' + color;
   }
 
   function deleteColor(name: string) {
@@ -124,16 +160,45 @@
       config.colors = config.colors; // Trigger reactivity
     }
   }
-
-  function cancelAddingColor() {
-    isAddingColor = false;
-    newColorName = "";
-    newColorValue = "#000000";
-  }
 </script>
 
 <div class="system-config">
   <h3>System Configuration</h3>
+
+  <!-- Device Settings (shown when device is selected) -->
+  {#if selectedDevice}
+    {@const pageGroup = getDevicePageGroup()}
+    {@const availablePages = getAvailablePages()}
+
+    <div class="section-header">Device Settings: {selectedDevice.model}</div>
+
+    <div class="form-group">
+      <label>Main Page</label>
+      <select
+        value={pageGroup?.main_page || ""}
+        onchange={(e) => updateMainPage(e.currentTarget.value)}
+      >
+        <option value="">Auto (first page)</option>
+        {#each availablePages as pageName}
+          <option value={pageName}>{pageName}</option>
+        {/each}
+      </select>
+      <p class="help">Default page to show when device starts</p>
+    </div>
+
+    <div class="form-group">
+      <label>Restore Mode</label>
+      <select
+        value={pageGroup?.restore_mode || "main"}
+        onchange={(e) => updateRestoreMode(e.currentTarget.value)}
+      >
+        <option value="keep">Keep - Stay on current page</option>
+        <option value="last">Last - Return to last page</option>
+        <option value="main">Main - Return to main page</option>
+      </select>
+      <p class="help">Page behavior on window focus change</p>
+    </div>
+  {/if}
 
   <!-- Global Settings -->
   <div class="section-header">Global Settings</div>
@@ -172,8 +237,24 @@
   </div>
 
   <div class="section">
-    <h4>Colors</h4>
-    <p class="help">Define named colors for reuse (#RRGGBB format)</p>
+    <div class="color-header">
+      <h4>Colors</h4>
+      <button class="add-btn" onclick={toggleAddColor}>+</button>
+    </div>
+
+    {#if showAddColor}
+      <div class="add-color">
+        <input
+          type="text"
+          bind:this={colorNameInput}
+          bind:value={newColorName}
+          placeholder="Color name"
+          onkeydown={(e) => e.key === 'Enter' && addColor()}
+        />
+        <button onclick={addColor} title="Add">✓</button>
+        <button onclick={() => showAddColor = false} title="Cancel">✕</button>
+      </div>
+    {/if}
 
     {#if config.colors && Object.keys(config.colors).length > 0}
       <div class="color-list">
@@ -185,14 +266,15 @@
                 <input
                   type="text"
                   value={color}
-                  oninput={(e) => updateColor(name, e.currentTarget.value)}
+                  oninput={(e) => updateColorFromText(name, e.currentTarget.value)}
                   class="color-text-input"
-                  placeholder="#RRGGBB"
+                  placeholder="0xRRGGBB"
+                  data-color-name={name}
                 />
                 <input
                   type="color"
-                  value={color}
-                  oninput={(e) => updateColor(name, e.currentTarget.value)}
+                  value={colorToHex(color)}
+                  oninput={(e) => updateColorFromPicker(name, e.currentTarget.value)}
                   class="color-picker-input"
                   title="Pick color"
                 />
@@ -207,78 +289,7 @@
     {:else}
       <p class="empty">No colors defined</p>
     {/if}
-
-    {#if isAddingColor}
-      <div class="add-color-form">
-        <input
-          type="text"
-          value={newColorName}
-          oninput={(e) => newColorName = e.currentTarget.value}
-          placeholder="Color name"
-          class="color-name-input"
-        />
-        <div class="color-value-container">
-          <input
-            type="text"
-            value={newColorValue}
-            oninput={(e) => newColorValue = e.currentTarget.value}
-            class="color-text-input"
-            placeholder="#RRGGBB"
-          />
-          <input
-            type="color"
-            value={newColorValue}
-            oninput={(e) => newColorValue = e.currentTarget.value}
-            class="color-picker-input"
-            title="Pick color"
-          />
-        </div>
-        <div class="add-color-buttons">
-          <button onclick={addColor} class="add-button">Add</button>
-          <button onclick={cancelAddingColor} class="cancel-button">Cancel</button>
-        </div>
-      </div>
-    {:else}
-      <button onclick={startAddingColor} class="add-color-button">+ Add Color</button>
-    {/if}
   </div>
-
-  <!-- Device Settings (shown when device is selected) -->
-  {#if selectedDevice}
-    {@const pageGroup = getDevicePageGroup()}
-    {@const availablePages = getAvailablePages()}
-
-    <div class="section">
-      <div class="section-header">Device Settings: {selectedDevice.model}</div>
-
-      <div class="form-group">
-        <label>Main Page</label>
-        <select
-          value={pageGroup?.main_page || ""}
-          onchange={(e) => updateMainPage(e.currentTarget.value)}
-        >
-          <option value="">Auto (first page)</option>
-          {#each availablePages as pageName}
-            <option value={pageName}>{pageName}</option>
-          {/each}
-        </select>
-        <p class="help">Default page to show when device starts</p>
-      </div>
-
-      <div class="form-group">
-        <label>Restore Mode</label>
-        <select
-          value={pageGroup?.restore_mode || "main"}
-          onchange={(e) => updateRestoreMode(e.currentTarget.value)}
-        >
-          <option value="keep">Keep - Stay on current page</option>
-          <option value="last">Last - Return to last page</option>
-          <option value="main">Main - Return to main page</option>
-        </select>
-        <p class="help">Page behavior on window focus change</p>
-      </div>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -306,12 +317,12 @@
     font-size: 14px;
     font-weight: 600;
     color: #4ec9b0;
-    margin: 20px 0 12px 0;
-    padding-bottom: 8px;
+    margin: 16px 0 8px 0;
+    padding-bottom: 6px;
     border-bottom: 1px solid #3e3e42;
   }
 
-  .section-header:first-child {
+  .section-header:first-of-type {
     margin-top: 0;
   }
 
@@ -391,8 +402,8 @@
 
   .warning-icon {
     position: absolute;
-    right: 52px;
-    font-size: 18px;
+    right: 60px;
+    font-size: 14px;
     pointer-events: none;
   }
 
@@ -408,16 +419,82 @@
     border-top: 1px solid #3e3e42;
   }
 
+  .color-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .add-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
+  }
+
+  .add-color {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .add-color input {
+    flex: 1;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .add-color button {
+    padding: 6px 12px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .add-color button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-color button:first-of-type:hover {
+    background-color: #3a9d5a;
+  }
+
+  .add-color button:last-child {
+    background-color: #7a2d2d;
+  }
+
+  .add-color button:last-child:hover {
+    background-color: #9a3d3d;
+  }
+
   .color-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-bottom: 12px;
   }
 
   .color-item {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: space-between;
     padding: 8px;
     background-color: #3c3c3c;
@@ -489,85 +566,12 @@
     font-size: 14px;
     line-height: 1;
     min-width: 28px;
-    height: 28px;
+    height: 32px;
+    flex-shrink: 0;
   }
 
   .delete-button:hover {
     background-color: #7a2d2d;
-  }
-
-  .add-color-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-    background-color: #2a2a2a;
-    border-radius: 4px;
-    margin-bottom: 12px;
-  }
-
-  .color-name-input {
-    padding: 8px;
-    background-color: #3c3c3c;
-    color: #cccccc;
-    border: 1px solid #555;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-
-  .color-name-input:focus {
-    outline: none;
-    border-color: #0e639c;
-  }
-
-  .add-color-buttons {
-    display: flex;
-    gap: 8px;
-  }
-
-  .add-button {
-    flex: 1;
-    padding: 8px;
-    background-color: #0e639c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .add-button:hover {
-    background-color: #1177bb;
-  }
-
-  .cancel-button {
-    flex: 1;
-    padding: 8px;
-    background-color: #555;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .cancel-button:hover {
-    background-color: #666;
-  }
-
-  .add-color-button {
-    padding: 8px;
-    background-color: #0e639c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    width: 100%;
-  }
-
-  .add-color-button:hover {
-    background-color: #1177bb;
   }
 
   .empty {
