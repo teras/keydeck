@@ -1,4 +1,5 @@
 mod device_manager;
+mod device_info;
 mod server;
 mod pages;
 mod focus_property;
@@ -49,6 +50,7 @@ fn print_help() {
     println!("      --reset                 Reset devices");
     println!("      --shutdown              Shutdown devices");
     println!("      --list                  List all devices");
+    println!("      --info <DEVICE>         Show detailed device information as YAML");
     println!("      --quiet                 Do not print verbose messages");
     println!("      --verbose               Print verbose messages");
     println!("      --server                Start the server");
@@ -181,6 +183,15 @@ fn main() {
                 }
             }
             "--list" => manager.list_devices(),
+            "--info" => {
+                if let Some(arg1) = arg_iter.next() {
+                    if let Err(e) = manager.info_device(arg1.to_uppercase()) {
+                        error_log!("Error: {}", e);
+                    }
+                } else {
+                    error_log!("Error: --info requires a device identifier argument");
+                }
+            }
             "--quiet" | "--verbose" => {}, // Already processed in first pass
             "--server" => should_start_server = true,
             _ => {

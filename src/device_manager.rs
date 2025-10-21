@@ -1,4 +1,5 @@
 use crate::{error_log, info_log, verbose_log};
+use crate::device_info::{DeviceInfo, ButtonLayout, ButtonImage, LcdStrip};
 use elgato_streamdeck::info::Kind;
 use elgato_streamdeck::{list_devices, new_hidapi, DeviceStateReader, StreamDeck};
 use hidapi::HidApi;
@@ -242,6 +243,48 @@ impl DeviceManager {
             info_log!("{} {} {:?}", device.device_id, device.serial, device.kind);
         }
         info_log!("Total devices: {}", self.count_active_devices());
+    }
+
+    pub fn info_device(&mut self, identifier: String) -> Result<(), String> {
+        for device in &mut self.devices {
+            if device.device_id == identifier || device.serial.trim() == identifier {
+                let (rows, cols) = device.kind.key_layout();
+                let image_format = device.kind.key_image_format();
+                let (img_width, img_height) = image_format.size;
+
+                let device_info = DeviceInfo {
+                    device_id: device.device_id.clone(),
+                    serial: device.serial.clone(),
+                    model: format!("{:?}", device.kind),
+                    button_layout: ButtonLayout {
+                        rows,
+                        columns: cols,
+                        total: device.kind.key_count(),
+                    },
+                    button_image: ButtonImage {
+                        width: img_width,
+                        height: img_height,
+                        format: format!("{:?}", image_format.mode),
+                    },
+                    encoders: device.kind.encoder_count(),
+                    touchpoints: device.kind.touchpoint_count(),
+                    lcd_strip: device.kind.lcd_strip_size().map(|(w, h)| LcdStrip {
+                        width: w,
+                        height: h,
+                    }),
+                    is_visual: device.kind.is_visual(),
+                };
+
+                match serde_yaml_ng::to_string(&device_info) {
+                    Ok(yaml) => {
+                        info_log!("{}", yaml);
+                        return Ok(());
+                    }
+                    Err(e) => return Err(format!("Failed to serialize device info: {}", e)),
+                }
+            }
+        }
+        Err(format!("Device with id '{}' not found", identifier))
     }
 
     pub fn enable_device(&mut self, identifier: String) -> Result<(), String> {
