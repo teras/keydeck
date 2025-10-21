@@ -8,6 +8,7 @@ Each device is identified by its serial number or can use a generic `default` co
 
 - [Overview](#overview)
 - [Configuration Structure](#configuration-structure)
+- [Runtime Operations](#runtime-operations)
 - [Detailed Configuration](#detailed-configuration)
   - [Global Fields](#global-fields)
   - [Device-Specific Configuration](#device-specific-configuration)
@@ -36,6 +37,131 @@ The file has five main sections:
 3. **Page Templates**: Define reusable button layouts or actions.
 4. **Buttons**: Specify reusable buttons with actions.
 5. **Macros**: Define reusable action sequences with parameters.
+
+## Runtime Operations
+
+### Configuration Reload (SIGHUP)
+
+KeyDeck supports live configuration reloading without restarting the server. This is useful for testing configuration changes or updating button layouts on the fly.
+
+**To reload the configuration:**
+
+```bash
+# Find the keydeck process ID
+pgrep keydeck
+
+# Send SIGHUP signal to reload configuration
+kill -HUP <pid>
+
+# Or in one command:
+pkill -HUP keydeck
+```
+
+**Behavior:**
+- The configuration file (`~/.config/keydeck/keydeck.yaml`) is re-read from disk
+- All devices are reinitialized with the new configuration
+- Current page states are reset to the main page (or first page if no main_page is defined)
+- Background services are restarted with new settings
+- No device reconnection is required
+
+**Use cases:**
+- Rapid iteration during configuration development
+- Updating button icons or text without downtime
+- Modifying macros or templates
+- Changing service commands or intervals
+
+**Example workflow:**
+```bash
+# Edit your configuration
+vim ~/.config/keydeck/keydeck.yaml
+
+# Reload without restarting
+pkill -HUP keydeck
+
+# Check logs for any configuration errors
+journalctl -u keydeck -f
+```
+
+### Device Information Query
+
+KeyDeck provides a command-line tool to query detailed information about connected StreamDeck devices. This is useful for writing configurations, debugging hardware issues, or verifying device capabilities.
+
+**Command:**
+
+```bash
+keydeck --info
+```
+
+**Output:**
+
+Returns YAML-formatted device information for all connected devices:
+
+```yaml
+devices:
+  - serial: "CL12345678"
+    kind: "Stream Deck +"
+    buttons:
+      count: 8
+      layout:
+        columns: 4
+        rows: 2
+        column_major: true  # Button indices increment down columns first
+    encoders:
+      count: 4
+      positions: [0, 1, 2, 3]  # Physical positions
+    touchstrip:
+      present: true
+      length: 400  # Width in pixels
+    lcd:
+      present: false
+
+  - serial: "AL87654321"
+    kind: "Stream Deck XL"
+    buttons:
+      count: 32
+      layout:
+        columns: 8
+        rows: 4
+        column_major: true
+    encoders:
+      count: 0
+    touchstrip:
+      present: false
+    lcd:
+      present: false
+```
+
+**Device Information Fields:**
+
+- **serial**: Unique device serial number (used as key in configuration)
+- **kind**: Human-readable device model name
+- **buttons.count**: Total number of physical buttons
+- **buttons.layout**: Grid layout for button arrangement
+  - `columns`: Number of button columns
+  - `rows`: Number of button rows
+  - `column_major`: If true, button indices increment down columns; if false, across rows
+- **encoders.count**: Number of rotary encoders (knobs)
+- **encoders.positions**: Physical positions of encoders on the device
+- **touchstrip.present**: Whether device has an LCD touchstrip
+- **touchstrip.length**: Touchstrip width in pixels (if present)
+- **lcd.present**: Whether device has additional LCD displays
+
+**Use cases:**
+- **Configuration planning**: Determine available buttons before writing configs
+- **Button mapping**: Understand button index layout (column-major vs row-major)
+- **Hardware verification**: Check if device is detected correctly
+- **Multi-device setups**: Get serial numbers for device-specific configurations
+- **Feature detection**: Check for encoders, touchstrips, or LCD capabilities
+
+**Example usage:**
+
+```bash
+# Get device info and save to file for reference
+keydeck --info > my_devices.yaml
+
+# Quick check of connected devices
+keydeck --info | grep -E 'serial|kind|count'
+```
 
 ## Detailed Configuration
 
@@ -253,7 +379,6 @@ Buttons support multiple actions, executed in sequence:
 
   **Supported Event Types:**
   - **focus**: Waits for any window focus change
-  - **page**: Waits for any page change
   - **tick**: Waits for timer tick (fires at the global `tick_time` interval, default 2 seconds)
   - **sleep**: Waits for system sleep/wake event
   - **newdevice**: Waits for a new device to connect
@@ -508,7 +633,6 @@ The following events are dispatched by the system and can be waited for using `w
 | Event Type | Dispatched When | Dispatched From |
 |------------|----------------|-----------------|
 | `focus` | Window focus changes (class or title) | Central event loop in `server.rs` |
-| `page` | Page changes on the device | `set_page()` via central loop |
 | `tick` | Timer fires (at global `tick_time` interval, default 2s) | Central event loop in `server.rs` |
 | `sleep` | System enters/exits sleep mode | Central event loop in `server.rs` |
 | `newdevice` | New device connected | Central event loop in `server.rs` |
@@ -1250,7 +1374,6 @@ button6:
 
 - **color**: Solid color in hex format (`"#RRGGBB"` or `"0xRRGGBB"`). Default: white
 - **color_map**: Gradient color map with smooth interpolation (see [Color Gradients](#color-gradients))
-- **bg_color**: Background color for graphic area. Default: transparent (shows button background)
 - **width**: Graphic width in pixels. Default: button width minus padding
 - **height**: Graphic height in pixels. Default: button height minus padding
 - **position**: Array `[x, y]` for top-left position. Default: centered

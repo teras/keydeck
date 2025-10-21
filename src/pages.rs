@@ -334,13 +334,20 @@ pub enum Direction {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(rename_all = "lowercase", untagged)]
 pub enum RefreshTarget {
+    /// Refresh all dynamic buttons (explicit "dynamic" string)
+    Dynamic(String),
+
     /// Refresh a single button by index
     Single(u8),
 
     /// Refresh multiple buttons by index
     Multiple(Vec<u8>),
+}
+
+fn default_refresh_target() -> RefreshTarget {
+    RefreshTarget::Dynamic("dynamic".to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -444,13 +451,13 @@ pub enum Action {
     },
 
     /// Refreshes button(s) to update their visual content.
-    /// - No parameter: refreshes all buttons marked with `dynamic: true`
+    /// - "dynamic": refreshes all buttons marked with `dynamic: true`
     /// - Single number: refreshes that specific button
     /// - Array of numbers: refreshes those specific buttons
     /// Returns error if button number is invalid or button doesn't exist.
     Refresh {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        refresh: Option<RefreshTarget>,
+        #[serde(default = "default_refresh_target")]
+        refresh: RefreshTarget,
     },
 }
 

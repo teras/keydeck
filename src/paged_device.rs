@@ -423,7 +423,7 @@ impl PagedDevice {
                 }
                 Action::Refresh { refresh } => {
                     match refresh {
-                        None => {
+                        RefreshTarget::Dynamic(_) => {
                             // Refresh all dynamic buttons
                             verbose_log!("Refresh: updating all dynamic buttons");
                             let current_page = { self.current_page_ref.borrow().clone() };
@@ -437,16 +437,16 @@ impl PagedDevice {
                                 }
                             }
                         }
-                        Some(RefreshTarget::Single(button_id)) => {
+                        RefreshTarget::Single(button_id) => {
                             // Refresh single button
                             verbose_log!("Refresh: updating button {}", button_id);
-                            self.invalidate_and_refresh_button(button_id)?;
+                            self.invalidate_and_refresh_button(*button_id)?;
                         }
-                        Some(RefreshTarget::Multiple(button_ids)) => {
+                        RefreshTarget::Multiple(button_ids) => {
                             // Refresh multiple buttons
                             verbose_log!("Refresh: updating {} buttons", button_ids.len());
                             for button_id in button_ids {
-                                self.invalidate_and_refresh_button(button_id)?;
+                                self.invalidate_and_refresh_button(*button_id)?;
                             }
                         }
                     }

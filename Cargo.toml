@@ -3,6 +3,14 @@ name = "keydeck"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "keydeck"
+path = "src/lib.rs"
+
+[[bin]]
+name = "keydeck"
+path = "src/main.rs"
+
 [dependencies]
 elgato-streamdeck = { git = "https://github.com/teras/elgato-streamdeck.git" }
 indexmap = { version = "2.6.0", features = ["serde"] }
