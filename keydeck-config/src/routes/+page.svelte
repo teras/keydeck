@@ -45,6 +45,7 @@
   let isSaving = $state<boolean>(false);
   let lastSaveTime = $state<string>("");
   let hasUnsavedChanges = $state<boolean>(false);
+  let isRightPanelOpen = $state<boolean>(true);
 
   onMount(async () => {
     try {
@@ -378,10 +379,19 @@
           <p>{selectedDevice ? 'Select a page or template' : 'Select a device to get started'}</p>
         </div>
       {/if}
+
+      <!-- Right panel toggle button -->
+      <button
+        class="panel-toggle-btn right-toggle"
+        onclick={() => isRightPanelOpen = !isRightPanelOpen}
+        title={isRightPanelOpen ? "Hide properties panel" : "Show properties panel"}
+      >
+        {isRightPanelOpen ? '❯' : '❮'}
+      </button>
     </main>
 
     <!-- Right Sidebar: Button/Page/Template Config -->
-    <aside class="properties-panel">
+    <aside class="properties-panel" class:closed={!isRightPanelOpen}>
       {#if selectedButton !== null && selectedDevice && config}
         <ButtonEditor
           config={config}
@@ -789,6 +799,7 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
+    position: relative;
   }
 
   .properties-panel {
@@ -797,6 +808,15 @@
     border-left: 1px solid #3e3e42;
     overflow-y: auto;
     padding: 16px;
+    transition: width 0.2s ease-out, padding 0.2s ease-out, opacity 0.2s ease-out;
+  }
+
+  .properties-panel.closed {
+    width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 
   .editor-panel h2 {
@@ -977,5 +997,30 @@
   .placeholder {
     text-align: center;
     color: #6a6a6a;
+  }
+
+  .panel-toggle-btn {
+    position: absolute;
+    background-color: #2d2d30;
+    color: #cccccc;
+    border: 1px solid #3e3e42;
+    border-radius: 4px 0 0 4px;
+    padding: 12px 6px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    z-index: 10;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .panel-toggle-btn:hover {
+    background-color: #3e3e42;
+    color: #ffffff;
+  }
+
+  .right-toggle {
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
   }
 </style>
