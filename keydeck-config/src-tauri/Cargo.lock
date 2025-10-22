@@ -2327,6 +2327,7 @@ dependencies = [
 name = "keydeck-config"
 version = "0.1.0"
 dependencies = [
+ "image",
  "keydeck",
  "nix 0.29.0",
  "serde",

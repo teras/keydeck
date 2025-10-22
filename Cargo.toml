@@ -2,6 +2,10 @@
 name = "keydeck"
 version = "0.1.0"
 edition = "2021"
+description = "KeyDeck - Stream Deck controller for Linux"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/teras/keydeck"
+authors = ["Teras"]
 
 [lib]
 name = "keydeck"
@@ -41,3 +45,19 @@ lto = true       # Enable Link Time Optimization (LTO)
 codegen-units = 1  # Reduce codegen units for better LTO
 panic = "abort"  # Abort on panic to reduce binary size
 strip = true       # Strip symbols automatically
+
+# cargo-deb configuration
+[package.metadata.deb]
+maintainer = "Teras"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/keydeck", "usr/bin/", "755"],
+]
+depends = "libudev1, libusb-1.0-0, libhidapi-hidraw0"
+
+# cargo-generate-rpm configuration
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/keydeck", dest = "/usr/bin/keydeck", mode = "755" },
+]
