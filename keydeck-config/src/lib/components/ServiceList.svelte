@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ask } from '@tauri-apps/plugin-dialog';
+
   interface Props {
     config: any;
     currentService: string | null;
@@ -13,6 +15,7 @@
   let showServiceMenu = $state<string | null>(null);
   let serviceNameInput: HTMLInputElement | undefined;
   let renameServiceName = $state("");
+  let renamingService = $state<string | null>(null);
 
   function toggleAddService() {
     showAddService = !showAddService;
@@ -43,6 +46,11 @@
     }
 
     const serviceName = newServiceName.trim();
+    if (config.services[serviceName]) {
+      alert(`Service "${serviceName}" already exists!`);
+      return;
+    }
+
     config.services[serviceName] = {
       exec: "",
       interval: 1,
@@ -56,13 +64,19 @@
     }
   }
 
-  function deleteService(serviceName: string) {
-    if (confirm(`Delete service "${serviceName}"?`)) {
+  async function deleteService(serviceName: string) {
+    showServiceMenu = null;
+
+    const confirmed = await ask(`Delete service "${serviceName}"?`, {
+      title: 'Confirm Delete',
+      kind: 'warning'
+    });
+
+    if (confirmed) {
       delete config.services[serviceName];
       if (currentService === serviceName) {
         onServiceSelected(null);
       }
-      showServiceMenu = null;
     }
   }
 
@@ -82,6 +96,7 @@
   }
 
   function startRename(serviceName: string) {
+    renamingService = serviceName;
     renameServiceName = serviceName;
     showServiceMenu = null;
   }
@@ -89,22 +104,34 @@
   function renameService(oldName: string) {
     if (!renameServiceName.trim() || renameServiceName === oldName) {
       renameServiceName = "";
+      renamingService = null;
       return;
     }
 
     if (config.services[renameServiceName]) {
       alert(`Service "${renameServiceName}" already exists!`);
+      renameServiceName = "";
+      renamingService = null;
       return;
     }
 
-    config.services[renameServiceName] = config.services[oldName];
-    delete config.services[oldName];
+    // Rebuild object preserving order
+    const newServices: any = {};
+    for (const key of Object.keys(config.services)) {
+      if (key === oldName) {
+        newServices[renameServiceName] = config.services[oldName];
+      } else {
+        newServices[key] = config.services[key];
+      }
+    }
+    config.services = newServices;
 
     if (currentService === oldName) {
       onServiceSelected(renameServiceName);
     }
 
     renameServiceName = "";
+    renamingService = null;
   }
 </script>
 
@@ -133,13 +160,17 @@
   <div class="services">
     {#each services as service}
       <div class="service-row">
-        {#if renameServiceName && renameServiceName === service}
+        {#if renamingService === service}
           <input
             type="text"
             bind:value={renameServiceName}
             class="rename-input"
-            onkeydown={(e) => e.key === 'Enter' && renameService(service)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') renameService(service);
+              if (e.key === 'Escape') { renameServiceName = ""; renamingService = null; }
+            }}
             onblur={() => renameService(service)}
+            onmousedown={(e) => e.stopPropagation()}
             autofocus
           />
         {:else}
@@ -163,9 +194,9 @@
 
         {#if showServiceMenu === service}
           <div class="service-menu">
-            <button onclick={() => startRename(service)}>✏️ Rename</button>
-            <button onclick={() => duplicateService(service)}>📋 Duplicate</button>
-            <button class="danger" onclick={() => deleteService(service)}>🗑️ Delete</button>
+            <button onclick={(e) => { e.stopPropagation(); startRename(service); }}>✏️ Rename</button>
+            <button onclick={(e) => { e.stopPropagation(); duplicateService(service); }}>📋 Duplicate</button>
+            <button class="danger" onclick={(e) => { e.stopPropagation(); deleteService(service); }}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -266,6 +297,16 @@
     position: relative;
     display: flex;
     gap: 4px;
+  }
+
+  .rename-input {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #0e639c;
+    border-radius: 4px;
+    font-size: 13px;
   }
 
   .service-item {

@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { fade } from 'svelte/transition';
   import PageList from "./PageList.svelte";
   import TemplateList from "./TemplateList.svelte";
   import ServiceList from "./ServiceList.svelte";
   import MacroList from "./MacroList.svelte";
   import ButtonDefList from "./ButtonDefList.svelte";
-  import SystemConfig from "./SystemConfig.svelte";
+  import DeviceSettings from "./DeviceSettings.svelte";
+  import GlobalSettings from "./GlobalSettings.svelte";
 
   interface Props {
     config: any;
@@ -36,9 +38,10 @@
     onButtonDefSelected
   }: Props = $props();
 
-  type Tab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'system' | null;
+  type Tab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null;
   let activeTab = $state<Tab>('pages');
-  let isOpen = $state(true);
+  let isOpen = $state(false);
+  let contentPanel: HTMLDivElement | undefined;
 
   function toggleTab(tab: Tab) {
     if (activeTab === tab && isOpen) {
@@ -48,6 +51,11 @@
       // Open sidebar and switch to clicked tab
       activeTab = tab;
       isOpen = true;
+
+      // Smooth scroll to top when switching tabs
+      if (contentPanel) {
+        contentPanel.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     }
   }
 </script>
@@ -57,13 +65,13 @@
   <div class="tab-bar">
     <button
       class="tab-button"
-      class:active={activeTab === 'system' && isOpen}
-      onclick={() => toggleTab('system')}
-      title="System Configuration"
-      disabled={!config}
+      class:active={activeTab === 'device' && isOpen}
+      onclick={() => toggleTab('device')}
+      title="Device Settings"
+      disabled={!selectedDevice || !config}
     >
       <span class="icon">📟</span>
-      <span class="label">System</span>
+      <span class="label">Device</span>
     </button>
 
     <button
@@ -120,44 +128,61 @@
       <span class="icon">🔘</span>
       <span class="label">Buttons</span>
     </button>
+
+    <button
+      class="tab-button"
+      class:active={activeTab === 'global' && isOpen}
+      onclick={() => toggleTab('global')}
+      title="Global Settings"
+      disabled={!config}
+    >
+      <span class="icon">🌍</span>
+      <span class="label">Global</span>
+    </button>
   </div>
 
   <!-- Content Panel (slides in/out) -->
-  <div class="content-panel" class:closed={!isOpen}>
-    {#if activeTab === 'pages' && selectedDevice && config}
-      <PageList
-        config={config}
-        deviceSerial={selectedDevice.serial}
-        currentPage={currentPage}
-        onPageSelected={onPageSelected}
-      />
-    {:else if activeTab === 'templates' && config}
-      <TemplateList
-        config={config}
-        currentTemplate={currentTemplate}
-        onTemplateSelected={onTemplateSelected}
-      />
-    {:else if activeTab === 'services' && config}
-      <ServiceList
-        config={config}
-        currentService={currentService}
-        onServiceSelected={onServiceSelected}
-      />
-    {:else if activeTab === 'macros' && config}
-      <MacroList
-        config={config}
-        currentMacro={currentMacro}
-        onMacroSelected={onMacroSelected}
-      />
-    {:else if activeTab === 'buttons' && config}
-      <ButtonDefList
-        config={config}
-        currentButtonDef={currentButtonDef}
-        onButtonDefSelected={onButtonDefSelected}
-      />
-    {:else if activeTab === 'system' && config}
-      <SystemConfig config={config} selectedDevice={selectedDevice} />
-    {/if}
+  <div class="content-panel" class:closed={!isOpen} bind:this={contentPanel}>
+    {#key activeTab}
+      <div class="tab-content" in:fade={{ duration: 200 }}>
+        {#if activeTab === 'pages' && selectedDevice && config}
+          <PageList
+            config={config}
+            deviceSerial={selectedDevice.serial}
+            currentPage={currentPage}
+            onPageSelected={onPageSelected}
+          />
+        {:else if activeTab === 'templates' && config}
+          <TemplateList
+            config={config}
+            currentTemplate={currentTemplate}
+            onTemplateSelected={onTemplateSelected}
+          />
+        {:else if activeTab === 'services' && config}
+          <ServiceList
+            config={config}
+            currentService={currentService}
+            onServiceSelected={onServiceSelected}
+          />
+        {:else if activeTab === 'macros' && config}
+          <MacroList
+            config={config}
+            currentMacro={currentMacro}
+            onMacroSelected={onMacroSelected}
+          />
+        {:else if activeTab === 'buttons' && config}
+          <ButtonDefList
+            config={config}
+            currentButtonDef={currentButtonDef}
+            onButtonDefSelected={onButtonDefSelected}
+          />
+        {:else if activeTab === 'device' && config && selectedDevice}
+          <DeviceSettings config={config} selectedDevice={selectedDevice} />
+        {:else if activeTab === 'global' && config}
+          <GlobalSettings config={config} />
+        {/if}
+      </div>
+    {/key}
   </div>
 </div>
 
@@ -246,6 +271,7 @@
     overflow-x: hidden;
     padding: 16px;
     transition: width 0.2s ease-out, padding 0.2s ease-out, opacity 0.2s ease-out;
+    scroll-behavior: smooth;
   }
 
   .content-panel.closed {

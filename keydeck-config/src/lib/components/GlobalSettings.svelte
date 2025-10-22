@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { open } from '@tauri-apps/plugin-dialog';
+  import { open, ask } from '@tauri-apps/plugin-dialog';
   import { invoke } from '@tauri-apps/api/core';
 
   interface Props {
     config: any;
-    selectedDevice?: any;
   }
 
-  let { config, selectedDevice }: Props = $props();
+  let { config }: Props = $props();
   let imageDirExists = $state<boolean>(true);
 
   // Check if directory exists whenever image_dir changes
@@ -57,50 +56,19 @@
     }
   }
 
-  function getDevicePageGroup() {
-    if (!selectedDevice || !config.page_groups) return null;
-    return config.page_groups[selectedDevice.serial] || config.page_groups.default;
-  }
-
-  function updateMainPage(value: string) {
-    const pageGroup = getDevicePageGroup();
-    if (!pageGroup) return;
-
-    if (value.trim()) {
-      pageGroup.main_page = value.trim();
-    } else {
-      delete pageGroup.main_page;
-    }
-  }
-
-  function updateRestoreMode(value: string) {
-    const pageGroup = getDevicePageGroup();
-    if (!pageGroup) return;
-
-    pageGroup.restore_mode = value;
-  }
-
-  function getAvailablePages(): string[] {
-    const pageGroup = getDevicePageGroup();
-    if (!pageGroup) return [];
-
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
-    return Object.keys(pageGroup).filter(key => !knownFields.includes(key));
-  }
-
   // Color management
   let newColorName = $state("");
   let showAddColor = $state(false);
+  let showColorMenu = $state<string | null>(null);
+  let renamingColor = $state<string | null>(null);
+  let renameColorName = $state("");
   let lastAddedColor = $state<string | null>(null);
   let colorNameInput: HTMLInputElement | undefined;
 
   function toggleAddColor() {
     showAddColor = !showAddColor;
     if (showAddColor) {
-      // Focus the input after it's rendered
-      setTimeout(() => {
-        colorNameInput?.focus();
-      }, 0);
+      setTimeout(() => colorNameInput?.focus(), 0);
     }
   }
 
@@ -112,17 +80,20 @@
     }
 
     const colorName = newColorName.trim();
+    if (config.colors[colorName]) {
+      alert(`Color "${colorName}" already exists!`);
+      return;
+    }
+
     config.colors[colorName] = "0x888888";
     lastAddedColor = colorName;
     newColorName = "";
     showAddColor = false;
 
-    // Focus the color input after a brief delay to let the DOM update
     setTimeout(() => {
       const colorInput = document.querySelector(`input[data-color-name="${colorName}"]`) as HTMLInputElement;
       if (colorInput) {
         colorInput.focus();
-        // Place cursor at the end
         colorInput.setSelectionRange(colorInput.value.length, colorInput.value.length);
       }
       lastAddedColor = null;
@@ -131,7 +102,6 @@
 
   function updateColorFromText(name: string, value: string) {
     if (config.colors) {
-      // If user enters #RRGGBB, convert to 0xRRGGBB
       if (value.startsWith('#')) {
         value = '0x' + value.slice(1);
       }
@@ -141,102 +111,140 @@
 
   function updateColorFromPicker(name: string, value: string) {
     if (config.colors) {
-      // Color picker gives #RRGGBB, convert to 0xRRGGBB
       config.colors[name] = '0x' + value.slice(1);
     }
   }
 
   function colorToHex(color: string): string {
-    // Convert 0xRRGGBB to #RRGGBB for color picker
     if (color.startsWith('0x')) {
       return '#' + color.slice(2);
     }
     return color.startsWith('#') ? color : '#' + color;
   }
 
-  function deleteColor(name: string) {
-    if (config.colors) {
-      delete config.colors[name];
-      config.colors = config.colors; // Trigger reactivity
+  // Click-outside handler for menu
+  $effect(() => {
+    if (showColorMenu !== null) {
+      const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.color-menu') && !target.closest('.color-menu-btn')) {
+          showColorMenu = null;
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
     }
+  });
+
+  async function deleteColor(name: string) {
+    showColorMenu = null;
+
+    const confirmed = await ask(`Delete color "${name}"?`, {
+      title: 'Confirm Delete',
+      kind: 'warning'
+    });
+
+    if (confirmed && config.colors) {
+      delete config.colors[name];
+      config.colors = config.colors;
+    }
+  }
+
+  function duplicateColor(name: string) {
+    if (!config.colors) return;
+
+    const original = config.colors[name];
+    let newName = `${name}_copy`;
+    let counter = 1;
+    while (config.colors[newName]) {
+      newName = `${name}_copy${counter}`;
+      counter++;
+    }
+
+    config.colors[newName] = original;
+    config.colors = config.colors;
+    showColorMenu = null;
+  }
+
+  function startRenameColor(name: string) {
+    renamingColor = name;
+    renameColorName = name;
+    showColorMenu = null;
+  }
+
+  function renameColor(oldName: string) {
+    if (!renameColorName.trim() || renameColorName === oldName) {
+      renameColorName = "";
+      renamingColor = null;
+      return;
+    }
+
+    if (config.colors && config.colors[renameColorName]) {
+      alert(`Color "${renameColorName}" already exists!`);
+      renameColorName = "";
+      renamingColor = null;
+      return;
+    }
+
+    if (config.colors) {
+      const newColors: any = {};
+      for (const key of Object.keys(config.colors)) {
+        if (key === oldName) {
+          newColors[renameColorName] = config.colors[oldName];
+        } else {
+          newColors[key] = config.colors[key];
+        }
+      }
+      config.colors = newColors;
+    }
+
+    renameColorName = "";
+    renamingColor = null;
   }
 </script>
 
-<div class="system-config">
-  <h3>System Configuration</h3>
+<div class="global-settings">
+  <div class="header">
+    <h3>Global Configuration</h3>
+  </div>
 
-  <!-- Device Settings (shown when device is selected) -->
-  {#if selectedDevice}
-    {@const pageGroup = getDevicePageGroup()}
-    {@const availablePages = getAvailablePages()}
+  <div class="separator"></div>
 
-    <div class="section-header">Device Settings: {selectedDevice.model}</div>
-
+  <div class="settings-content">
     <div class="form-group">
-      <label>Main Page</label>
-      <select
-        value={pageGroup?.main_page || ""}
-        onchange={(e) => updateMainPage(e.currentTarget.value)}
-      >
-        <option value="">Auto (first page)</option>
-        {#each availablePages as pageName}
-          <option value={pageName}>{pageName}</option>
-        {/each}
-      </select>
-      <p class="help">Default page to show when device starts</p>
+      <label>Image Directory</label>
+      <div class="input-with-button">
+        <input
+          type="text"
+          value={config.image_dir || ""}
+          oninput={(e) => updateImageDir(e.currentTarget.value)}
+          placeholder="/path/to/images"
+          class:warning={!imageDirExists}
+        />
+        <button onclick={browseImageDir} class="browse-button" title="Browse for folder">
+          📁
+        </button>
+        {#if !imageDirExists}
+          <span class="warning-icon" title="Directory does not exist">⚠️</span>
+        {/if}
+      </div>
+      <p class="help">Directory where button icons are stored</p>
     </div>
 
     <div class="form-group">
-      <label>Restore Mode</label>
-      <select
-        value={pageGroup?.restore_mode || "main"}
-        onchange={(e) => updateRestoreMode(e.currentTarget.value)}
-      >
-        <option value="keep">Keep - Stay on current page</option>
-        <option value="last">Last - Return to last page</option>
-        <option value="main">Main - Return to main page</option>
-      </select>
-      <p class="help">Page behavior on window focus change</p>
-    </div>
-  {/if}
-
-  <!-- Global Settings -->
-  <div class="section-header">Global Settings</div>
-
-  <div class="form-group">
-    <label>Image Directory</label>
-    <div class="input-with-button">
+      <label>Tick Time (seconds)</label>
       <input
-        type="text"
-        value={config.image_dir || ""}
-        oninput={(e) => updateImageDir(e.currentTarget.value)}
-        placeholder="/path/to/images"
-        class:warning={!imageDirExists}
+        type="number"
+        min="1"
+        max="60"
+        step="0.1"
+        value={config.tick_time || 2.0}
+        oninput={(e) => updateTickTime(e.currentTarget.value)}
       />
-      <button onclick={browseImageDir} class="browse-button" title="Browse for folder">
-        📁
-      </button>
-      {#if !imageDirExists}
-        <span class="warning-icon" title="Directory does not exist">⚠️</span>
-      {/if}
+      <p class="help">Global tick interval (1-60 seconds)</p>
     </div>
-    <p class="help">Directory where button icons are stored</p>
-  </div>
 
-  <div class="form-group">
-    <label>Tick Time (seconds)</label>
-    <input
-      type="number"
-      min="1"
-      max="60"
-      step="0.1"
-      value={config.tick_time || 2.0}
-      oninput={(e) => updateTickTime(e.currentTarget.value)}
-    />
-    <p class="help">Global tick interval (1-60 seconds)</p>
-  </div>
-
-  <div class="section">
+    <div class="section">
     <div class="color-header">
       <h4>Colors</h4>
       <button class="add-btn" onclick={toggleAddColor}>+</button>
@@ -259,86 +267,105 @@
     {#if config.colors && Object.keys(config.colors).length > 0}
       <div class="color-list">
         {#each Object.entries(config.colors) as [name, color]}
-          <div class="color-item">
-            <div class="color-info">
-              <span class="color-name">{name}</span>
-              <div class="color-value-container">
-                <input
-                  type="text"
-                  value={color}
-                  oninput={(e) => updateColorFromText(name, e.currentTarget.value)}
-                  class="color-text-input"
-                  placeholder="0xRRGGBB"
-                  data-color-name={name}
-                />
-                <input
-                  type="color"
-                  value={colorToHex(color)}
-                  oninput={(e) => updateColorFromPicker(name, e.currentTarget.value)}
-                  class="color-picker-input"
-                  title="Pick color"
-                />
+          <div class="color-row">
+            <div class="color-item">
+              <div class="color-info">
+                {#if renamingColor === name}
+                  <input
+                    type="text"
+                    bind:value={renameColorName}
+                    class="rename-color-input"
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') renameColor(name);
+                      if (e.key === 'Escape') { renameColorName = ""; renamingColor = null; }
+                    }}
+                    onblur={() => renameColor(name)}
+                    onmousedown={(e) => e.stopPropagation()}
+                    autofocus
+                  />
+                {:else}
+                  <span class="color-name">{name}</span>
+                {/if}
+                <div class="color-value-container">
+                  <input
+                    type="text"
+                    value={color}
+                    oninput={(e) => updateColorFromText(name, e.currentTarget.value)}
+                    class="color-text-input"
+                    placeholder="0xRRGGBB"
+                    data-color-name={name}
+                  />
+                  <input
+                    type="color"
+                    value={colorToHex(color)}
+                    oninput={(e) => updateColorFromPicker(name, e.currentTarget.value)}
+                    class="color-picker-input"
+                    title="Pick color"
+                  />
+                </div>
               </div>
             </div>
-            <button onclick={() => deleteColor(name)} class="delete-button" title="Delete color">
-              ✕
-            </button>
+            {#if renamingColor !== name}
+              <button
+                class="color-menu-btn"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  showColorMenu = showColorMenu === name ? null : name;
+                }}
+              >
+                ⋮
+              </button>
+            {/if}
+
+            {#if showColorMenu === name}
+              <div class="color-menu">
+                <button onclick={(e) => { e.stopPropagation(); startRenameColor(name); }}>✏️ Rename</button>
+                <button onclick={(e) => { e.stopPropagation(); duplicateColor(name); }}>📋 Duplicate</button>
+                <button class="danger" onclick={(e) => { e.stopPropagation(); deleteColor(name); }}>🗑️ Delete</button>
+              </div>
+            {/if}
           </div>
         {/each}
       </div>
     {:else}
       <p class="empty">No colors defined</p>
     {/if}
+    </div>
   </div>
 </div>
 
 <style>
-  .system-config {
+  .global-settings {
+  }
+
+  .header {
     display: flex;
-    flex-direction: column;
-    gap: 20px;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
   }
 
   h3 {
     margin: 0;
     font-size: 16px;
     color: #cccccc;
-    padding-bottom: 12px;
+  }
+
+  .separator {
     border-bottom: 1px solid #3e3e42;
+    margin-bottom: 16px;
+  }
+
+  .settings-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
 
   h4 {
     margin: 0 0 8px 0;
     font-size: 13px;
     color: #aaa;
-  }
-
-  .section-header {
-    font-size: 14px;
-    font-weight: 600;
-    color: #4ec9b0;
-    margin: 16px 0 8px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #3e3e42;
-  }
-
-  .section-header:first-of-type {
-    margin-top: 0;
-  }
-
-  select {
-    width: 100%;
-    padding: 8px;
-    background-color: #3c3c3c;
-    color: #cccccc;
-    border: 1px solid #555;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-
-  select:focus {
-    outline: none;
-    border-color: #0e639c;
   }
 
   .form-group {
@@ -489,15 +516,23 @@
   .color-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
+  }
+
+  .color-row {
+    position: relative;
+    display: flex;
+    gap: 4px;
   }
 
   .color-item {
+    flex: 1;
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
     padding: 8px;
     background-color: #3c3c3c;
+    border: 1px solid #555;
     border-radius: 4px;
     gap: 8px;
   }
@@ -513,6 +548,21 @@
     font-size: 12px;
     font-weight: 600;
     color: #cccccc;
+  }
+
+  .rename-color-input {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 6px;
+    background-color: #2a2a2a;
+    color: #cccccc;
+    border: 1px solid #0e639c;
+    border-radius: 4px;
+  }
+
+  .rename-color-input:focus {
+    outline: none;
+    border-color: #1177bb;
   }
 
   .color-value-container {
@@ -556,22 +606,57 @@
     border-radius: 2px;
   }
 
-  .delete-button {
-    padding: 4px 8px;
-    background-color: #5a1d1d;
-    color: #f48771;
-    border: none;
+  .color-menu-btn {
+    width: 28px;
+    padding: 4px;
+    background-color: #3c3c3c;
+    color: #888;
+    border: 1px solid #555;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
-    line-height: 1;
-    min-width: 28px;
-    height: 32px;
-    flex-shrink: 0;
+    font-size: 16px;
   }
 
-  .delete-button:hover {
-    background-color: #7a2d2d;
+  .color-menu-btn:hover {
+    background-color: #4a4a4a;
+    color: #cccccc;
+  }
+
+  .color-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 2px;
+    background-color: #2d2d30;
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    min-width: 120px;
+  }
+
+  .color-menu button {
+    padding: 8px 12px;
+    background: none;
+    color: #cccccc;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .color-menu button:hover {
+    background-color: #3c3c3c;
+  }
+
+  .color-menu button.danger {
+    color: #f48771;
+  }
+
+  .color-menu button.danger:hover {
+    background-color: #5a1d1d;
   }
 
   .empty {

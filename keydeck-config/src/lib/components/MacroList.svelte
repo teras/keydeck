@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ask } from '@tauri-apps/plugin-dialog';
+
   interface Props {
     config: any;
     currentMacro: string | null;
@@ -13,6 +15,7 @@
   let showMacroMenu = $state<string | null>(null);
   let macroNameInput: HTMLInputElement | undefined;
   let renameMacroName = $state("");
+  let renamingMacro = $state<string | null>(null);
 
   function toggleAddMacro() {
     showAddMacro = !showAddMacro;
@@ -43,6 +46,11 @@
     }
 
     const macroName = newMacroName.trim();
+    if (config.macros[macroName]) {
+      alert(`Macro "${macroName}" already exists!`);
+      return;
+    }
+
     config.macros[macroName] = {
       actions: []
     };
@@ -54,13 +62,19 @@
     }
   }
 
-  function deleteMacro(macroName: string) {
-    if (confirm(`Delete macro "${macroName}"?`)) {
+  async function deleteMacro(macroName: string) {
+    showMacroMenu = null;
+
+    const confirmed = await ask(`Delete macro "${macroName}"?`, {
+      title: 'Confirm Delete',
+      kind: 'warning'
+    });
+
+    if (confirmed) {
       delete config.macros[macroName];
       if (currentMacro === macroName) {
         onMacroSelected(null);
       }
-      showMacroMenu = null;
     }
   }
 
@@ -79,6 +93,7 @@
   }
 
   function startRename(macroName: string) {
+    renamingMacro = macroName;
     renameMacroName = macroName;
     showMacroMenu = null;
   }
@@ -86,22 +101,34 @@
   function renameMacro(oldName: string) {
     if (!renameMacroName.trim() || renameMacroName === oldName) {
       renameMacroName = "";
+      renamingMacro = null;
       return;
     }
 
     if (config.macros[renameMacroName]) {
       alert(`Macro "${renameMacroName}" already exists!`);
+      renameMacroName = "";
+      renamingMacro = null;
       return;
     }
 
-    config.macros[renameMacroName] = config.macros[oldName];
-    delete config.macros[oldName];
+    // Rebuild object preserving order
+    const newMacros: any = {};
+    for (const key of Object.keys(config.macros)) {
+      if (key === oldName) {
+        newMacros[renameMacroName] = config.macros[oldName];
+      } else {
+        newMacros[key] = config.macros[key];
+      }
+    }
+    config.macros = newMacros;
 
     if (currentMacro === oldName) {
       onMacroSelected(renameMacroName);
     }
 
     renameMacroName = "";
+    renamingMacro = null;
   }
 </script>
 
@@ -130,13 +157,17 @@
   <div class="macros">
     {#each macros as macro}
       <div class="macro-row">
-        {#if renameMacroName && renameMacroName === macro}
+        {#if renamingMacro === macro}
           <input
             type="text"
             bind:value={renameMacroName}
             class="rename-input"
-            onkeydown={(e) => e.key === 'Enter' && renameMacro(macro)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') renameMacro(macro);
+              if (e.key === 'Escape') { renameMacroName = ""; renamingMacro = null; }
+            }}
             onblur={() => renameMacro(macro)}
+            onmousedown={(e) => e.stopPropagation()}
             autofocus
           />
         {:else}
@@ -160,9 +191,9 @@
 
         {#if showMacroMenu === macro}
           <div class="macro-menu">
-            <button onclick={() => startRename(macro)}>✏️ Rename</button>
-            <button onclick={() => duplicateMacro(macro)}>📋 Duplicate</button>
-            <button class="danger" onclick={() => deleteMacro(macro)}>🗑️ Delete</button>
+            <button onclick={(e) => { e.stopPropagation(); startRename(macro); }}>✏️ Rename</button>
+            <button onclick={(e) => { e.stopPropagation(); duplicateMacro(macro); }}>📋 Duplicate</button>
+            <button class="danger" onclick={(e) => { e.stopPropagation(); deleteMacro(macro); }}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -263,6 +294,16 @@
     position: relative;
     display: flex;
     gap: 4px;
+  }
+
+  .rename-input {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #0e639c;
+    border-radius: 4px;
+    font-size: 13px;
   }
 
   .macro-item {

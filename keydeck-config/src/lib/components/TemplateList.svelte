@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ask } from '@tauri-apps/plugin-dialog';
+
   interface Props {
     config: any;
     currentTemplate: string | null;
@@ -12,6 +14,7 @@
   let showAddTemplate = $state(false);
   let newTemplateName = $state("");
   let renameTemplateName = $state("");
+  let renamingTemplate = $state<string | null>(null);
   let templateNameInput: HTMLInputElement | undefined;
 
   function toggleAddTemplate() {
@@ -43,6 +46,11 @@
     }
 
     const templateName = newTemplateName.trim();
+    if (config.templates[templateName]) {
+      alert(`Template "${templateName}" already exists!`);
+      return;
+    }
+
     config.templates[templateName] = {};
     newTemplateName = "";
     showAddTemplate = false;
@@ -50,13 +58,19 @@
     onTemplateSelected(templateName);
   }
 
-  function deleteTemplate(templateName: string) {
-    if (confirm(`Delete template "${templateName}"?`)) {
+  async function deleteTemplate(templateName: string) {
+    showTemplateMenu = null;
+
+    const confirmed = await ask(`Delete template "${templateName}"?`, {
+      title: 'Confirm Delete',
+      kind: 'warning'
+    });
+
+    if (confirmed) {
       delete config.templates[templateName];
       if (currentTemplate === templateName) {
         onTemplateSelected(null);
       }
-      showTemplateMenu = null;
     }
   }
 
@@ -76,6 +90,7 @@
   }
 
   function startRename(templateName: string) {
+    renamingTemplate = templateName;
     renameTemplateName = templateName;
     showTemplateMenu = null;
   }
@@ -83,18 +98,34 @@
   function renameTemplate(oldName: string) {
     if (!renameTemplateName.trim() || renameTemplateName === oldName) {
       renameTemplateName = "";
+      renamingTemplate = null;
       return;
     }
 
-    const templateData = config.templates[oldName];
-    config.templates[renameTemplateName] = templateData;
-    delete config.templates[oldName];
+    if (config.templates[renameTemplateName]) {
+      alert(`Template "${renameTemplateName}" already exists!`);
+      renameTemplateName = "";
+      renamingTemplate = null;
+      return;
+    }
+
+    // Rebuild object preserving order
+    const newTemplates: any = {};
+    for (const key of Object.keys(config.templates)) {
+      if (key === oldName) {
+        newTemplates[renameTemplateName] = config.templates[oldName];
+      } else {
+        newTemplates[key] = config.templates[key];
+      }
+    }
+    config.templates = newTemplates;
 
     if (currentTemplate === oldName) {
       onTemplateSelected(renameTemplateName);
     }
 
     renameTemplateName = "";
+    renamingTemplate = null;
   }
 </script>
 
@@ -123,13 +154,17 @@
   <div class="templates">
     {#each templates as template}
       <div class="template-row">
-        {#if renameTemplateName && renameTemplateName === template}
+        {#if renamingTemplate === template}
           <input
             type="text"
             bind:value={renameTemplateName}
             class="rename-input"
-            onkeydown={(e) => e.key === 'Enter' && renameTemplate(template)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') renameTemplate(template);
+              if (e.key === 'Escape') renameTemplateName = "";
+            }}
             onblur={() => renameTemplate(template)}
+            onmousedown={(e) => e.stopPropagation()}
             autofocus
           />
         {:else}
@@ -153,9 +188,9 @@
 
         {#if showTemplateMenu === template}
           <div class="template-menu">
-            <button onclick={() => startRename(template)}>✏️ Rename</button>
-            <button onclick={() => duplicateTemplate(template)}>📋 Duplicate</button>
-            <button class="danger" onclick={() => deleteTemplate(template)}>🗑️ Delete</button>
+            <button onclick={(e) => { e.stopPropagation(); startRename(template); }}>✏️ Rename</button>
+            <button onclick={(e) => { e.stopPropagation(); duplicateTemplate(template); }}>📋 Duplicate</button>
+            <button class="danger" onclick={(e) => { e.stopPropagation(); deleteTemplate(template); }}>🗑️ Delete</button>
           </div>
         {/if}
       </div>

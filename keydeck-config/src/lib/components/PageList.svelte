@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ask } from '@tauri-apps/plugin-dialog';
+
   interface Props {
     config: any;
     deviceSerial: string;
@@ -25,6 +27,8 @@
   let dragOverPage = $state<string | null>(null);
   let dropPosition = $state<'before' | 'after' | null>(null);
   let pageNameInput: HTMLInputElement | undefined;
+  let renamePageName = $state("");
+  let renamingPage = $state<string | null>(null);
 
   function toggleAddPage() {
     showAddPage = !showAddPage;
@@ -82,8 +86,15 @@
     onPageSelected(pageName);
   }
 
-  function deletePage(pageName: string) {
-    if (!confirm(`Are you sure you want to delete page "${pageName}"?`)) return;
+  async function deletePage(pageName: string) {
+    showPageMenu = null;
+
+    const confirmed = await ask(`Are you sure you want to delete page "${pageName}"?`, {
+      title: 'Confirm Delete',
+      kind: 'warning'
+    });
+
+    if (!confirmed) return;
 
     const groupKey = getGroupKey();
     const knownFields = ['main_page', 'restore_mode', 'on_tick'];
@@ -104,8 +115,6 @@
       config[groupKey]['main'] = {};
       onPageSelected('main');
     }
-
-    showPageMenu = null;
   }
 
   function duplicatePage(pageName: string) {
@@ -127,22 +136,48 @@
     showPageMenu = null;
   }
 
-  function renamePage(pageName: string) {
-    const newName = prompt(`Rename page "${pageName}" to:`, pageName);
-    if (!newName || newName === pageName) return;
+  function startRename(pageName: string) {
+    renamingPage = pageName;
+    renamePageName = pageName;
+    showPageMenu = null;
+  }
 
-    const groupKey = getGroupKey();
-    if (config.page_groups[groupKey][newName]) {
-      alert(`Page "${newName}" already exists!`);
+  function renamePage(oldName: string) {
+    if (!renamePageName.trim()) {
+      renamePageName = "";
+      renamingPage = null;
       return;
     }
 
-    config.page_groups[groupKey][newName] = config.page_groups[groupKey][pageName];
-    config[groupKey][newName] = config[groupKey][pageName];
-    delete config.page_groups[groupKey][pageName];
-    delete config[groupKey][pageName];
-    onPageSelected(newName);
-    showPageMenu = null;
+    if (renamePageName === oldName) {
+      renamePageName = "";
+      renamingPage = null;
+      return;
+    }
+
+    const groupKey = getGroupKey();
+    if (config.page_groups[groupKey][renamePageName]) {
+      alert(`Page "${renamePageName}" already exists!`);
+      renamePageName = "";
+      renamingPage = null;
+      return;
+    }
+
+    // Rebuild object preserving order
+    const newPageGroup: any = {};
+    for (const key of Object.keys(config.page_groups[groupKey])) {
+      if (key === oldName) {
+        newPageGroup[renamePageName] = config.page_groups[groupKey][oldName];
+      } else {
+        newPageGroup[key] = config.page_groups[groupKey][key];
+      }
+    }
+    config.page_groups[groupKey] = newPageGroup;
+    config[groupKey] = newPageGroup;
+
+    onPageSelected(renamePageName);
+    renamePageName = "";
+    renamingPage = null;
   }
 
   function handleDragStart(e: DragEvent, page: string) {
@@ -269,40 +304,56 @@
         class:drag-over-before={dragOverPage === page && dropPosition === 'before'}
         class:drag-over-after={dragOverPage === page && dropPosition === 'after'}
         class:dragging={draggedPage === page}
-        ondragover={(e) => handleDragOver(e, page)}
+        ondragover={(e) => !renamingPage && handleDragOver(e, page)}
         ondragleave={handleDragLeave}
         ondrop={(e) => handleDrop(e, page)}
         ondragenter={(e) => e.preventDefault()}
       >
         <span
           class="drag-handle"
-          draggable="true"
+          draggable={!renamingPage}
           ondragstart={(e) => handleDragStart(e, page)}
           ondragend={handleDragEnd}
         >
           ⋮⋮
         </span>
-        <button
-          class="page-item"
-          class:active={page === currentPage}
-          onclick={() => onPageSelected(page)}
-        >
-          {page}
-        </button>
-        <button
-          class="page-menu-btn"
-          onclick={(e) => {
-            e.stopPropagation();
-            showPageMenu = showPageMenu === page ? null : page;
-          }}
-        >
-          ⋮
-        </button>
+        {#if renamingPage === page}
+          <input
+            type="text"
+            bind:value={renamePageName}
+            class="rename-input"
+            onkeydown={(e) => {
+              if (e.key === 'Enter') renamePage(page);
+              if (e.key === 'Escape') { renamePageName = ""; renamingPage = null; }
+            }}
+            onblur={() => renamePage(page)}
+            onmousedown={(e) => e.stopPropagation()}
+            autofocus
+          />
+        {:else}
+          <button
+            class="page-item"
+            class:active={page === currentPage}
+            onclick={() => onPageSelected(page)}
+          >
+            {page}
+          </button>
+          <button
+            class="page-menu-btn"
+            onclick={(e) => {
+              e.stopPropagation();
+              showPageMenu = showPageMenu === page ? null : page;
+            }}
+          >
+            ⋮
+          </button>
+        {/if}
+
         {#if showPageMenu === page}
           <div class="page-menu">
-            <button onclick={() => renamePage(page)}>✏️ Rename</button>
-            <button onclick={() => duplicatePage(page)}>📋 Duplicate</button>
-            <button class="danger" onclick={() => deletePage(page)}>🗑️ Delete</button>
+            <button onclick={(e) => { e.stopPropagation(); startRename(page); }}>✏️ Rename</button>
+            <button onclick={(e) => { e.stopPropagation(); duplicatePage(page); }}>📋 Duplicate</button>
+            <button class="danger" onclick={(e) => { e.stopPropagation(); deletePage(page); }}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -356,6 +407,16 @@
   .separator {
     border-bottom: 1px solid #3e3e42;
     margin-bottom: 16px;
+  }
+
+  .rename-input {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #0e639c;
+    border-radius: 4px;
+    font-size: 13px;
   }
 
   .add-page input {

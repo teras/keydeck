@@ -91,11 +91,6 @@
     </div>
     <button onclick={addOnTickAction}>+ Add On Tick Action</button>
   </div>
-
-  <div class="info-box">
-    <p><strong>Note:</strong> Templates are page layouts that can be reused.</p>
-    <p>Configure buttons in the grid view, and reference this template in pages using the "Inherits From" field.</p>
-  </div>
 </div>
 
 <style>
@@ -161,28 +156,6 @@
     font-size: 11px;
     color: #666;
     font-style: italic;
-  }
-
-  .info-box {
-    padding: 12px;
-    background-color: #2d2d30;
-    border-left: 3px solid #0e639c;
-    border-radius: 4px;
-  }
-
-  .info-box p {
-    margin: 0 0 8px 0;
-    font-size: 12px;
-    color: #aaa;
-    line-height: 1.4;
-  }
-
-  .info-box p:last-child {
-    margin-bottom: 0;
-  }
-
-  .info-box strong {
-    color: #cccccc;
   }
 
   .actions-list {

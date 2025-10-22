@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { ask } from '@tauri-apps/plugin-dialog';
+
   interface Props {
     config: any;
     currentButtonDef: string | null;
@@ -13,6 +15,7 @@
   let showButtonMenu = $state<string | null>(null);
   let buttonNameInput: HTMLInputElement | undefined;
   let renameButtonName = $state("");
+  let renamingButton = $state<string | null>(null);
 
   function toggleAddButton() {
     showAddButton = !showAddButton;
@@ -43,6 +46,11 @@
     }
 
     const buttonName = newButtonName.trim();
+    if (config.buttons[buttonName]) {
+      alert(`Button definition "${buttonName}" already exists!`);
+      return;
+    }
+
     config.buttons[buttonName] = {
       actions: []
     };
@@ -54,13 +62,19 @@
     }
   }
 
-  function deleteButton(buttonName: string) {
-    if (confirm(`Delete button definition "${buttonName}"?`)) {
+  async function deleteButton(buttonName: string) {
+    showButtonMenu = null;
+
+    const confirmed = await ask(`Delete button definition "${buttonName}"?`, {
+      title: 'Confirm Delete',
+      kind: 'warning'
+    });
+
+    if (confirmed) {
       delete config.buttons[buttonName];
       if (currentButtonDef === buttonName) {
         onButtonDefSelected(null);
       }
-      showButtonMenu = null;
     }
   }
 
@@ -79,6 +93,7 @@
   }
 
   function startRename(buttonName: string) {
+    renamingButton = buttonName;
     renameButtonName = buttonName;
     showButtonMenu = null;
   }
@@ -86,22 +101,34 @@
   function renameButton(oldName: string) {
     if (!renameButtonName.trim() || renameButtonName === oldName) {
       renameButtonName = "";
+      renamingButton = null;
       return;
     }
 
     if (config.buttons[renameButtonName]) {
       alert(`Button definition "${renameButtonName}" already exists!`);
+      renameButtonName = "";
+      renamingButton = null;
       return;
     }
 
-    config.buttons[renameButtonName] = config.buttons[oldName];
-    delete config.buttons[oldName];
+    // Rebuild object preserving order
+    const newButtons: any = {};
+    for (const key of Object.keys(config.buttons)) {
+      if (key === oldName) {
+        newButtons[renameButtonName] = config.buttons[oldName];
+      } else {
+        newButtons[key] = config.buttons[key];
+      }
+    }
+    config.buttons = newButtons;
 
     if (currentButtonDef === oldName) {
       onButtonDefSelected(renameButtonName);
     }
 
     renameButtonName = "";
+    renamingButton = null;
   }
 </script>
 
@@ -130,13 +157,17 @@
   <div class="buttons">
     {#each buttonDefs as button}
       <div class="button-row">
-        {#if renameButtonName && renameButtonName === button}
+        {#if renamingButton === button}
           <input
             type="text"
             bind:value={renameButtonName}
             class="rename-input"
-            onkeydown={(e) => e.key === 'Enter' && renameButton(button)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') renameButton(button);
+              if (e.key === 'Escape') { renameButtonName = ""; renamingButton = null; }
+            }}
             onblur={() => renameButton(button)}
+            onmousedown={(e) => e.stopPropagation()}
             autofocus
           />
         {:else}
@@ -160,9 +191,9 @@
 
         {#if showButtonMenu === button}
           <div class="button-menu">
-            <button onclick={() => startRename(button)}>✏️ Rename</button>
-            <button onclick={() => duplicateButton(button)}>📋 Duplicate</button>
-            <button class="danger" onclick={() => deleteButton(button)}>🗑️ Delete</button>
+            <button onclick={(e) => { e.stopPropagation(); startRename(button); }}>✏️ Rename</button>
+            <button onclick={(e) => { e.stopPropagation(); duplicateButton(button); }}>📋 Duplicate</button>
+            <button class="danger" onclick={(e) => { e.stopPropagation(); deleteButton(button); }}>🗑️ Delete</button>
           </div>
         {/if}
       </div>
@@ -263,6 +294,16 @@
     position: relative;
     display: flex;
     gap: 4px;
+  }
+
+  .rename-input {
+    flex: 1;
+    padding: 8px 12px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #0e639c;
+    border-radius: 4px;
+    font-size: 13px;
   }
 
   .button-item {
