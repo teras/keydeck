@@ -13,6 +13,7 @@
   let pageGroup = $derived(config.page_groups?.[deviceSerial] || config.page_groups?.default);
   let page = $derived(pageGroup?.[pageName]);
   let groupKey = $derived(config.page_groups?.[deviceSerial] ? deviceSerial : 'default');
+  let openActionIndex = $state<number>(-1);
 
   function updateWindowClass(value: string) {
     if (!page) return;
@@ -48,6 +49,7 @@
       page.on_tick = [];
     }
     page.on_tick = [...page.on_tick, { refresh: 'dynamic' }];
+    openActionIndex = page.on_tick.length - 1;
     config[groupKey][pageName].on_tick = page.on_tick;
   }
 
@@ -103,6 +105,8 @@
             index={i}
             {config}
             deviceSerial={deviceSerial}
+            initiallyOpen={i === openActionIndex}
+            onToggle={() => openActionIndex = i}
             onUpdate={(newAction) => updateOnTickAction(i, newAction)}
             onDelete={() => removeOnTickAction(i)}
           />

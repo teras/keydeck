@@ -10,6 +10,7 @@
   let { config, templateName }: Props = $props();
 
   let template = $derived(config.templates?.[templateName] || {});
+  let openActionIndex = $state<number>(-1);
 
   function updateInherits(templates: string[]) {
     if (!config.templates) config.templates = {};
@@ -39,6 +40,7 @@
       ...config.templates[templateName].on_tick,
       { refresh: 'dynamic' }
     ];
+    openActionIndex = config.templates[templateName].on_tick.length - 1;
   }
 
   function updateOnTickAction(index: number, newAction: any) {
@@ -83,6 +85,8 @@
             index={i}
             {config}
             deviceSerial=""
+            initiallyOpen={i === openActionIndex}
+            onToggle={() => openActionIndex = i}
             onUpdate={(newAction) => updateOnTickAction(i, newAction)}
             onDelete={() => removeOnTickAction(i)}
           />
