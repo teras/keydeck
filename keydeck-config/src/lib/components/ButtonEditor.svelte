@@ -683,6 +683,7 @@
     border: 1px solid #555;
     border-radius: 4px;
     gap: 8px;
+    min-width: 0;
   }
 
   .color-info {
@@ -690,6 +691,7 @@
     flex-direction: column;
     gap: 6px;
     flex: 1;
+    min-width: 0;
   }
 
   .actions-list {

@@ -47,6 +47,8 @@
   let lastSaveTime = $state<string>("");
   let hasUnsavedChanges = $state<boolean>(false);
   let isRightPanelOpen = $state<boolean>(true);
+  let rightPanelWidth = $state<number>(300);
+  let isResizingRightPanel = $state<boolean>(false);
   let sidebarToggleTab: ((tab: 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null) => void) | null = null;
 
   // Parameter management state
@@ -458,6 +460,44 @@
       return () => document.removeEventListener('click', handleClickOutside);
     }
   });
+
+  // Right panel resize handlers
+  let resizeStartX = $state<number>(0);
+  let resizeStartWidth = $state<number>(0);
+
+  function startResizeRightPanel(event: MouseEvent) {
+    isResizingRightPanel = true;
+    resizeStartX = event.clientX;
+    resizeStartWidth = rightPanelWidth;
+    event.preventDefault();
+  }
+
+  $effect(() => {
+    if (isResizingRightPanel) {
+      const handleMouseMove = (event: MouseEvent) => {
+        const deltaX = resizeStartX - event.clientX;
+        const newWidth = resizeStartWidth + deltaX;
+        // Min width: 200px, Max width: 600px
+        rightPanelWidth = Math.max(200, Math.min(600, newWidth));
+      };
+
+      const handleMouseUp = () => {
+        isResizingRightPanel = false;
+      };
+
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      };
+    }
+  });
 </script>
 
 <div class="app-container">
@@ -540,7 +580,16 @@
     </main>
 
     <!-- Right Sidebar: Button/Page/Template Config -->
-    <aside class="properties-panel" class:closed={!isRightPanelOpen}>
+    <aside class="properties-panel" class:closed={!isRightPanelOpen} style="width: {isRightPanelOpen ? rightPanelWidth : 0}px;">
+      {#if isRightPanelOpen}
+        <div
+          class="resize-handle"
+          role="separator"
+          aria-label="Resize properties panel"
+          onmousedown={startResizeRightPanel}
+        ></div>
+      {/if}
+      <div class="properties-content">
       {#if selectedButton !== null && selectedDevice && config}
         <ButtonEditor
           config={config}
@@ -720,6 +769,7 @@
           <p>Select a button, page, template, service, macro, or button definition to edit</p>
         </div>
       {/if}
+      </div>
     </aside>
   </div>
 </div>
@@ -887,20 +937,51 @@
   }
 
   .properties-panel {
-    width: 300px;
+    position: relative;
     background-color: #252526;
     border-left: 1px solid #3e3e42;
-    overflow-y: auto;
-    padding: 16px;
-    transition: width 0.2s ease-out, padding 0.2s ease-out, opacity 0.2s ease-out;
+    transition: opacity 0.2s ease-out;
+    display: flex;
+    flex-direction: row;
   }
 
   .properties-panel.closed {
-    width: 0;
-    padding-left: 0;
-    padding-right: 0;
     opacity: 0;
     pointer-events: none;
+  }
+
+  .properties-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .resize-handle {
+    width: 16px;
+    cursor: ew-resize;
+    background-color: transparent;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background-color: transparent;
+    transition: background-color 0.2s;
+  }
+
+  .resize-handle:hover::after {
+    background-color: #0e639c;
+  }
+
+  .resize-handle:active::after {
+    background-color: #1177bb;
   }
 
   .editor-panel h2 {

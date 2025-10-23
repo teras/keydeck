@@ -81,10 +81,13 @@
     display: flex;
     gap: 8px;
     align-items: center;
+    min-width: 0;
   }
 
   .color-text-input {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 60px;
     padding: 6px 8px;
     background-color: #2a2a2a;
     color: #cccccc;
