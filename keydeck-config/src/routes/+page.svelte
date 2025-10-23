@@ -157,10 +157,23 @@
     }
   });
 
-  // Track config changes
+  // Track config changes by serializing and comparing
+  let lastConfigSnapshot = $state<string>("");
+  let isInitialLoad = $state(true);
+
   $effect(() => {
     if (config) {
-      hasUnsavedChanges = true;
+      const currentSnapshot = JSON.stringify(config);
+
+      if (isInitialLoad) {
+        // First load - just save snapshot, don't mark as changed
+        lastConfigSnapshot = currentSnapshot;
+        isInitialLoad = false;
+      } else if (currentSnapshot !== lastConfigSnapshot) {
+        // Actual change detected
+        hasUnsavedChanges = true;
+        lastConfigSnapshot = currentSnapshot;
+      }
     }
   });
 
@@ -196,6 +209,8 @@
     currentService = null;
     currentMacro = null;
     currentButtonDef = null;
+    // Open right panel to show button properties
+    isRightPanelOpen = true;
   }
 
   function handleServiceSelected(serviceName: string | null) {
@@ -203,6 +218,8 @@
     currentMacro = null;
     currentButtonDef = null;
     selectedButton = null;
+    // Open right panel to show service properties
+    if (serviceName) isRightPanelOpen = true;
   }
 
   function handleMacroSelected(macroName: string | null) {
@@ -210,6 +227,8 @@
     currentService = null;
     currentButtonDef = null;
     selectedButton = null;
+    // Open right panel to show macro properties
+    if (macroName) isRightPanelOpen = true;
   }
 
   function handleButtonDefSelected(buttonName: string | null) {
@@ -217,6 +236,8 @@
     currentService = null;
     currentMacro = null;
     selectedButton = null;
+    // Open right panel to show button definition properties
+    if (buttonName) isRightPanelOpen = true;
   }
 
   function handleButtonDefNavigate(buttonDefName: string, keepButtonSelection: boolean = false) {
@@ -224,15 +245,14 @@
     if (sidebarToggleTab) {
       sidebarToggleTab('buttons');
     }
+    // Clear button selection and page/template context to show button definition
+    selectedButton = null;
+    currentTemplate = null;
+    currentPage = "";
     // Select the button definition
     currentButtonDef = buttonDefName;
     currentService = null;
     currentMacro = null;
-    currentTemplate = null;
-    currentPage = "";
-    if (!keepButtonSelection) {
-      selectedButton = null;
-    }
   }
 
   function handlePageTitleClicked() {
@@ -274,6 +294,7 @@
 
       config = loadedConfig;
       hasUnsavedChanges = false;
+      lastConfigSnapshot = JSON.stringify(config);
 
       // Auto-select initial page after reload
       selectInitialPage();
@@ -290,6 +311,7 @@
       error = "";
       await invoke("save_config", { config });
       hasUnsavedChanges = false;
+      lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
       lastSaveTime = now.toLocaleTimeString();
       alert("Configuration saved!");
@@ -307,6 +329,7 @@
       await invoke("save_config", { config });
       await invoke("reload_keydeck");
       hasUnsavedChanges = false;
+      lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
       lastSaveTime = now.toLocaleTimeString();
       alert("Configuration sent to device and reloaded!");
@@ -867,7 +890,7 @@
     position: relative;
     background-color: #252526;
     border-left: 1px solid #3e3e42;
-    transition: opacity 0.2s ease-out;
+    transition: width 0.2s ease-out, opacity 0.2s ease-out;
     display: flex;
     flex-direction: row;
   }
