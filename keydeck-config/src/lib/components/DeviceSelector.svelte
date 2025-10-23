@@ -121,24 +121,24 @@
 
   select {
     min-width: 250px;
-    padding: 6px 12px;
+    padding: 8px 12px;
     background-color: #3c3c3c;
     color: #cccccc;
     border: 1px solid #555;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 16px;
   }
 
   button {
-    padding: 6px 12px;
+    padding: 8px 12px;
     background-color: #0e639c;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 18px;
     line-height: 1;
-    min-width: 32px;
+    min-width: 38px;
   }
 
   button:hover {

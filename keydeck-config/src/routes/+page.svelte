@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { save, open } from '@tauri-apps/plugin-dialog';
+  import TitleBar from "../lib/components/TitleBar.svelte";
   import DeviceSelector from "../lib/components/DeviceSelector.svelte";
   import Sidebar from "../lib/components/Sidebar.svelte";
   import ButtonGrid from "../lib/components/ButtonGrid.svelte";
@@ -500,33 +501,17 @@
   });
 </script>
 
-<div class="app-container">
-  <header>
-    <div class="header-left">
-      <h1>KeyDeck</h1>
-      {#if config}
-        <DeviceSelector onDeviceSelected={handleDeviceSelected} onRefresh={reloadConfig} />
-      {/if}
-    </div>
-    <div class="toolbar">
-      {#if hasUnsavedChanges}
-        <span class="unsaved-indicator">● Unsaved changes</span>
-      {/if}
-      {#if lastSaveTime}
-        <span class="last-save">Last updated: {lastSaveTime}</span>
-      {/if}
-      <button onclick={saveConfig} disabled={isSaving} title="Save configuration to ~/.config/keydeck.yaml">
-        Save
-      </button>
-      <button onclick={sendToDevice} disabled={isSaving} title="Save and send SIGHUP to reload device">
-        Send to Device
-      </button>
-      <div style="width: 12px;"></div>
-      <button onclick={importConfiguration} title="Import from YAML file">Import</button>
-      <button onclick={exportConfiguration} title="Export to YAML file">Export</button>
-    </div>
-  </header>
+<TitleBar
+  hasUnsavedChanges={hasUnsavedChanges}
+  lastSaveTime={lastSaveTime}
+  isSaving={isSaving}
+  onSave={saveConfig}
+  onSend={sendToDevice}
+  onImport={importConfiguration}
+  onExport={exportConfiguration}
+/>
 
+<div class="app-container">
   {#if error}
     <div class="error">{error}</div>
   {/if}
@@ -562,10 +547,17 @@
           isTemplate={!!currentTemplate}
           pageName={currentPage || currentTemplate}
           onPageTitleClicked={handlePageTitleClicked}
+          onDeviceSelected={handleDeviceSelected}
+          onRefresh={reloadConfig}
         />
       {:else}
         <div class="placeholder">
-          <p>{selectedDevice ? 'Select a page or template' : 'Select a device to get started'}</p>
+          {#if config}
+            <DeviceSelector onDeviceSelected={handleDeviceSelected} onRefresh={reloadConfig} />
+            <p style="margin-top: 20px;">{selectedDevice ? 'Select a page or template' : 'Select a device to get started'}</p>
+          {:else}
+            <p>Loading configuration...</p>
+          {/if}
         </div>
       {/if}
 
@@ -802,95 +794,13 @@
   }
 
   .app-container {
-    height: 100vh;
+    height: calc(100vh - 48px);
+    margin-top: 48px;
     display: flex;
     flex-direction: column;
+    flex: 1;
   }
 
-  header {
-    background-color: #252526;
-    padding: 12px 20px;
-    border-bottom: 1px solid #3e3e42;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .header-left {
-    display: flex;
-    gap: 20px;
-    align-items: center;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 500;
-  }
-
-  .toolbar {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .live-preview-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 10px;
-    background-color: #1e1e1e;
-    border-radius: 4px;
-    border: 1px solid #3e3e42;
-  }
-
-  .toggle-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .toggle-label input[type="checkbox"] {
-    cursor: pointer;
-    width: 16px;
-    height: 16px;
-  }
-
-  .toggle-text {
-    font-size: 13px;
-    color: #cccccc;
-  }
-
-  .status-indicator {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-weight: 500;
-  }
-
-  .status-indicator.active {
-    background-color: #1a472a;
-    color: #4ec9b0;
-  }
-
-  .status-indicator.saving {
-    background-color: #5a3e1d;
-    color: #dcdcaa;
-  }
-
-  .last-save {
-    font-size: 12px;
-    color: #888;
-    font-style: italic;
-  }
-
-  .unsaved-indicator {
-    font-size: 12px;
-    color: #f48771;
-    font-weight: 500;
-  }
 
   button {
     background-color: #0e639c;

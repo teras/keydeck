@@ -1,5 +1,6 @@
 <script lang="ts">
   import { convertFileSrc } from '@tauri-apps/api/core';
+  import DeviceSelector from './DeviceSelector.svelte';
 
   interface DeviceInfo {
     device_id: string;
@@ -33,9 +34,11 @@
     isTemplate?: boolean;
     pageName?: string;
     onPageTitleClicked?: () => void;
+    onDeviceSelected?: (device: DeviceInfo) => void;
+    onRefresh?: () => void;
   }
 
-  let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked }: Props = $props();
+  let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked, onDeviceSelected, onRefresh }: Props = $props();
 
   // Get button configuration from template inheritance chain
   function getButtonFromTemplate(templateName: string, buttonKey: string, visited = new Set<string>()): any {
@@ -274,7 +277,9 @@
 
 <div class="button-grid-container">
   <div class="device-info">
-    <h3>{device.model}</h3>
+    {#if config}
+      <DeviceSelector onDeviceSelected={onDeviceSelected} onRefresh={onRefresh} />
+    {/if}
   </div>
 
   <div class="center-content">
@@ -349,7 +354,9 @@
   }
 
   .device-info {
-    text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
     width: 100%;
     padding: 20px 0;
   }
