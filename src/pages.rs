@@ -353,16 +353,6 @@ fn default_refresh_target() -> RefreshTarget {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum Action {
-    /// Executes an external command.
-    /// By default, spawns the command asynchronously (fire-and-forget).
-    /// Set `wait: true` to wait for the command to complete and check its exit status.
-    /// When `wait: true`, returns error if command fails (exit code != 0), allowing use with try/else.
-    Exec {
-        exec: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        wait: Option<bool>,
-    },
-
     /// Jumps to a specified page.
     Jump { jump: String },
 
@@ -373,18 +363,6 @@ pub enum Action {
     /// Simple string action that attempts to focus the window.
     /// Returns error if focus operation fails (can be caught with try/else).
     Focus { focus: String },
-
-    /// Waits for a specific event to occur, with optional timeout.
-    /// If the event doesn't occur within the timeout, returns an error.
-    /// Can be caught with try/else for error handling.
-    /// Timeout defaults to 1.0 second if not specified.
-    WaitFor {
-        #[serde(rename = "wait_for")]
-        wait_for_event: String,
-
-        #[serde(skip_serializing_if = "Option::is_none")]
-        timeout: Option<f64>,
-    },
 
     /// Sends a keyboard shortcut event. Some examples include "LCtrl+LShift+z" or "F12".
     /// The value is case-insensitive and can be a single character or a key name.
@@ -398,6 +376,32 @@ pub enum Action {
     /// Waits for a specified time in seconds before executing the next action.
     Wait { wait: f32 },
 
+    /// Waits for a specific event to occur, with optional timeout.
+    /// If the event doesn't occur within the timeout, returns an error.
+    /// Can be caught with try/else for error handling.
+    /// Timeout defaults to 1.0 second if not specified.
+    WaitFor {
+        #[serde(rename = "wait_for")]
+        wait_for_event: String,
+
+        #[serde(skip_serializing_if = "Option::is_none")]
+        timeout: Option<f64>,
+    },
+
+    /// Executes an external command.
+    /// By default, spawns the command asynchronously (fire-and-forget).
+    /// Set `wait: true` to wait for the command to complete and check its exit status.
+    /// When `wait: true`, returns error if command fails (exit code != 0), allowing use with try/else.
+    Exec {
+        exec: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        wait: Option<bool>,
+    },
+ 
+    /// Calls a macro with optional parameters.
+    /// Parameters are substituted in the macro's actions before execution.
+    Macro(MacroCall),
+
     /// Try/else block for error handling.
     /// Executes try_actions sequentially, stopping on first error.
     /// If try fails and else_actions is present, executes else block.
@@ -410,10 +414,6 @@ pub enum Action {
         #[serde(rename = "else")]
         else_actions: Option<Vec<Action>>,
     },
-
-    /// Calls a macro with optional parameters.
-    /// Parameters are substituted in the macro's actions before execution.
-    Macro(MacroCall),
 
     /// Returns successfully from the current action sequence.
     /// Stops execution of remaining actions without triggering error handlers.

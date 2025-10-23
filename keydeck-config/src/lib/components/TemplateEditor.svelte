@@ -1,5 +1,6 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
+  import TemplateSelector from './TemplateSelector.svelte';
 
   interface Props {
     config: any;
@@ -10,20 +11,21 @@
 
   let template = $derived(config.templates?.[templateName] || {});
 
-  function updateInherits(value: string) {
+  function updateInherits(templates: string[]) {
     if (!config.templates) config.templates = {};
     if (!config.templates[templateName]) config.templates[templateName] = {};
 
-    const inheritsArray = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
-    if (inheritsArray.length > 0) {
-      config.templates[templateName].inherits = inheritsArray;
+    if (templates.length > 0) {
+      config.templates[templateName].inherits = templates;
     } else {
       delete config.templates[templateName].inherits;
     }
   }
 
-  function getInheritsValue(): string {
-    return template.inherits ? template.inherits.join(', ') : '';
+  function getSelectedTemplates(): string[] {
+    if (!template.inherits) return [];
+    if (Array.isArray(template.inherits)) return template.inherits;
+    return [template.inherits];
   }
 
   function addOnTickAction() {
@@ -60,13 +62,13 @@
 
     <div class="form-group">
       <label>Inherits From</label>
-      <input
-        type="text"
-        value={getInheritsValue()}
-        oninput={(e) => updateInherits(e.currentTarget.value)}
-        placeholder="template1, template2"
+      <TemplateSelector
+        {config}
+        selectedTemplates={getSelectedTemplates()}
+        currentTemplateName={templateName}
+        onUpdate={updateInherits}
       />
-      <p class="help">Comma-separated list of templates to inherit from</p>
+      <p class="help">Select one or more templates to inherit from</p>
     </div>
   </div>
 

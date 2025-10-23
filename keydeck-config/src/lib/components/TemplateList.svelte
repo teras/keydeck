@@ -4,10 +4,11 @@
   interface Props {
     config: any;
     currentTemplate: string | null;
+    selectedButton: number | null;
     onTemplateSelected: (templateName: string | null) => void;
   }
 
-  let { config, currentTemplate, onTemplateSelected }: Props = $props();
+  let { config, currentTemplate, selectedButton, onTemplateSelected }: Props = $props();
 
   let templates = $derived(Object.keys(config.templates || {}));
   let showTemplateMenu = $state<string | null>(null);
@@ -170,7 +171,7 @@
         {:else}
           <button
             class="template-item"
-            class:active={template === currentTemplate}
+            class:active={template === currentTemplate && selectedButton === null}
             onclick={() => onTemplateSelected(template)}
           >
             {template}

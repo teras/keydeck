@@ -6,6 +6,7 @@
   import Sidebar from "../lib/components/Sidebar.svelte";
   import ButtonGrid from "../lib/components/ButtonGrid.svelte";
   import ButtonEditor from "../lib/components/ButtonEditor.svelte";
+  import ButtonDefEditor from "../lib/components/ButtonDefEditor.svelte";
   import PageEditor from "../lib/components/PageEditor.svelte";
   import TemplateEditor from "../lib/components/TemplateEditor.svelte";
   import ActionEditor from "../lib/components/ActionEditor.svelte";
@@ -46,6 +47,16 @@
   let lastSaveTime = $state<string>("");
   let hasUnsavedChanges = $state<boolean>(false);
   let isRightPanelOpen = $state<boolean>(true);
+  let sidebarToggleTab: ((tab: 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null) => void) | null = null;
+
+  // Parameter management state
+  let showAddParam = $state<boolean>(false);
+  let newParamName = $state<string>("");
+  let showParamMenu = $state<string | null>(null);
+  let renamingParam = $state<string | null>(null);
+  let renameParamName = $state<string>("");
+  let lastAddedParam = $state<string | null>(null);
+  let paramNameInput: HTMLInputElement | undefined;
 
   onMount(async () => {
     try {
@@ -178,14 +189,16 @@
 
   function handleButtonSelected(buttonIndex: number) {
     selectedButton = buttonIndex;
+    // Clear left panel selections to show only button is selected
+    currentService = null;
+    currentMacro = null;
+    currentButtonDef = null;
   }
 
   function handleServiceSelected(serviceName: string | null) {
     currentService = serviceName;
     currentMacro = null;
     currentButtonDef = null;
-    currentPage = "";
-    currentTemplate = null;
     selectedButton = null;
   }
 
@@ -193,8 +206,6 @@
     currentMacro = macroName;
     currentService = null;
     currentButtonDef = null;
-    currentPage = "";
-    currentTemplate = null;
     selectedButton = null;
   }
 
@@ -202,9 +213,21 @@
     currentButtonDef = buttonName;
     currentService = null;
     currentMacro = null;
-    currentPage = "";
-    currentTemplate = null;
     selectedButton = null;
+  }
+
+  function handlePageTitleClicked() {
+    // Clear button selection
+    selectedButton = null;
+
+    // Open the appropriate sidebar tab
+    if (sidebarToggleTab) {
+      if (currentTemplate) {
+        sidebarToggleTab('templates');
+      } else if (currentPage) {
+        sidebarToggleTab('pages');
+      }
+    }
   }
 
   async function reloadConfig() {
@@ -313,6 +336,128 @@
       error = `Failed to import configuration: ${e}`;
     }
   }
+
+  // Parameter management functions
+  function toggleAddParam() {
+    showAddParam = !showAddParam;
+    if (showAddParam) {
+      setTimeout(() => paramNameInput?.focus(), 0);
+    }
+  }
+
+  function addParam() {
+    if (!newParamName.trim() || !currentMacro) return;
+
+    if (!config.macros[currentMacro].params) {
+      config.macros[currentMacro].params = {};
+    }
+
+    const paramName = newParamName.trim();
+    if (config.macros[currentMacro].params[paramName]) {
+      alert(`Parameter "${paramName}" already exists!`);
+      return;
+    }
+
+    config.macros[currentMacro].params[paramName] = "";
+    lastAddedParam = paramName;
+    newParamName = "";
+    showAddParam = false;
+
+    // Focus on the newly added parameter's value input
+    setTimeout(() => {
+      const paramInput = document.querySelector(`input[data-param-name="${paramName}"]`) as HTMLInputElement;
+      if (paramInput) {
+        paramInput.focus();
+        paramInput.setSelectionRange(paramInput.value.length, paramInput.value.length);
+      }
+      lastAddedParam = null;
+    }, 50);
+  }
+
+  function deleteParam(paramName: string) {
+    if (!currentMacro) return;
+    showParamMenu = null;
+
+    if (confirm(`Delete parameter "${paramName}"?`)) {
+      delete config.macros[currentMacro].params[paramName];
+      config.macros[currentMacro].params = { ...config.macros[currentMacro].params };
+    }
+  }
+
+  function duplicateParam(paramName: string) {
+    if (!currentMacro || !config.macros[currentMacro].params) return;
+
+    const original = config.macros[currentMacro].params[paramName];
+    let newName = `${paramName}_copy`;
+    let counter = 1;
+    while (config.macros[currentMacro].params[newName]) {
+      newName = `${paramName}_copy${counter}`;
+      counter++;
+    }
+
+    config.macros[currentMacro].params[newName] = original;
+    config.macros[currentMacro].params = { ...config.macros[currentMacro].params };
+    lastAddedParam = newName;
+    showParamMenu = null;
+
+    // Focus on the duplicated parameter's value input
+    setTimeout(() => {
+      const paramInput = document.querySelector(`input[data-param-name="${newName}"]`) as HTMLInputElement;
+      if (paramInput) {
+        paramInput.focus();
+        paramInput.setSelectionRange(paramInput.value.length, paramInput.value.length);
+      }
+      lastAddedParam = null;
+    }, 50);
+  }
+
+  function startRenameParam(paramName: string) {
+    renamingParam = paramName;
+    renameParamName = paramName;
+    showParamMenu = null;
+  }
+
+  function renameParam(oldName: string) {
+    if (!currentMacro || !renameParamName.trim() || renameParamName === oldName) {
+      renameParamName = "";
+      renamingParam = null;
+      return;
+    }
+
+    if (config.macros[currentMacro].params[renameParamName]) {
+      alert(`Parameter "${renameParamName}" already exists!`);
+      renameParamName = "";
+      renamingParam = null;
+      return;
+    }
+
+    const newParams: any = {};
+    for (const key of Object.keys(config.macros[currentMacro].params)) {
+      if (key === oldName) {
+        newParams[renameParamName] = config.macros[currentMacro].params[oldName];
+      } else {
+        newParams[key] = config.macros[currentMacro].params[key];
+      }
+    }
+    config.macros[currentMacro].params = newParams;
+
+    renameParamName = "";
+    renamingParam = null;
+  }
+
+  // Click-outside handler for param menu
+  $effect(() => {
+    if (showParamMenu !== null) {
+      const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.param-menu') && !target.closest('.param-menu-btn')) {
+          showParamMenu = null;
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  });
 </script>
 
 <div class="app-container">
@@ -356,11 +501,13 @@
       currentService={currentService}
       currentMacro={currentMacro}
       currentButtonDef={currentButtonDef}
+      selectedButton={selectedButton}
       onPageSelected={handlePageSelected}
       onTemplateSelected={handleTemplateSelected}
       onServiceSelected={handleServiceSelected}
       onMacroSelected={handleMacroSelected}
       onButtonDefSelected={handleButtonDefSelected}
+      openTab={(fn) => sidebarToggleTab = fn}
     />
 
     <!-- Center: Button Grid -->
@@ -373,6 +520,8 @@
           selectedButton={selectedButton}
           onButtonSelected={handleButtonSelected}
           isTemplate={!!currentTemplate}
+          pageName={currentPage || currentTemplate}
+          onPageTitleClicked={handlePageTitleClicked}
         />
       {:else}
         <div class="placeholder">
@@ -401,17 +550,6 @@
           deviceSerial={selectedDevice.serial}
           isTemplate={!!currentTemplate}
           onNavigateToTemplate={handleTemplateSelected}
-        />
-      {:else if currentPage && selectedDevice && config && !currentTemplate}
-        <PageEditor
-          config={config}
-          pageName={currentPage}
-          deviceSerial={selectedDevice.serial}
-        />
-      {:else if currentTemplate && config}
-        <TemplateEditor
-          config={config}
-          templateName={currentTemplate}
         />
       {:else if currentService && config}
         <div class="editor-panel">
@@ -451,44 +589,76 @@
             <div class="macro-section">
               <div class="section-header">
                 <h3>Parameters</h3>
-                <button class="add-btn" onclick={() => {
-                  const newParamName = prompt("Parameter name:");
-                  if (newParamName && newParamName.trim()) {
-                    if (!config.macros[currentMacro].params) {
-                      config.macros[currentMacro].params = {};
-                    }
-                    config.macros[currentMacro].params[newParamName.trim()] = "";
-                  }
-                }}>+</button>
+                <button class="add-btn" onclick={toggleAddParam}>+</button>
               </div>
+
+              {#if showAddParam}
+                <div class="add-param">
+                  <input
+                    type="text"
+                    bind:this={paramNameInput}
+                    bind:value={newParamName}
+                    placeholder="Parameter name"
+                    onkeydown={(e) => e.key === 'Enter' && addParam()}
+                  />
+                  <button onclick={addParam} title="Add">✓</button>
+                  <button onclick={() => showAddParam = false} title="Cancel">✕</button>
+                </div>
+              {/if}
+
+              <div class="separator"></div>
 
               <div class="params-list">
                 {#if config.macros[currentMacro].params && Object.keys(config.macros[currentMacro].params).length > 0}
                   {#each Object.entries(config.macros[currentMacro].params) as [paramName, paramValue]}
-                    <div class="param-item">
-                      <div class="param-content">
-                        <div class="param-name-display">{paramName}</div>
+                    <div class="param-row">
+                      {#if renamingParam === paramName}
                         <input
                           type="text"
-                          value={paramValue}
-                          oninput={(e) => {
-                            config.macros[currentMacro].params[paramName] = e.currentTarget.value;
+                          bind:value={renameParamName}
+                          class="rename-param-input"
+                          onkeydown={(e) => {
+                            if (e.key === 'Enter') renameParam(paramName);
+                            if (e.key === 'Escape') { renameParamName = ""; renamingParam = null; }
                           }}
-                          placeholder="Default value"
-                          class="param-value-input"
+                          onblur={() => renameParam(paramName)}
+                          onmousedown={(e) => e.stopPropagation()}
+                          autofocus
                         />
-                      </div>
-                      <button
-                        class="param-delete-btn"
-                        onclick={() => {
-                          if (confirm(`Delete parameter "${paramName}"?`)) {
-                            delete config.macros[currentMacro].params[paramName];
-                            // Trigger reactivity
-                            config.macros[currentMacro].params = { ...config.macros[currentMacro].params };
-                          }
-                        }}
-                        title="Delete parameter"
-                      >×</button>
+                      {:else}
+                        <div class="param-item">
+                          <div class="param-info">
+                            <span class="param-name">{paramName}</span>
+                            <input
+                              type="text"
+                              value={paramValue}
+                              data-param-name={paramName}
+                              oninput={(e) => {
+                                config.macros[currentMacro].params[paramName] = e.currentTarget.value;
+                              }}
+                              placeholder="Default value"
+                              class="param-value"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          class="param-menu-btn"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            showParamMenu = showParamMenu === paramName ? null : paramName;
+                          }}
+                        >
+                          ⋮
+                        </button>
+                      {/if}
+
+                      {#if showParamMenu === paramName}
+                        <div class="param-menu">
+                          <button onclick={(e) => { e.stopPropagation(); startRenameParam(paramName); }}>✏️ Rename</button>
+                          <button onclick={(e) => { e.stopPropagation(); duplicateParam(paramName); }}>📋 Duplicate</button>
+                          <button class="danger" onclick={(e) => { e.stopPropagation(); deleteParam(paramName); }}>🗑️ Delete</button>
+                        </div>
+                      {/if}
                     </div>
                   {/each}
                 {:else}
@@ -524,113 +694,27 @@
                 if (!config.macros[currentMacro].actions) {
                   config.macros[currentMacro].actions = [];
                 }
-                config.macros[currentMacro].actions.push({ exec: "" });
+                config.macros[currentMacro].actions.push({ jump: "" });
               }}>+ Add Action</button>
             </div>
           {/if}
         </div>
       {:else if currentButtonDef && config}
-        <div class="editor-panel">
-          <h2>Button Definition: {currentButtonDef}</h2>
-          <p class="help">Button definitions are reusable button configurations</p>
-
-          {#if config.buttons[currentButtonDef]}
-            <!-- Icon, Text, Colors similar to ButtonEditor -->
-            <div class="form-group">
-              <label>Text</label>
-              <input
-                type="text"
-                value={config.buttons[currentButtonDef].text || ""}
-                oninput={(e) => {
-                  if (!config.buttons[currentButtonDef].text) {
-                    config.buttons[currentButtonDef].text = "";
-                  }
-                  config.buttons[currentButtonDef].text = e.currentTarget.value;
-                }}
-                placeholder="Button label"
-              />
-            </div>
-
-            <div class="form-group">
-              <label>Icon</label>
-              <input
-                type="text"
-                value={config.buttons[currentButtonDef].icon || ""}
-                oninput={(e) => {
-                  config.buttons[currentButtonDef].icon = e.currentTarget.value || undefined;
-                }}
-                placeholder="icon.png or path to image"
-              />
-            </div>
-
-            <div class="form-group">
-              <label>Background</label>
-              <input
-                type="text"
-                value={config.buttons[currentButtonDef].background || ""}
-                oninput={(e) => {
-                  config.buttons[currentButtonDef].background = e.currentTarget.value || undefined;
-                }}
-                placeholder="0xRRGGBB"
-              />
-            </div>
-
-            <div class="form-group">
-              <label>Text Color</label>
-              <input
-                type="text"
-                value={config.buttons[currentButtonDef].text_color || ""}
-                oninput={(e) => {
-                  config.buttons[currentButtonDef].text_color = e.currentTarget.value || undefined;
-                }}
-                placeholder="0xRRGGBB"
-              />
-            </div>
-
-            <div class="form-group">
-              <label>Outline</label>
-              <input
-                type="text"
-                value={config.buttons[currentButtonDef].outline || ""}
-                oninput={(e) => {
-                  config.buttons[currentButtonDef].outline = e.currentTarget.value || undefined;
-                }}
-                placeholder="0xRRGGBB"
-              />
-            </div>
-
-            <!-- Button Definition Actions -->
-            <div class="form-group">
-              <label>Actions</label>
-              <div class="actions-list">
-                {#if config.buttons[currentButtonDef].actions && config.buttons[currentButtonDef].actions.length > 0}
-                  {#each config.buttons[currentButtonDef].actions as action, i (currentButtonDef + '-' + i)}
-                    <ActionEditor
-                      {action}
-                      index={i}
-                      {config}
-                      deviceSerial={selectedDevice?.serial}
-                      onUpdate={(newAction) => {
-                        config.buttons[currentButtonDef].actions[i] = newAction;
-                      }}
-                      onDelete={() => {
-                        config.buttons[currentButtonDef].actions.splice(i, 1);
-                      }}
-                    />
-                  {/each}
-                {:else}
-                  <p class="empty">No actions configured</p>
-                {/if}
-              </div>
-              <button onclick={() => {
-                if (!config.buttons[currentButtonDef].actions) {
-                  config.buttons[currentButtonDef].actions = [];
-                }
-                config.buttons[currentButtonDef].actions.push({ exec: "" });
-              }}>+ Add Action</button>
-            </div>
-          {/if}
-        </div>
+        <ButtonDefEditor
+          config={config}
+          buttonDefName={currentButtonDef}
+        />
+      {:else if currentPage && selectedDevice && config && !currentTemplate}
+        <PageEditor
+          config={config}
+          pageName={currentPage}
+          deviceSerial={selectedDevice.serial}
+        />
+      {:else if currentTemplate && config}
+        <TemplateEditor
+          config={config}
+          templateName={currentTemplate}
+        />
       {:else}
         <div class="placeholder">
           <p>Select a button, page, template, service, macro, or button definition to edit</p>
@@ -883,9 +967,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-bottom: 8px;
+    padding-bottom: 12px;
+  }
+
+  .separator {
     border-bottom: 1px solid #3e3e42;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
   }
 
   .section-header h3 {
@@ -897,15 +984,15 @@
   }
 
   .add-btn {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     background-color: #0e639c;
     color: white;
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -918,67 +1005,162 @@
   .params-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
+  }
+
+  .param-row {
+    position: relative;
+    display: flex;
+    gap: 4px;
   }
 
   .param-item {
-    display: flex;
-    gap: 4px;
-    align-items: center;
-  }
-
-  .param-content {
     flex: 1;
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: flex-end;
+    justify-content: space-between;
     padding: 8px;
     background-color: #3c3c3c;
     border: 1px solid #555;
     border-radius: 4px;
+    gap: 8px;
   }
 
-  .param-name-display {
-    font-size: 11px;
+  .param-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .param-name {
+    font-size: 12px;
     font-weight: 600;
-    color: #4ec9b0;
-    text-transform: uppercase;
+    color: #cccccc;
   }
 
-  .param-value-input {
-    padding: 4px 6px;
+  .param-value {
+    padding: 6px 8px;
     background-color: #2a2a2a;
     color: #cccccc;
     border: 1px solid #555;
     border-radius: 3px;
     font-size: 12px;
-    font-family: monospace;
   }
 
-  .param-value-input:focus {
+  .param-value:focus {
     outline: none;
     border-color: #0e639c;
   }
 
-  .param-delete-btn {
+  .param-menu-btn {
     width: 28px;
-    height: 28px;
-    padding: 0;
+    padding: 4px;
     background-color: #3c3c3c;
-    color: #f48771;
+    color: #888;
     border: 1px solid #555;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    font-size: 16px;
   }
 
-  .param-delete-btn:hover {
+  .param-menu-btn:hover {
     background-color: #4a4a4a;
     color: #ff6b6b;
+  }
+
+  .add-param {
+    display: flex;
+    gap: 4px;
+    margin-top: 12px;
+    margin-bottom: 12px;
+  }
+
+  .add-param input {
+    flex: 1;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .add-param button {
+    padding: 6px 12px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .add-param button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-param button:first-of-type:hover {
+    background-color: #3a9d5a;
+  }
+
+  .add-param button:last-child {
+    background-color: #7a2d2d;
+  }
+
+  .add-param button:last-child:hover {
+    background-color: #9a3d3d;
+  }
+
+  .rename-param-input {
+    flex: 1;
+    padding: 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #0e639c;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .rename-param-input:focus {
+    outline: none;
+    border-color: #1177bb;
+  }
+
+  .param-menu {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 2px;
+    background-color: #2d2d30;
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    min-width: 120px;
+  }
+
+  .param-menu button {
+    padding: 8px 12px;
+    background: none;
+    color: #cccccc;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .param-menu button:hover {
+    background-color: #3c3c3c;
+  }
+
+  .param-menu button.danger {
+    color: #f48771;
+  }
+
+  .param-menu button.danger:hover {
+    background-color: #5a1d1d;
   }
 
   .actions-list {

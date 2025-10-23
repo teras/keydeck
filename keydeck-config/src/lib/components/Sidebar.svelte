@@ -16,12 +16,16 @@
     currentService: string | null;
     currentMacro: string | null;
     currentButtonDef: string | null;
+    selectedButton: number | null;
     onPageSelected: (pageName: string) => void;
     onTemplateSelected: (templateName: string | null, keepButtonSelection?: boolean) => void;
     onServiceSelected: (serviceName: string | null) => void;
     onMacroSelected: (macroName: string | null) => void;
     onButtonDefSelected: (buttonName: string | null) => void;
+    openTab?: (tab: Tab) => void;
   }
+
+  export type SidebarTab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null;
 
   let {
     config,
@@ -31,11 +35,13 @@
     currentService,
     currentMacro,
     currentButtonDef,
+    selectedButton,
     onPageSelected,
     onTemplateSelected,
     onServiceSelected,
     onMacroSelected,
-    onButtonDefSelected
+    onButtonDefSelected,
+    openTab
   }: Props = $props();
 
   type Tab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null;
@@ -57,6 +63,22 @@
         contentPanel.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
+  }
+
+  function openTabOnly(tab: Tab) {
+    // Always open the tab without toggling
+    activeTab = tab;
+    isOpen = true;
+
+    // Smooth scroll to top when switching tabs
+    if (contentPanel) {
+      contentPanel.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  // Expose openTabOnly to parent via openTab callback
+  if (openTab) {
+    openTab(openTabOnly as any);
   }
 </script>
 
@@ -150,12 +172,14 @@
             config={config}
             deviceSerial={selectedDevice.serial}
             currentPage={currentPage}
+            selectedButton={selectedButton}
             onPageSelected={onPageSelected}
           />
         {:else if activeTab === 'templates' && config}
           <TemplateList
             config={config}
             currentTemplate={currentTemplate}
+            selectedButton={selectedButton}
             onTemplateSelected={onTemplateSelected}
           />
         {:else if activeTab === 'services' && config}

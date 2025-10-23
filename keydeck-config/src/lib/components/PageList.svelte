@@ -5,10 +5,11 @@
     config: any;
     deviceSerial: string;
     currentPage: string;
+    selectedButton: number | null;
     onPageSelected: (pageName: string) => void;
   }
 
-  let { config, deviceSerial, currentPage, onPageSelected }: Props = $props();
+  let { config, deviceSerial, currentPage, selectedButton, onPageSelected }: Props = $props();
 
   let pageGroup = $derived(config.page_groups?.[deviceSerial] || config.page_groups?.default || {});
 
@@ -333,7 +334,7 @@
         {:else}
           <button
             class="page-item"
-            class:active={page === currentPage}
+            class:active={page === currentPage && selectedButton === null}
             onclick={() => onPageSelected(page)}
           >
             {page}

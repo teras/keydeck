@@ -31,9 +31,11 @@
     selectedButton: number | null;
     onButtonSelected: (index: number) => void;
     isTemplate?: boolean;
+    pageName?: string;
+    onPageTitleClicked?: () => void;
   }
 
-  let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false }: Props = $props();
+  let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked }: Props = $props();
 
   // Get button configuration from template inheritance chain
   function getButtonFromTemplate(templateName: string, buttonKey: string, visited = new Set<string>()): any {
@@ -186,6 +188,12 @@
     return false;
   }
 
+  // Check if button references a button definition (string reference)
+  function isButtonDefReference(index: number): boolean {
+    const buttonConfig = getButtonConfig(index);
+    return typeof buttonConfig === 'string';
+  }
+
   function getButtonLabel(index: number): string {
     const buttonConfig = getButtonConfig(index);
 
@@ -267,16 +275,31 @@
 <div class="button-grid-container">
   <div class="device-info">
     <h3>{device.model}</h3>
-    <p>{device.button_layout.columns} × {device.button_layout.rows} ({device.button_layout.total} buttons)</p>
   </div>
 
-  <div
-    class="button-grid"
-    style="
-      grid-template-columns: repeat({device.button_layout.columns}, 1fr);
-      grid-template-rows: repeat({device.button_layout.rows}, 1fr);
-    "
-  >
+  <div class="center-content">
+    {#if pageName}
+      <div class="page-info">
+        <h2
+          class="page-title"
+          class:clickable={!!onPageTitleClicked}
+          onclick={() => onPageTitleClicked?.()}
+          role={onPageTitleClicked ? "button" : undefined}
+          tabindex={onPageTitleClicked ? 0 : undefined}
+        >
+          <span class="page-icon">{isTemplate ? '🏗️' : '🗂️'}</span>
+          {pageName}
+        </h2>
+      </div>
+    {/if}
+
+    <div
+      class="button-grid"
+      style="
+        grid-template-columns: repeat({device.button_layout.columns}, 1fr);
+        grid-template-rows: repeat({device.button_layout.rows}, 1fr);
+      "
+    >
     {#each Array(device.button_layout.total) as _, index}
       {@const buttonIndex = index + 1}
       {@const iconUrl = getButtonIcon(buttonIndex)}
@@ -287,8 +310,9 @@
       <button
         class="grid-button"
         class:selected={selectedButton === buttonIndex}
-        class:configured={hasConfig(buttonIndex) && !isInherited(buttonIndex)}
+        class:configured={hasConfig(buttonIndex) && !isInherited(buttonIndex) && !isButtonDefReference(buttonIndex)}
         class:inherited={isInherited(buttonIndex)}
+        class:button-def-reference={isButtonDefReference(buttonIndex)}
         class:has-icon={iconUrl !== null}
         onclick={() => onButtonSelected(buttonIndex)}
         title="Button {buttonIndex}"
@@ -305,6 +329,7 @@
         {/if}
       </button>
     {/each}
+    </div>
   </div>
 
   {#if device.lcd_strip}
@@ -319,23 +344,61 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
+    justify-content: space-between;
+    min-height: 100%;
   }
 
   .device-info {
     text-align: center;
+    width: 100%;
+    padding: 20px 0;
   }
 
   .device-info h3 {
-    margin: 0 0 8px 0;
+    margin: 0;
     font-size: 16px;
     color: #cccccc;
   }
 
-  .device-info p {
+  .center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .page-info {
+    text-align: center;
+  }
+
+  .page-title {
     margin: 0;
-    font-size: 13px;
-    color: #888;
+    font-size: 18px;
+    color: #cccccc;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: color 0.2s;
+  }
+
+  .page-title.clickable {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .page-title.clickable:hover {
+    color: #5b9bd5;
+  }
+
+  .page-title.clickable:active {
+    color: #4a8ac2;
+  }
+
+  .page-icon {
+    font-size: 18px;
   }
 
   .button-grid {
@@ -389,6 +452,14 @@
   }
 
   .grid-button.inherited.selected {
+    border-color: #0e639c;
+  }
+
+  .grid-button.button-def-reference {
+    border-color: #b57edc;
+  }
+
+  .grid-button.button-def-reference.selected {
     border-color: #0e639c;
   }
 
@@ -455,10 +526,10 @@
   }
 
   .lcd-strip {
-    padding: 12px 20px;
-    background-color: #2d2d30;
-    border-radius: 8px;
+    width: 100%;
+    padding: 20px;
     text-align: center;
+    margin-top: auto;
   }
 
   .lcd-strip p {

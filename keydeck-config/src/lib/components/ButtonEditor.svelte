@@ -1,8 +1,10 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
+  import ColorPicker from './ColorPicker.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
+  import { ask } from '@tauri-apps/plugin-dialog';
 
   interface Props {
     config: any;
@@ -11,14 +13,19 @@
     buttonIndex: number;
     deviceSerial: string;
     isTemplate?: boolean;
+    customTitle?: string;
     onNavigateToTemplate?: (templateName: string, keepButtonSelection?: boolean) => void;
   }
 
-  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, onNavigateToTemplate }: Props = $props();
+  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, onNavigateToTemplate }: Props = $props();
+
+  // Compute the display name for the button
+  let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
 
   let availableIcons = $state<string[]>([]);
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
+  let openActionIndex = $state<number>(-1);
 
   // Load available icons from image directory
   async function loadIcons() {
@@ -298,7 +305,8 @@
     if (!detailed.actions) {
       detailed.actions = [];
     }
-    detailed.actions.push({ exec: "" });
+    detailed.actions.push({ jump: "" });
+    openActionIndex = detailed.actions.length - 1;
     updateButton(detailed);
   }
 
@@ -325,11 +333,34 @@
     if (detailed.text.value) return detailed.text.value;
     return '';
   }
+
+  async function clearButton() {
+    const confirmed = await ask(
+      `Clear all properties for ${buttonDisplayName}?\n\nThis will delete the button configuration from this ${isTemplate ? 'template' : 'page'}.`,
+      {
+        title: 'Confirm Clear',
+        kind: 'warning'
+      }
+    );
+
+    if (confirmed) {
+      if (isTemplate && template) {
+        // Delete from template
+        delete template[buttonKey];
+        delete config.templates[currentTemplate][buttonKey];
+      } else if (page) {
+        // Delete from page
+        const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
+        delete page[buttonKey];
+        delete config[groupKey][currentPage][buttonKey];
+      }
+    }
+  }
 </script>
 
 <div class="button-editor">
   <div class="button-header">
-    <h3>Button {buttonIndex}</h3>
+    <h3>{buttonDisplayName}</h3>
     {#if inheritedSource && onNavigateToTemplate}
       <button class="inherited-link" onclick={() => onNavigateToTemplate(inheritedSource, true)}>
         from {inheritedSource} →
@@ -409,32 +440,41 @@
 
   <div class="form-group">
     <label>Background</label>
-    <input
-      type="text"
-      value={getDetailedConfig()?.background || ""}
-      oninput={(e) => updateBackground(e.currentTarget.value)}
-      placeholder="#RRGGBB or 0xRRGGBB or color name"
-    />
+    <div class="color-item">
+      <div class="color-info">
+        <ColorPicker
+          value={getDetailedConfig()?.background || ""}
+          placeholder="0xRRGGBB"
+          onUpdate={updateBackground}
+        />
+      </div>
+    </div>
   </div>
 
   <div class="form-group">
     <label>Text Color</label>
-    <input
-      type="text"
-      value={getDetailedConfig()?.text_color || ""}
-      oninput={(e) => updateTextColor(e.currentTarget.value)}
-      placeholder="#RRGGBB or 0xRRGGBB"
-    />
+    <div class="color-item">
+      <div class="color-info">
+        <ColorPicker
+          value={getDetailedConfig()?.text_color || ""}
+          placeholder="0xRRGGBB"
+          onUpdate={updateTextColor}
+        />
+      </div>
+    </div>
   </div>
 
   <div class="form-group">
     <label>Outline</label>
-    <input
-      type="text"
-      value={getDetailedConfig()?.outline || ""}
-      oninput={(e) => updateOutline(e.currentTarget.value)}
-      placeholder="#RRGGBB or 0xRRGGBB"
-    />
+    <div class="color-item">
+      <div class="color-info">
+        <ColorPicker
+          value={getDetailedConfig()?.outline || ""}
+          placeholder="0xRRGGBB"
+          onUpdate={updateOutline}
+        />
+      </div>
+    </div>
   </div>
 
   <div class="form-group">
@@ -447,6 +487,8 @@
             index={i}
             {config}
             {deviceSerial}
+            initiallyOpen={i === openActionIndex}
+            onToggle={() => openActionIndex = i}
             onUpdate={(newAction) => updateAction(i, newAction)}
             onDelete={() => removeAction(i)}
           />
@@ -457,6 +499,8 @@
     </div>
     <button onclick={addAction}>+ Add Action</button>
   </div>
+
+  <button class="clear-button" onclick={clearButton}>🗑️ Clear Button</button>
 </div>
 
 <style>
@@ -630,6 +674,24 @@
     background-color: #0e639c;
   }
 
+  .color-item {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 8px;
+    background-color: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+    gap: 8px;
+  }
+
+  .color-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
   .actions-list {
     display: flex;
     flex-direction: column;
@@ -655,5 +717,18 @@
 
   button:hover {
     background-color: #1177bb;
+  }
+
+  .clear-button {
+    background-color: #7a2d2d;
+    color: white;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  .clear-button:hover {
+    background-color: #9a3d3d;
   }
 </style>

@@ -9,9 +9,11 @@
     depth?: number;
     config?: any;
     deviceSerial?: string;
+    initiallyOpen?: boolean;
+    onToggle?: () => void;
   }
 
-  let { action, onUpdate, onDelete, index, depth = 0, config, deviceSerial }: Props = $props();
+  let { action, onUpdate, onDelete, index, depth = 0, config, deviceSerial, initiallyOpen = false, onToggle }: Props = $props();
 
   // Get list of available pages
   let availablePages = $derived.by(() => {
@@ -55,7 +57,12 @@
 
   let actionType = $derived(getActionType(action));
 
-  let isExpanded = $state(false);
+  let isExpanded = $state(initiallyOpen);
+
+  // Update isExpanded when initiallyOpen changes
+  $effect(() => {
+    isExpanded = initiallyOpen;
+  });
 
   // Update action when type changes
   function changeActionType(newType: string) {
@@ -158,7 +165,10 @@
 </script>
 
 <div class="action-editor" style="--depth: {depth}">
-  <div class="action-header" onclick={() => isExpanded = !isExpanded}>
+  <div class="action-header" onclick={() => {
+    isExpanded = !isExpanded;
+    if (onToggle) onToggle();
+  }}>
     <span class="action-index">#{index + 1}</span>
     <span class="action-summary">{actionSummary}</span>
     <div class="action-controls">
@@ -172,16 +182,16 @@
       <div class="form-row">
         <label>Action Type</label>
         <select bind:value={actionType} onchange={() => changeActionType(actionType)}>
-          <option value="exec">Execute Command</option>
           <option value="jump">Jump to Page</option>
           <option value="auto_jump">Auto Jump</option>
           <option value="focus">Focus Window</option>
-          <option value="wait_for">Wait For Event</option>
           <option value="key">Send Keyboard Key</option>
           <option value="text">Send Text</option>
           <option value="wait">Wait (delay)</option>
-          <option value="try">Try/Else</option>
+          <option value="wait_for">Wait For Event</option>
+          <option value="exec">Execute Command</option>
           <option value="macro">Call Macro</option>
+          <option value="try">Try/Else</option>
           <option value="return">Return</option>
           <option value="fail">Fail</option>
           <option value="and">And (all must succeed)</option>
@@ -355,32 +365,37 @@
           {@const macroName = typeof action.macro === 'string' ? action.macro : action.macro?.name}
           {@const macroParams = getMacroParams(macroName)}
           {#if macroParams.length > 0}
-            <div class="form-row">
-              <label>Parameters</label>
-              {#each macroParams as paramName}
-                <div class="param-row">
-                  <label class="param-label">{paramName}</label>
-                  <input
-                    type="text"
-                    value={action.macro?.params?.[paramName] || ''}
-                    oninput={(e) => {
-                      const currentMacro = typeof action.macro === 'string'
-                        ? { name: action.macro, params: {} }
-                        : action.macro;
-                      onUpdate({
-                        macro: {
-                          ...currentMacro,
-                          params: {
-                            ...(currentMacro.params || {}),
-                            [paramName]: e.currentTarget.value
-                          }
-                        }
-                      });
-                    }}
-                    placeholder={`${paramName} value`}
-                  />
-                </div>
-              {/each}
+            <div class="param-section">
+              <label class="param-section-label">Parameters</label>
+              <div class="param-list">
+                {#each macroParams as paramName}
+                  <div class="param-item">
+                    <div class="param-info">
+                      <span class="param-name">{paramName}</span>
+                      <input
+                        type="text"
+                        class="param-value"
+                        value={action.macro?.params?.[paramName] || ''}
+                        oninput={(e) => {
+                          const currentMacro = typeof action.macro === 'string'
+                            ? { name: action.macro, params: {} }
+                            : action.macro;
+                          onUpdate({
+                            macro: {
+                              ...currentMacro,
+                              params: {
+                                ...(currentMacro.params || {}),
+                                [paramName]: e.currentTarget.value
+                              }
+                            }
+                          });
+                        }}
+                        placeholder="Enter value"
+                      />
+                    </div>
+                  </div>
+                {/each}
+              </div>
             </div>
           {/if}
         {/if}
@@ -667,18 +682,62 @@
     margin: 0;
   }
 
-  .param-row {
+  .param-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .param-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .param-list {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-bottom: 8px;
   }
 
-  .param-label {
-    font-size: 10px;
-    font-weight: 500;
-    color: #aaa;
-    text-transform: none;
+  .param-item {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 8px;
+    background-color: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+    gap: 8px;
+  }
+
+  .param-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .param-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #cccccc;
+  }
+
+  .param-value {
+    padding: 6px 8px;
+    background-color: #2a2a2a;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .param-value:focus {
+    outline: none;
+    border-color: #0e639c;
   }
 
   label {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { open, ask } from '@tauri-apps/plugin-dialog';
   import { invoke } from '@tauri-apps/api/core';
+  import ColorPicker from './ColorPicker.svelte';
 
   interface Props {
     config: any;
@@ -102,24 +103,8 @@
 
   function updateColorFromText(name: string, value: string) {
     if (config.colors) {
-      if (value.startsWith('#')) {
-        value = '0x' + value.slice(1);
-      }
       config.colors[name] = value;
     }
-  }
-
-  function updateColorFromPicker(name: string, value: string) {
-    if (config.colors) {
-      config.colors[name] = '0x' + value.slice(1);
-    }
-  }
-
-  function colorToHex(color: string): string {
-    if (color.startsWith('0x')) {
-      return '#' + color.slice(2);
-    }
-    return color.startsWith('#') ? color : '#' + color;
   }
 
   // Click-outside handler for menu
@@ -163,7 +148,18 @@
 
     config.colors[newName] = original;
     config.colors = config.colors;
+    lastAddedColor = newName;
     showColorMenu = null;
+
+    // Focus on the duplicated color's text input
+    setTimeout(() => {
+      const colorInput = document.querySelector(`input[data-color-name="${newName}"]`) as HTMLInputElement;
+      if (colorInput) {
+        colorInput.focus();
+        colorInput.setSelectionRange(colorInput.value.length, colorInput.value.length);
+      }
+      lastAddedColor = null;
+    }, 50);
   }
 
   function startRenameColor(name: string) {
@@ -286,23 +282,11 @@
                 {:else}
                   <span class="color-name">{name}</span>
                 {/if}
-                <div class="color-value-container">
-                  <input
-                    type="text"
-                    value={color}
-                    oninput={(e) => updateColorFromText(name, e.currentTarget.value)}
-                    class="color-text-input"
-                    placeholder="0xRRGGBB"
-                    data-color-name={name}
-                  />
-                  <input
-                    type="color"
-                    value={colorToHex(color)}
-                    oninput={(e) => updateColorFromPicker(name, e.currentTarget.value)}
-                    class="color-picker-input"
-                    title="Pick color"
-                  />
-                </div>
+                <ColorPicker
+                  value={color}
+                  onUpdate={(value) => updateColorFromText(name, value)}
+                  dataColorName={name}
+                />
               </div>
             </div>
             {#if renamingColor !== name}
@@ -563,47 +547,6 @@
   .rename-color-input:focus {
     outline: none;
     border-color: #1177bb;
-  }
-
-  .color-value-container {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .color-text-input {
-    flex: 1;
-    padding: 6px 8px;
-    background-color: #2a2a2a;
-    color: #cccccc;
-    border: 1px solid #555;
-    border-radius: 4px;
-    font-size: 12px;
-    font-family: monospace;
-  }
-
-  .color-text-input:focus {
-    outline: none;
-    border-color: #0e639c;
-  }
-
-  .color-picker-input {
-    width: 40px;
-    height: 32px;
-    padding: 2px;
-    background-color: #2a2a2a;
-    border: 1px solid #555;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .color-picker-input::-webkit-color-swatch-wrapper {
-    padding: 2px;
-  }
-
-  .color-picker-input::-webkit-color-swatch {
-    border: none;
-    border-radius: 2px;
   }
 
   .color-menu-btn {
