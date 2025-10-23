@@ -70,7 +70,7 @@
       </button>
     {/if}
     {#if onImport}
-      <button class="toolbar-btn" onclick={onImport} title="Import from YAML file">
+      <button class="toolbar-btn import-btn" onclick={onImport} title="Import from YAML file">
         Import
       </button>
     {/if}
@@ -198,5 +198,9 @@
 
   .toolbar-btn:active:not(:disabled) {
     opacity: 0.8;
+  }
+
+  .import-btn {
+    margin-left: 12px;
   }
 </style>

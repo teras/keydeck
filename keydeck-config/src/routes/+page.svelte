@@ -863,7 +863,7 @@
   .properties-content {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
+    padding: 16px 16px 16px 2px;
   }
 
   .resize-handle {
