@@ -110,18 +110,6 @@
     return null;
   }
 
-  // Check if button is defined directly on page (not inherited)
-  function isDirectlyDefined(index: number): boolean {
-    const pageGroup = config.page_groups?.[device.serial] || config.page_groups?.default;
-    if (!pageGroup) return false;
-
-    const page = pageGroup[currentPage];
-    if (!page) return false;
-
-    const buttonKey = `button${index}`;
-    return page.hasOwnProperty(buttonKey) && !page.inherits;
-  }
-
   // Recursively check if button exists in template inheritance chain
   function checkTemplateForButton(templateName: string, buttonKey: string, visited = new Set<string>()): boolean {
     // Prevent infinite loops
@@ -192,19 +180,45 @@
   }
 
   // Check if button references a button definition (string reference)
+  // This checks the DIRECT definition on the page/template, not inherited
   function isButtonDefReference(index: number): boolean {
-    const buttonConfig = getButtonConfig(index);
-    return typeof buttonConfig === 'string';
+    const buttonKey = `button${index}`;
+
+    // If viewing a template
+    if (isTemplate) {
+      const template = config.templates?.[currentPage];
+      if (!template) return false;
+
+      // Check if directly defined as a string reference on this template
+      return template.hasOwnProperty(buttonKey) && typeof template[buttonKey] === 'string';
+    }
+
+    // Otherwise viewing a page
+    const pageGroup = config.page_groups?.[device.serial] || config.page_groups?.default;
+    if (!pageGroup) return false;
+
+    const page = pageGroup[currentPage];
+    if (!page) return false;
+
+    // Check if directly defined as a string reference on this page
+    return page.hasOwnProperty(buttonKey) && typeof page[buttonKey] === 'string';
   }
 
   function getButtonLabel(index: number): string {
-    const buttonConfig = getButtonConfig(index);
+    let buttonConfig = getButtonConfig(index);
 
     if (!buttonConfig) return "";
 
-    // Handle template reference (string)
+    // Handle button definition reference (string) - resolve it
     if (typeof buttonConfig === 'string') {
-      return buttonConfig;
+      const buttonDefName = buttonConfig;
+      const buttonDef = config.buttons?.[buttonDefName];
+      if (buttonDef) {
+        buttonConfig = buttonDef;
+      } else {
+        // If button definition doesn't exist, show the reference name
+        return buttonDefName;
+      }
     }
 
     // Handle detailed button config
@@ -226,8 +240,18 @@
   }
 
   function getButtonFontSize(index: number): number {
-    const buttonConfig = getButtonConfig(index);
-    if (!buttonConfig || typeof buttonConfig === 'string') return 32;
+    let buttonConfig = getButtonConfig(index);
+    if (!buttonConfig) return 32;
+
+    // Resolve button definition reference
+    if (typeof buttonConfig === 'string') {
+      const buttonDef = config.buttons?.[buttonConfig];
+      if (buttonDef) {
+        buttonConfig = buttonDef;
+      } else {
+        return 32;
+      }
+    }
 
     // Get font size from config, default to 32
     let fontSize = 32;
@@ -246,8 +270,18 @@
   }
 
   function getButtonIcon(index: number): string | null {
-    const buttonConfig = getButtonConfig(index);
-    if (!buttonConfig || typeof buttonConfig === 'string') return null;
+    let buttonConfig = getButtonConfig(index);
+    if (!buttonConfig) return null;
+
+    // Resolve button definition reference
+    if (typeof buttonConfig === 'string') {
+      const buttonDef = config.buttons?.[buttonConfig];
+      if (buttonDef) {
+        buttonConfig = buttonDef;
+      } else {
+        return null;
+      }
+    }
 
     if (!buttonConfig.icon) return null;
 
@@ -261,15 +295,35 @@
   }
 
   function getButtonOutline(index: number): string | null {
-    const buttonConfig = getButtonConfig(index);
-    if (!buttonConfig || typeof buttonConfig === 'string') return null;
+    let buttonConfig = getButtonConfig(index);
+    if (!buttonConfig) return null;
+
+    // Resolve button definition reference
+    if (typeof buttonConfig === 'string') {
+      const buttonDef = config.buttons?.[buttonConfig];
+      if (buttonDef) {
+        buttonConfig = buttonDef;
+      } else {
+        return null;
+      }
+    }
 
     return buttonConfig.outline || null;
   }
 
   function getButtonTextColor(index: number): string | null {
-    const buttonConfig = getButtonConfig(index);
-    if (!buttonConfig || typeof buttonConfig === 'string') return null;
+    let buttonConfig = getButtonConfig(index);
+    if (!buttonConfig) return null;
+
+    // Resolve button definition reference
+    if (typeof buttonConfig === 'string') {
+      const buttonDef = config.buttons?.[buttonConfig];
+      if (buttonDef) {
+        buttonConfig = buttonDef;
+      } else {
+        return null;
+      }
+    }
 
     return buttonConfig.text_color || null;
   }

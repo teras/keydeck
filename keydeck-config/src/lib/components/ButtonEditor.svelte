@@ -15,9 +15,10 @@
     isTemplate?: boolean;
     customTitle?: string;
     onNavigateToTemplate?: (templateName: string, keepButtonSelection?: boolean) => void;
+    onNavigateToButtonDef?: (buttonDefName: string, keepButtonSelection?: boolean) => void;
   }
 
-  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, onNavigateToTemplate }: Props = $props();
+  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, onNavigateToTemplate, onNavigateToButtonDef }: Props = $props();
 
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
@@ -224,6 +225,18 @@
 
   let inheritedSource = $derived(getInheritedSource());
 
+  // Get the button definition reference name if it is one
+  function getButtonDefReference(): string | null {
+    if (isTemplate && template && typeof template[buttonKey] === 'string') {
+      return template[buttonKey];
+    } else if (page && typeof page[buttonKey] === 'string') {
+      return page[buttonKey];
+    }
+    return null;
+  }
+
+  let buttonDefReference = $derived(getButtonDefReference());
+
   // Initialize button config if it doesn't exist
   function ensureButtonConfig() {
     if (isTemplate && template) {
@@ -253,11 +266,18 @@
     }
   }
 
-  // Handle template references vs detailed config
+  // Handle button definition references vs detailed config
   function getDetailedConfig() {
     if (typeof buttonConfig === 'string') {
-      // It's a template reference, convert to detailed
-      return { text: `[Template: ${buttonConfig}]`, actions: [] };
+      // It's a button definition reference, resolve it
+      const buttonDefName = buttonConfig;
+      const buttonDef = config.buttons?.[buttonDefName];
+      if (buttonDef) {
+        // Return the actual button definition properties
+        return buttonDef;
+      }
+      // Fallback if button definition doesn't exist
+      return { text: `[Missing ButtonDef: ${buttonDefName}]`, actions: [] };
     }
     return buttonConfig;
   }
@@ -361,7 +381,11 @@
 <div class="button-editor">
   <div class="button-header">
     <h3>{buttonDisplayName}</h3>
-    {#if inheritedSource && onNavigateToTemplate}
+    {#if buttonDefReference && onNavigateToButtonDef}
+      <button class="reference-link" onclick={() => onNavigateToButtonDef(buttonDefReference, true)}>
+        ref: {buttonDefReference} →
+      </button>
+    {:else if inheritedSource && onNavigateToTemplate}
       <button class="inherited-link" onclick={() => onNavigateToTemplate(inheritedSource, true)}>
         from {inheritedSource} →
       </button>
@@ -538,6 +562,22 @@
 
   .inherited-link:hover {
     background-color: #e5b876;
+  }
+
+  .reference-link {
+    padding: 4px 8px;
+    background-color: #b57edc;
+    color: #1e1e1e;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: background-color 0.2s;
+  }
+
+  .reference-link:hover {
+    background-color: #c598e6;
   }
 
   .form-group {

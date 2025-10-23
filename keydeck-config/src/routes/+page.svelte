@@ -219,6 +219,22 @@
     selectedButton = null;
   }
 
+  function handleButtonDefNavigate(buttonDefName: string, keepButtonSelection: boolean = false) {
+    // Switch to button definitions tab in sidebar
+    if (sidebarToggleTab) {
+      sidebarToggleTab('buttons');
+    }
+    // Select the button definition
+    currentButtonDef = buttonDefName;
+    currentService = null;
+    currentMacro = null;
+    currentTemplate = null;
+    currentPage = "";
+    if (!keepButtonSelection) {
+      selectedButton = null;
+    }
+  }
+
   function handlePageTitleClicked() {
     // Clear button selection
     selectedButton = null;
@@ -591,6 +607,7 @@
           deviceSerial={selectedDevice.serial}
           isTemplate={!!currentTemplate}
           onNavigateToTemplate={handleTemplateSelected}
+          onNavigateToButtonDef={handleButtonDefNavigate}
         />
       {:else if currentService && config}
         <div class="editor-panel">
