@@ -12,11 +12,26 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "KeyDeck Configuration",
         "width": 1200,
         "height": 800,
         "decorations": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "visible": false,
+        "backgroundColor": "#1e1e1e"
+      },
+      {
+        "label": "splashscreen",
+        "title": "Loading...",
+        "width": 400,
+        "height": 300,
+        "decorations": false,
+        "resizable": false,
+        "center": true,
+        "url": "splashscreen.html",
+        "alwaysOnTop": true,
+        "backgroundColor": "#1e1e1e"
       }
     ],
     "security": {

@@ -268,6 +268,28 @@ pub fn run() {
                     let _ = window.set_icon(tauri_icon);
                 }
             }
+
+            // Handle splashscreen: close it when main window is ready
+            let splashscreen_window = app.get_webview_window("splashscreen");
+            let main_window = app.get_webview_window("main");
+
+            if let (Some(splashscreen), Some(main)) = (splashscreen_window, main_window) {
+                // Listen for the main window to finish loading
+                let main_clone = main.clone();
+                let splashscreen_clone = splashscreen.clone();
+
+                std::thread::spawn(move || {
+                    // Wait a bit for the main window to be ready
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+
+                    // Show main window
+                    let _ = main_clone.show();
+
+                    // Close splashscreen
+                    let _ = splashscreen_clone.close();
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
