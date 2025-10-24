@@ -46,25 +46,34 @@
 </script>
 
 <div class="tristate-control">
-  <label class="checkbox-label">
-    <button
-      type="button"
+  <div
+    class="checkbox-label"
+    onclick={disabled ? undefined : toggle}
+    role="button"
+    tabindex={disabled ? -1 : 0}
+    onkeydown={(e) => {
+      if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        toggle();
+      }
+    }}
+  >
+    <div
       class="tristate-checkbox"
       class:state-inherit={value === undefined}
       class:state-true={value === true}
       class:state-false={value === false}
-      onclick={toggle}
       title={tooltip}
-      disabled={disabled}
+      class:disabled={disabled}
     >
       {#if value === true}
         ✓
       {:else if value === undefined}
         <span class="inner-square"></span>
       {/if}
-    </button>
+    </div>
     <span class="checkbox-text">{label}</span>
-  </label>
+  </div>
   {#if value !== undefined && !disabled}
     <button
       type="button"
@@ -98,7 +107,6 @@
     height: 18px;
     margin: 0;
     padding: 0;
-    cursor: pointer;
     background-color: #2a2a2a;
     border: 1px solid #555;
     border-radius: 3px;
@@ -109,15 +117,20 @@
     font-weight: bold;
     transition: all 0.2s;
     color: white;
+    flex-shrink: 0;
   }
 
-  .tristate-checkbox:hover:not(:disabled) {
+  .checkbox-label:not([tabindex="-1"]):hover .tristate-checkbox {
     border-color: #0e639c;
   }
 
-  .tristate-checkbox:disabled {
+  .tristate-checkbox.disabled {
     opacity: 0.6;
+  }
+
+  .checkbox-label[tabindex="-1"] {
     cursor: default;
+    opacity: 0.6;
   }
 
   /* Inherit state (undefined) - inner square */

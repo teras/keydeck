@@ -614,11 +614,11 @@
     <h3>{buttonDisplayName}</h3>
     {#if buttonDefReference && onNavigateToButtonDef}
       <button class="reference-link" onclick={() => onNavigateToButtonDef(buttonDefReference, true)}>
-        ref: {buttonDefReference} →
+        {buttonDefReference} →
       </button>
     {:else if inheritedSource && onNavigateToTemplate}
       <button class="inherited-link" onclick={() => onNavigateToTemplate(inheritedSource, true)}>
-        from {inheritedSource} →
+        {inheritedSource} →
       </button>
     {/if}
   </div>
@@ -714,64 +714,6 @@
   </div>
 
   <div class="form-group">
-    <label>Font Size</label>
-    <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <input
-        type="text"
-        inputmode="decimal"
-        value={getFontSize() ?? ""}
-        oninput={(e) => {
-          const input = e.currentTarget;
-          let value = input.value;
-
-          // Remove any non-numeric characters except the first decimal point
-          let cleaned = '';
-          let hasDecimal = false;
-          for (let i = 0; i < value.length; i++) {
-            const char = value[i];
-            if (char >= '0' && char <= '9') {
-              cleaned += char;
-            } else if (char === '.' && !hasDecimal) {
-              cleaned += char;
-              hasDecimal = true;
-            }
-            // Skip any other characters (including extra dots)
-          }
-
-          // Update input if value changed
-          if (cleaned !== value) {
-            const cursorPos = input.selectionStart || 0;
-            input.value = cleaned;
-            // Try to maintain cursor position
-            const newPos = Math.min(cursorPos, cleaned.length);
-            input.setSelectionRange(newPos, newPos);
-          }
-
-          updateFontSize(cleaned);
-        }}
-        onblur={(e) => {
-          // On blur, revalidate and clean up the value
-          const value = e.currentTarget.value;
-          const fontSize = value ? parseFloat(value) : undefined;
-          if (fontSize && fontSize > 0 && isFinite(fontSize)) {
-            // Valid value - ensure it's displayed correctly
-            e.currentTarget.value = fontSize.toString();
-          } else if (value) {
-            // Invalid value - clear it
-            e.currentTarget.value = "";
-            updateFontSize("");
-          }
-        }}
-        placeholder="Auto (leave empty for automatic)"
-        disabled={isReadOnly}
-      />
-    </div>
-    <p class="help">
-      Font size in points. Leave empty for automatic sizing based on canvas dimensions.
-    </p>
-  </div>
-
-  <div class="form-group">
     <label>Icon</label>
     {#if availableIcons.length > 0}
       <div class="icon-dropdown-container">
@@ -836,69 +778,6 @@
   </div>
 
   <div class="form-group">
-    <label>Background</label>
-    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <div class="color-info">
-        <ColorPicker
-          value={getDetailedConfig()?.background || ""}
-          placeholder="0xRRGGBB"
-          onUpdate={updateBackground}
-          disabled={isReadOnly}
-        />
-      </div>
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label>Text Color</label>
-    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <div class="color-info">
-        <ColorPicker
-          value={getDetailedConfig()?.text_color || ""}
-          placeholder="0xRRGGBB"
-          onUpdate={updateTextColor}
-          disabled={isReadOnly}
-        />
-      </div>
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label>Outline</label>
-    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <div class="color-info">
-        <ColorPicker
-          value={getDetailedConfig()?.outline || ""}
-          placeholder="0xRRGGBB"
-          onUpdate={updateOutline}
-          disabled={isReadOnly}
-        />
-      </div>
-    </div>
-  </div>
-
-  <div class="form-group">
-    <TriStateCheckbox
-      value={getDetailedConfig()?.dynamic}
-      label="Dynamic Button"
-      onToggle={handleDynamicChange}
-      inheritLabel="Auto-detect"
-      trueLabel="Always dynamic"
-      falseLabel="Never dynamic"
-      disabled={isReadOnly}
-    />
-    <p class="help">
-      {#if getDetailedConfig()?.dynamic === undefined}
-        Automatically detected based on button content (${'{provider:arg}'} patterns)
-      {:else if getDetailedConfig()?.dynamic === true}
-        Button will always refresh periodically
-      {:else}
-        Button will never refresh even if dynamic patterns are detected
-      {/if}
-    </p>
-  </div>
-
-  <div class="form-group">
     <div class="actions-header">
       <label>Actions</label>
       {#if !isReadOnly}
@@ -926,6 +805,127 @@
         <p class="empty">No actions configured</p>
       {/if}
     </div>
+  </div>
+
+  <div class="form-group">
+    <label>Text Color</label>
+    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <div class="color-info">
+        <ColorPicker
+          value={getDetailedConfig()?.text_color || ""}
+          placeholder="0xRRGGBB"
+          onUpdate={updateTextColor}
+          disabled={isReadOnly}
+        />
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Background</label>
+    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <div class="color-info">
+        <ColorPicker
+          value={getDetailedConfig()?.background || ""}
+          placeholder="0xRRGGBB"
+          onUpdate={updateBackground}
+          disabled={isReadOnly}
+        />
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Outline</label>
+    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <div class="color-info">
+        <ColorPicker
+          value={getDetailedConfig()?.outline || ""}
+          placeholder="0xRRGGBB"
+          onUpdate={updateOutline}
+          disabled={isReadOnly}
+        />
+      </div>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>Font Size</label>
+    <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <input
+        type="text"
+        inputmode="decimal"
+        value={getFontSize() ?? ""}
+        oninput={(e) => {
+          const input = e.currentTarget;
+          let value = input.value;
+
+          // Remove any non-numeric characters except the first decimal point
+          let cleaned = '';
+          let hasDecimal = false;
+          for (let i = 0; i < value.length; i++) {
+            const char = value[i];
+            if (char >= '0' && char <= '9') {
+              cleaned += char;
+            } else if (char === '.' && !hasDecimal) {
+              cleaned += char;
+              hasDecimal = true;
+            }
+            // Skip any other characters (including extra dots)
+          }
+
+          // Update input if value changed
+          if (cleaned !== value) {
+            const cursorPos = input.selectionStart || 0;
+            input.value = cleaned;
+            // Try to maintain cursor position
+            const newPos = Math.min(cursorPos, cleaned.length);
+            input.setSelectionRange(newPos, newPos);
+          }
+
+          updateFontSize(cleaned);
+        }}
+        onblur={(e) => {
+          // On blur, revalidate and clean up the value
+          const value = e.currentTarget.value;
+          const fontSize = value ? parseFloat(value) : undefined;
+          if (fontSize && fontSize > 0 && isFinite(fontSize)) {
+            // Valid value - ensure it's displayed correctly
+            e.currentTarget.value = fontSize.toString();
+          } else if (value) {
+            // Invalid value - clear it
+            e.currentTarget.value = "";
+            updateFontSize("");
+          }
+        }}
+        placeholder="Auto (leave empty for automatic)"
+        disabled={isReadOnly}
+      />
+    </div>
+    <p class="help">
+      Font size in points. Leave empty for automatic sizing based on canvas dimensions.
+    </p>
+  </div>
+
+  <div class="form-group">
+    <TriStateCheckbox
+      value={getDetailedConfig()?.dynamic}
+      label="Dynamic Button"
+      onToggle={handleDynamicChange}
+      inheritLabel="Auto-detect"
+      trueLabel="Always dynamic"
+      falseLabel="Never dynamic"
+      disabled={isReadOnly}
+    />
+    <p class="help">
+      {#if getDetailedConfig()?.dynamic === undefined}
+        Automatically detected based on button content (${'{provider:arg}'} patterns)
+      {:else if getDetailedConfig()?.dynamic === true}
+        Button will always refresh periodically
+      {:else}
+        Button will never refresh even if dynamic patterns are detected
+      {/if}
+    </p>
   </div>
 
   {#if hasLocalConfig}

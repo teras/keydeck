@@ -618,7 +618,7 @@
       <div class="properties-content">
       {#if selectedButton !== null && selectedDevice && config}
         <ButtonEditor
-          config={config}
+          bind:config={config}
           currentPage={currentPage}
           currentTemplate={currentTemplate}
           buttonIndex={selectedButton}
@@ -779,18 +779,18 @@
         </div>
       {:else if currentButtonDef && config}
         <ButtonDefEditor
-          config={config}
+          bind:config={config}
           buttonDefName={currentButtonDef}
         />
       {:else if currentPage && selectedDevice && config && !currentTemplate}
         <PageEditor
-          config={config}
+          bind:config={config}
           pageName={currentPage}
           deviceSerial={selectedDevice.serial}
         />
       {:else if currentTemplate && config}
         <TemplateEditor
-          config={config}
+          bind:config={config}
           templateName={currentTemplate}
         />
       {:else}
