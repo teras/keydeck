@@ -237,6 +237,9 @@
 
   let buttonDefReference = $derived(getButtonDefReference());
 
+  // Check if button is read-only (inherited or a reference)
+  let isReadOnly = $derived(buttonDefReference !== null || inheritedSource !== null);
+
   // Initialize button config if it doesn't exist
   function ensureButtonConfig() {
     if (isTemplate && template) {
@@ -394,12 +397,15 @@
 
   <div class="form-group">
     <label>Text</label>
-    <input
-      type="text"
-      value={getTextValue()}
-      oninput={(e) => updateText(e.currentTarget.value)}
-      placeholder="Button label"
-    />
+    <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <input
+        type="text"
+        value={getTextValue()}
+        oninput={(e) => updateText(e.currentTarget.value)}
+        placeholder="Button label"
+        disabled={isReadOnly}
+      />
+    </div>
   </div>
 
   <div class="form-group">
@@ -408,7 +414,10 @@
       <div class="icon-dropdown-container">
         <button
           class="icon-dropdown-trigger"
+          class:reference={buttonDefReference !== null}
+          class:inherited={inheritedSource !== null}
           onclick={() => showIconDropdown = !showIconDropdown}
+          disabled={isReadOnly}
         >
           <div class="selected-icon">
             {#if getDetailedConfig()?.icon}
@@ -458,18 +467,20 @@
         value={getDetailedConfig()?.icon || ""}
         oninput={(e) => updateIcon(e.currentTarget.value)}
         placeholder="icon.png or path to image"
+        disabled={isReadOnly}
       />
     {/if}
   </div>
 
   <div class="form-group">
     <label>Background</label>
-    <div class="color-item">
+    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
       <div class="color-info">
         <ColorPicker
           value={getDetailedConfig()?.background || ""}
           placeholder="0xRRGGBB"
           onUpdate={updateBackground}
+          disabled={isReadOnly}
         />
       </div>
     </div>
@@ -477,12 +488,13 @@
 
   <div class="form-group">
     <label>Text Color</label>
-    <div class="color-item">
+    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
       <div class="color-info">
         <ColorPicker
           value={getDetailedConfig()?.text_color || ""}
           placeholder="0xRRGGBB"
           onUpdate={updateTextColor}
+          disabled={isReadOnly}
         />
       </div>
     </div>
@@ -490,12 +502,13 @@
 
   <div class="form-group">
     <label>Outline</label>
-    <div class="color-item">
+    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
       <div class="color-info">
         <ColorPicker
           value={getDetailedConfig()?.outline || ""}
           placeholder="0xRRGGBB"
           onUpdate={updateOutline}
+          disabled={isReadOnly}
         />
       </div>
     </div>
@@ -515,13 +528,18 @@
             onToggle={() => openActionIndex = i}
             onUpdate={(newAction) => updateAction(i, newAction)}
             onDelete={() => removeAction(i)}
+            disabled={isReadOnly}
+            isReference={buttonDefReference !== null}
+            isInherited={inheritedSource !== null}
           />
         {/each}
       {:else}
         <p class="empty">No actions configured</p>
       {/if}
     </div>
-    <button onclick={addAction}>+ Add Action</button>
+    {#if !isReadOnly}
+      <button onclick={addAction}>+ Add Action</button>
+    {/if}
   </div>
 
   <button class="clear-button" onclick={clearButton}>🗑️ Clear Button</button>
@@ -630,6 +648,24 @@
     background-color: #4a4a4a;
   }
 
+  .icon-dropdown-trigger:disabled.reference {
+    background-color: #3e3a4a;
+    border-color: #4f4565;
+  }
+
+  .icon-dropdown-trigger:disabled.reference:hover {
+    background-color: #3e3a4a;
+  }
+
+  .icon-dropdown-trigger:disabled.inherited {
+    background-color: #4a4238;
+    border-color: #5f5545;
+  }
+
+  .icon-dropdown-trigger:disabled.inherited:hover {
+    background-color: #4a4238;
+  }
+
   .selected-icon {
     display: flex;
     align-items: center;
@@ -726,12 +762,67 @@
     min-width: 0;
   }
 
+  .color-item.readonly.reference {
+    background-color: #3e3a4a;
+    border-color: #4f4565;
+  }
+
+  .color-item.readonly.inherited {
+    background-color: #4a4238;
+    border-color: #5f5545;
+  }
+
+  .input-container {
+    padding: 8px;
+    background-color: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+  }
+
+  .input-container.readonly.reference {
+    background-color: #3e3a4a;
+    border-color: #4f4565;
+  }
+
+  .input-container.readonly.inherited {
+    background-color: #4a4238;
+    border-color: #5f5545;
+  }
+
+  .input-container input {
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+  }
+
+  .input-container input:focus {
+    outline: none;
+  }
+
+  .input-container .icon-dropdown-container {
+    margin: -8px;
+  }
+
   .color-info {
     display: flex;
     flex-direction: column;
     gap: 6px;
     flex: 1;
     min-width: 0;
+  }
+
+  .actions-container {
+    padding: 8px;
+    background-color: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+  }
+
+  .actions-container.readonly {
+    background-color: #38344a;
+    border-color: #4a4565;
   }
 
   .actions-list {

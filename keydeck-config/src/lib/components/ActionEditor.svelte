@@ -11,9 +11,12 @@
     deviceSerial?: string;
     initiallyOpen?: boolean;
     onToggle?: () => void;
+    disabled?: boolean;
+    isReference?: boolean;
+    isInherited?: boolean;
   }
 
-  let { action, onUpdate, onDelete, index, depth = 0, config, deviceSerial, initiallyOpen = false, onToggle }: Props = $props();
+  let { action, onUpdate, onDelete, index, depth = 0, config, deviceSerial, initiallyOpen = false, onToggle, disabled = false, isReference = false, isInherited = false }: Props = $props();
 
   // Get list of available pages
   let availablePages = $derived.by(() => {
@@ -164,7 +167,7 @@
   });
 </script>
 
-<div class="action-editor" style="--depth: {depth}">
+<div class="action-editor" class:reference={isReference} class:inherited={isInherited} style="--depth: {depth}">
   <div class="action-header" onclick={() => {
     isExpanded = !isExpanded;
     if (onToggle) onToggle();
@@ -172,7 +175,9 @@
     <span class="action-index">#{index + 1}</span>
     <span class="action-summary">{actionSummary}</span>
     <div class="action-controls">
-      <button class="btn-delete" onclick={(e) => { e.stopPropagation(); onDelete(); }} title="Delete">×</button>
+      {#if !disabled}
+        <button class="btn-delete" onclick={(e) => { e.stopPropagation(); onDelete(); }} title="Delete">×</button>
+      {/if}
       <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
     </div>
   </div>
@@ -181,7 +186,7 @@
     <div class="action-body">
       <div class="form-row">
         <label>Action Type</label>
-        <select bind:value={actionType} onchange={() => changeActionType(actionType)}>
+        <select bind:value={actionType} onchange={() => changeActionType(actionType)} disabled={disabled}>
           <option value="jump">Jump to Page</option>
           <option value="auto_jump">Auto Jump</option>
           <option value="focus">Focus Window</option>
@@ -209,6 +214,7 @@
             value={action.exec || ''}
             oninput={(e) => onUpdate({ ...action, exec: e.currentTarget.value })}
             placeholder="bash command to execute"
+            disabled={disabled}
           />
         </div>
         <div class="form-row checkbox">
@@ -217,6 +223,7 @@
               type="checkbox"
               checked={action.wait || false}
               onchange={(e) => onUpdate({ ...action, wait: e.currentTarget.checked })}
+              disabled={disabled}
             />
             Wait for completion
           </label>
@@ -229,6 +236,7 @@
             <select
               value={action.jump || ''}
               onchange={(e) => onUpdate({ ...action, jump: e.currentTarget.value })}
+              disabled={disabled}
             >
               <option value="">Select a page</option>
               {#each availablePages as page}
@@ -241,6 +249,7 @@
               value={action.jump || ''}
               oninput={(e) => onUpdate({ ...action, jump: e.currentTarget.value })}
               placeholder="page name"
+              disabled={disabled}
             />
           {/if}
         </div>
@@ -253,6 +262,7 @@
             value={action.focus || ''}
             oninput={(e) => onUpdate({ ...action, focus: e.currentTarget.value })}
             placeholder="window class name"
+            disabled={disabled}
           />
         </div>
 
@@ -262,6 +272,7 @@
           <select
             value={action.wait_for || ''}
             onchange={(e) => onUpdate({ ...action, wait_for: e.currentTarget.value })}
+            disabled={disabled}
           >
             <option value="">Select event type</option>
             <option value="focus">Focus (window focus changed)</option>
@@ -291,6 +302,7 @@
             placeholder="1.0 (default)"
             step="0.1"
             min="0.1"
+            disabled={disabled}
           />
         </div>
 
@@ -302,6 +314,7 @@
             value={action.key || ''}
             oninput={(e) => onUpdate({ ...action, key: e.currentTarget.value })}
             placeholder="e.g., LCtrl+LShift+z or F12"
+            disabled={disabled}
           />
         </div>
 
@@ -313,6 +326,7 @@
             value={action.text || ''}
             oninput={(e) => onUpdate({ ...action, text: e.currentTarget.value })}
             placeholder="text to send as keystrokes"
+            disabled={disabled}
           />
         </div>
 
@@ -325,6 +339,7 @@
             oninput={(e) => onUpdate({ ...action, wait: parseFloat(e.currentTarget.value) })}
             step="0.1"
             min="0"
+            disabled={disabled}
           />
         </div>
 
@@ -345,6 +360,7 @@
                   onUpdate({ macro: macroName });
                 }
               }}
+              disabled={disabled}
             >
               <option value="">Select a macro</option>
               {#each availableMacros as macroName}
@@ -357,6 +373,7 @@
               value={typeof action.macro === 'string' ? action.macro : (action.macro?.name || '')}
               oninput={(e) => onUpdate({ ...action, macro: e.currentTarget.value })}
               placeholder="macro name"
+              disabled={disabled}
             />
           {/if}
         </div>
@@ -391,6 +408,7 @@
                           });
                         }}
                         placeholder="Enter value"
+                        disabled={disabled}
                       />
                     </div>
                   </div>
@@ -418,6 +436,7 @@
               }
             }}
             placeholder="leave empty for all dynamic, or button number(s), e.g., 1 or 1,2,3"
+            disabled={disabled}
           />
         </div>
 
@@ -434,6 +453,9 @@
                     depth={depth + 1}
                     {config}
                     {deviceSerial}
+                    {disabled}
+                    {isReference}
+                    {isInherited}
                     onUpdate={(newAction) => {
                       action.try[i] = newAction;
                       onUpdate(action);
@@ -448,11 +470,13 @@
                 <p class="empty-nested">No try actions</p>
               {/if}
             </div>
-            <button class="btn-add-nested" onclick={() => {
-              if (!action.try) action.try = [];
-              action.try.push({ exec: '' });
-              onUpdate(action);
-            }}>+ Add Try Action</button>
+            {#if !disabled}
+              <button class="btn-add-nested" onclick={() => {
+                if (!action.try) action.try = [];
+                action.try.push({ exec: '' });
+                onUpdate(action);
+              }}>+ Add Try Action</button>
+            {/if}
           </div>
 
           <div class="nested-section">
@@ -466,6 +490,9 @@
                     depth={depth + 1}
                     {config}
                     {deviceSerial}
+                    {disabled}
+                    {isReference}
+                    {isInherited}
                     onUpdate={(newAction) => {
                       action.else[i] = newAction;
                       onUpdate(action);
@@ -480,11 +507,13 @@
                 <p class="empty-nested">No else actions</p>
               {/if}
             </div>
-            <button class="btn-add-nested" onclick={() => {
-              if (!action.else) action.else = [];
-              action.else.push({ exec: '' });
-              onUpdate(action);
-            }}>+ Add Else Action</button>
+            {#if !disabled}
+              <button class="btn-add-nested" onclick={() => {
+                if (!action.else) action.else = [];
+                action.else.push({ exec: '' });
+                onUpdate(action);
+              }}>+ Add Else Action</button>
+            {/if}
           </div>
         </div>
 
@@ -501,6 +530,9 @@
                     depth={depth + 1}
                     {config}
                     {deviceSerial}
+                    {disabled}
+                    {isReference}
+                    {isInherited}
                     onUpdate={(newAction) => {
                       action.and[i] = newAction;
                       onUpdate(action);
@@ -515,11 +547,13 @@
                 <p class="empty-nested">No actions</p>
               {/if}
             </div>
-            <button class="btn-add-nested" onclick={() => {
-              if (!action.and) action.and = [];
-              action.and.push({ exec: '' });
-              onUpdate(action);
-            }}>+ Add Action</button>
+            {#if !disabled}
+              <button class="btn-add-nested" onclick={() => {
+                if (!action.and) action.and = [];
+                action.and.push({ exec: '' });
+                onUpdate(action);
+              }}>+ Add Action</button>
+            {/if}
           </div>
         </div>
 
@@ -536,6 +570,9 @@
                     depth={depth + 1}
                     {config}
                     {deviceSerial}
+                    {disabled}
+                    {isReference}
+                    {isInherited}
                     onUpdate={(newAction) => {
                       action.or[i] = newAction;
                       onUpdate(action);
@@ -550,11 +587,13 @@
                 <p class="empty-nested">No actions</p>
               {/if}
             </div>
-            <button class="btn-add-nested" onclick={() => {
-              if (!action.or) action.or = [];
-              action.or.push({ exec: '' });
-              onUpdate(action);
-            }}>+ Add Action</button>
+            {#if !disabled}
+              <button class="btn-add-nested" onclick={() => {
+                if (!action.or) action.or = [];
+                action.or.push({ exec: '' });
+                onUpdate(action);
+              }}>+ Add Action</button>
+            {/if}
           </div>
         </div>
 
@@ -570,6 +609,9 @@
                   depth={depth + 1}
                   {config}
                   {deviceSerial}
+                  {disabled}
+                  {isReference}
+                  {isInherited}
                   onUpdate={(newAction) => {
                     action.not = newAction;
                     onUpdate(action);
@@ -598,6 +640,14 @@
     margin-left: 0;
   }
 
+  .action-editor.reference {
+    background-color: #3e3a4a;
+  }
+
+  .action-editor.inherited {
+    background-color: #4a4238;
+  }
+
   .action-header {
     display: flex;
     align-items: center;
@@ -609,6 +659,14 @@
 
   .action-header:hover {
     background-color: #444;
+  }
+
+  .action-editor.reference .action-header:hover {
+    background-color: #46425a;
+  }
+
+  .action-editor.inherited .action-header:hover {
+    background-color: #564a3e;
   }
 
   .action-index {
@@ -656,6 +714,16 @@
     padding: 12px;
     border-top: 1px solid #555;
     background-color: #333;
+  }
+
+  .action-editor.reference .action-body {
+    background-color: #2f2b42;
+    border-top-color: #4f4565;
+  }
+
+  .action-editor.inherited .action-body {
+    background-color: #3d3428;
+    border-top-color: #5f5545;
   }
 
   .form-row {

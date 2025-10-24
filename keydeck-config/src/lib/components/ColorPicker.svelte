@@ -4,9 +4,10 @@
     placeholder?: string;
     onUpdate: (value: string) => void;
     dataColorName?: string;
+    disabled?: boolean;
   }
 
-  let { value, placeholder = "0xRRGGBB", onUpdate, dataColorName }: Props = $props();
+  let { value, placeholder = "0xRRGGBB", onUpdate, dataColorName, disabled = false }: Props = $props();
 
   function updateColorFromText(newValue: string) {
     if (newValue.startsWith('#')) {
@@ -59,6 +60,7 @@
     class="color-text-input"
     placeholder={placeholder}
     data-color-name={dataColorName}
+    disabled={disabled}
   />
   <div class="color-picker-wrapper">
     <input
@@ -69,6 +71,7 @@
       class:empty={isEmpty(value)}
       class:invalid={!isValidColor(value)}
       title="Pick color"
+      disabled={disabled}
     />
     {#if !isValidColor(value) && !isEmpty(value)}
       <span class="invalid-indicator" title="Invalid color format">⚠</span>
