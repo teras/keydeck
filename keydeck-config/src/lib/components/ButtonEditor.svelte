@@ -4,7 +4,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
-  import { ask } from '@tauri-apps/plugin-dialog';
+  import { ask, message } from '@tauri-apps/plugin-dialog';
 
   interface Props {
     config: any;
@@ -27,6 +27,9 @@
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
   let openActionIndex = $state<number>(-1);
+
+  let showButtonDefDropdown = $state(false);
+  let buttonDefSearchFilter = $state("");
 
   // Load available icons from image directory
   async function loadIcons() {
@@ -58,10 +61,61 @@
     iconSearchFilter = "";
   }
 
+  async function selectButtonDef(buttonDefName: string) {
+    // Check if button definition exists
+    if (!config.buttons || !config.buttons[buttonDefName]) {
+      const createNew = await ask(
+        `Button definition "${buttonDefName}" doesn't exist.\n\nDo you want to create it first?`,
+        {
+          title: 'Button Definition Not Found',
+          kind: 'warning'
+        }
+      );
+
+      if (!createNew) {
+        showButtonDefDropdown = false;
+        buttonDefSearchFilter = "";
+        return;
+      }
+
+      // Create empty button definition
+      if (!config.buttons) {
+        config.buttons = {};
+      }
+      config.buttons[buttonDefName] = {
+        text: "",
+        actions: []
+      };
+    }
+
+    // Set button to reference
+    if (isTemplate && template) {
+      template[buttonKey] = buttonDefName;
+      config.templates[currentTemplate][buttonKey] = buttonDefName;
+      config.templates = { ...config.templates };
+    } else if (page) {
+      const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
+      page[buttonKey] = buttonDefName;
+      config[groupKey][currentPage][buttonKey] = buttonDefName;
+      config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
+    }
+
+    showButtonDefDropdown = false;
+    buttonDefSearchFilter = "";
+  }
+
   let filteredIcons = $derived(
     iconSearchFilter.trim()
       ? availableIcons.filter(icon => icon.toLowerCase().includes(iconSearchFilter.toLowerCase()))
       : availableIcons
+  );
+
+  let availableButtonDefs = $derived(Object.keys(config.buttons || {}).sort());
+
+  let filteredButtonDefs = $derived(
+    buttonDefSearchFilter.trim()
+      ? availableButtonDefs.filter(name => name.toLowerCase().includes(buttonDefSearchFilter.toLowerCase()))
+      : availableButtonDefs
   );
 
   // Close dropdown when clicking outside
@@ -72,6 +126,21 @@
         if (!target.closest('.icon-dropdown-container')) {
           showIconDropdown = false;
           iconSearchFilter = "";
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  });
+
+  // Close button def dropdown when clicking outside
+  $effect(() => {
+    if (showButtonDefDropdown) {
+      const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.buttondef-dropdown-container')) {
+          showButtonDefDropdown = false;
+          buttonDefSearchFilter = "";
         }
       };
       document.addEventListener('click', handleClickOutside);
@@ -237,26 +306,38 @@
 
   let buttonDefReference = $derived(getButtonDefReference());
 
+  // Check if button has local configuration (State 1 or 2)
+  let hasLocalConfig = $derived.by(() => {
+    if (isTemplate && currentTemplate && config.templates?.[currentTemplate]) {
+      return config.templates[currentTemplate].hasOwnProperty(buttonKey);
+    } else if (!isTemplate && pageGroup && currentPage) {
+      return pageGroup[currentPage]?.hasOwnProperty(buttonKey) || false;
+    }
+    return false;
+  });
+
   // Check if button is read-only (inherited or a reference)
   let isReadOnly = $derived(buttonDefReference !== null || inheritedSource !== null);
 
-  // Initialize button config if it doesn't exist
+  // Initialize button config if it doesn't exist, or convert reference to object
   function ensureButtonConfig() {
     if (isTemplate && template) {
-      // For templates, ensure button exists in template
-      if (!template[buttonKey]) {
-        // Copy inherited config if exists, otherwise create empty
+      // For templates, ensure button exists in template as an object
+      if (!template[buttonKey] || typeof template[buttonKey] === 'string') {
+        // Copy inherited/referenced config if exists, otherwise create empty
         const inherited = getDetailedConfig();
         template[buttonKey] = inherited ? JSON.parse(JSON.stringify(inherited)) : {
           text: "",
           actions: []
         };
         config.templates[currentTemplate][buttonKey] = template[buttonKey];
+        // Trigger reactivity by reassigning the templates object
+        config.templates = { ...config.templates };
       }
     } else if (page) {
-      // For pages, ensure button exists on page
-      if (!page[buttonKey]) {
-        // Copy inherited config if exists, otherwise create empty
+      // For pages, ensure button exists on page as an object
+      if (!page[buttonKey] || typeof page[buttonKey] === 'string') {
+        // Copy inherited/referenced config if exists, otherwise create empty
         const inherited = getDetailedConfig();
         page[buttonKey] = inherited ? JSON.parse(JSON.stringify(inherited)) : {
           text: "",
@@ -265,6 +346,8 @@
         // Also update root level since it's flattened
         const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
         config[groupKey][currentPage][buttonKey] = page[buttonKey];
+        // Trigger reactivity by reassigning the page group
+        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
       }
     }
   }
@@ -371,11 +454,85 @@
         // Delete from template
         delete template[buttonKey];
         delete config.templates[currentTemplate][buttonKey];
+        // Trigger reactivity
+        config.templates = { ...config.templates };
       } else if (page) {
         // Delete from page
         const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
         delete page[buttonKey];
         delete config[groupKey][currentPage][buttonKey];
+        // Trigger reactivity
+        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
+      }
+    }
+  }
+
+  async function createOverride() {
+    const confirmed = await ask(
+      `Create a local editable copy of this button configuration?\n\nThis will allow you to edit the button independently from the ${buttonDefReference ? 'button definition' : 'template'}.`,
+      {
+        title: 'Create Override',
+        kind: 'info'
+      }
+    );
+
+    if (confirmed) {
+      ensureButtonConfig();
+      // Trigger reactivity
+      if (isTemplate) {
+        config.templates = { ...config.templates };
+      } else {
+        const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
+        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
+      }
+    }
+  }
+
+  async function setButtonReference() {
+    // Get list of available button definitions
+    const availableButtonDefs = Object.keys(config.buttons || {});
+
+    // For now, use a simple prompt. We can enhance this later with a proper selection dialog
+    const buttonDefName = prompt(
+      `Enter button definition name:\n\nAvailable button definitions:\n${availableButtonDefs.join(', ') || 'None'}`,
+      ''
+    );
+
+    if (buttonDefName && buttonDefName.trim()) {
+      const trimmedName = buttonDefName.trim();
+
+      // Check if button definition exists
+      if (!config.buttons || !config.buttons[trimmedName]) {
+        const createNew = await ask(
+          `Button definition "${trimmedName}" doesn't exist.\n\nDo you want to create it first?`,
+          {
+            title: 'Button Definition Not Found',
+            kind: 'warning'
+          }
+        );
+
+        if (!createNew) return;
+
+        // Create empty button definition
+        if (!config.buttons) {
+          config.buttons = {};
+        }
+        config.buttons[trimmedName] = {
+          text: "",
+          actions: []
+        };
+      }
+
+      // Set button to reference
+      if (isTemplate && template) {
+        template[buttonKey] = trimmedName;
+        config.templates[currentTemplate][buttonKey] = trimmedName;
+        config.templates = { ...config.templates };
+      } else if (page) {
+        const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
+        page[buttonKey] = trimmedName;
+        config[groupKey][currentPage][buttonKey] = trimmedName;
+        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
       }
     }
   }
@@ -394,6 +551,83 @@
       </button>
     {/if}
   </div>
+
+  {#if isReadOnly}
+    <div class="state-actions-row">
+      <button class="state-action-button override-button" onclick={createOverride}>
+        ✏️ Override
+      </button>
+      <div class="buttondef-dropdown-container">
+        <button
+          class="state-action-button reference-button"
+          onclick={() => showButtonDefDropdown = !showButtonDefDropdown}
+        >
+          🔗 Reference
+        </button>
+
+        {#if showButtonDefDropdown}
+          <div class="buttondef-dropdown-menu">
+            <input
+              type="text"
+              class="buttondef-search"
+              placeholder="Search..."
+              bind:value={buttonDefSearchFilter}
+              onclick={(e) => e.stopPropagation()}
+            />
+            <div class="buttondef-options">
+              {#if filteredButtonDefs.length > 0}
+                {#each filteredButtonDefs as defName}
+                  <button
+                    class="buttondef-option"
+                    onclick={() => selectButtonDef(defName)}
+                  >
+                    {defName}
+                  </button>
+                {/each}
+              {:else}
+                <div class="no-options">No matching button definitions</div>
+              {/if}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {:else if !hasLocalConfig}
+    <div class="buttondef-dropdown-container">
+      <button
+        class="state-action-button reference-button"
+        onclick={() => showButtonDefDropdown = !showButtonDefDropdown}
+      >
+        🔗 Set Button Reference
+      </button>
+
+      {#if showButtonDefDropdown}
+        <div class="buttondef-dropdown-menu">
+          <input
+            type="text"
+            class="buttondef-search"
+            placeholder="Search..."
+            bind:value={buttonDefSearchFilter}
+            onclick={(e) => e.stopPropagation()}
+          />
+          <div class="buttondef-options">
+            {#if filteredButtonDefs.length > 0}
+              {#each filteredButtonDefs as defName}
+                <button
+                  class="buttondef-option"
+                  onclick={() => selectButtonDef(defName)}
+                >
+                  {defName}
+                </button>
+              {/each}
+            {:else}
+              <div class="no-options">No matching button definitions</div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <div class="form-group">
     <label>Text</label>
@@ -542,7 +776,9 @@
     {/if}
   </div>
 
-  <button class="clear-button" onclick={clearButton}>🗑️ Clear Button</button>
+  {#if hasLocalConfig}
+    <button class="clear-button" onclick={clearButton}>🗑️ Remove Configuration</button>
+  {/if}
 </div>
 
 <style>
@@ -750,6 +986,81 @@
     background-color: #0e639c;
   }
 
+  /* Button Definition Dropdown Styles */
+  .buttondef-dropdown-container {
+    position: relative;
+    margin-bottom: 12px;
+    align-self: stretch;
+  }
+
+  .buttondef-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0;
+    background-color: #2d2d30;
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    max-height: 300px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .buttondef-search {
+    margin: 8px;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .buttondef-search:focus {
+    outline: none;
+    border-color: #0e639c;
+  }
+
+  .buttondef-options {
+    overflow-y: auto;
+    max-height: 240px;
+  }
+
+  .buttondef-option {
+    width: 100%;
+    padding: 10px 12px;
+    background: none;
+    border: none;
+    color: #cccccc;
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+  }
+
+  .buttondef-option:hover {
+    background-color: #3c3c3c;
+  }
+
+  .buttondef-option.new-option {
+    color: #4ec9b0;
+    font-style: italic;
+  }
+
+  .buttondef-option.new-option:hover {
+    background-color: #2a3a2a;
+  }
+
+  .no-options {
+    padding: 20px;
+    text-align: center;
+    color: #888;
+    font-size: 12px;
+    font-style: italic;
+  }
+
   .color-item {
     display: flex;
     align-items: flex-end;
@@ -863,5 +1174,103 @@
 
   .clear-button:hover {
     background-color: #9a3d3d;
+  }
+
+  .state-actions-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: stretch;
+  }
+
+  .state-actions-row > .state-action-button,
+  .state-actions-row > .buttondef-dropdown-container > .state-action-button {
+    flex: 1;
+    margin-bottom: 0;
+    min-height: 40px;
+    height: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .state-actions-row {
+    position: relative;
+  }
+
+  .state-actions-row > .buttondef-dropdown-container {
+    flex: 1;
+    margin-bottom: 0;
+    display: flex;
+    min-width: 0;
+    position: static;
+  }
+
+  .state-actions-row .buttondef-dropdown-menu {
+    left: 0;
+    right: 0;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .state-actions-row .buttondef-dropdown-menu::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 75%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid #555;
+  }
+
+  .state-actions-row .buttondef-dropdown-menu::after {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 75%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid #2d2d30;
+  }
+
+  .buttondef-dropdown-container:not(.state-actions-row *) .buttondef-dropdown-menu {
+    margin-top: 0;
+  }
+
+  .state-action-button {
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background-color 0.2s;
+  }
+
+  .override-button {
+    background-color: #4a4a4a;
+    color: white;
+  }
+
+  .override-button:hover {
+    background-color: #5a5a5a;
+  }
+
+  .reference-button {
+    background-color: #4a4a6a;
+    color: white;
+  }
+
+  .reference-button:hover {
+    background-color: #5a5a7a;
   }
 </style>
