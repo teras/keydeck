@@ -44,6 +44,7 @@
   let currentButtonDef = $state<string | null>(null);
   let config = $state<any>(null);
   let error = $state<string>("");
+  let errorDismissed = $state<boolean>(false);
   let isSaving = $state<boolean>(false);
   let lastSaveTime = $state<string>("");
   let hasUnsavedChanges = $state<boolean>(false);
@@ -60,6 +61,15 @@
   let renameParamName = $state<string>("");
   let lastAddedParam = $state<string | null>(null);
   let paramNameInput: HTMLInputElement | undefined;
+
+  function setError(message: string) {
+    error = message;
+    errorDismissed = false;
+  }
+
+  function dismissError() {
+    errorDismissed = true;
+  }
 
   onMount(async () => {
     try {
@@ -82,7 +92,17 @@
         config.default = config.page_groups.default;
       }
     } catch (e) {
-      console.log("No existing config found, starting fresh", e);
+      const errorMsg = String(e);
+      console.error("Failed to load configuration:", e);
+
+      // Check if this is a "file not found" error or a parsing error
+      if (errorMsg.includes("No such file") || errorMsg.includes("not found")) {
+        console.log("No existing config found, starting with a fresh configuration");
+      } else {
+        // This is likely a parsing error or other serious issue
+        setError(`Failed to load configuration: ${errorMsg}\n\nStarting with a fresh configuration. Please check your config file for errors.`);
+      }
+
       config = {
         tick_time: 2.0,
         page_groups: {
@@ -161,7 +181,6 @@
   function handleDeviceSelected(device: DeviceInfo) {
     console.log("Device selected:", device);
     selectedDevice = device;
-    error = "";
   }
 
   function handlePageSelected(pageName: string) {
@@ -283,11 +302,12 @@
     }
     try {
       isSaving = true;
-      error = "";
       const loadedConfig = await invoke("load_config", { path: null });
       processLoadedConfig(loadedConfig);
+      // Only dismiss error after successful reload
+      dismissError();
     } catch (e) {
-      error = `Failed to reload configuration: ${e}`;
+      setError(`Failed to reload configuration: ${e}`);
     } finally {
       isSaving = false;
     }
@@ -296,18 +316,19 @@
   async function saveConfig() {
     try {
       isSaving = true;
-      error = "";
       // Remove the frontend-only page_groups property before sending to backend
       // The page groups are already at root level, which is what backend expects
       const { page_groups, ...backendConfig } = config;
       await invoke("save_config", { config: backendConfig });
+      // Only dismiss error after successful save
+      dismissError();
       hasUnsavedChanges = false;
       lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
       lastSaveTime = now.toLocaleTimeString();
       alert("Configuration saved!");
     } catch (e) {
-      error = `Failed to save configuration: ${e}`;
+      setError(`Failed to save configuration: ${e}`);
     } finally {
       isSaving = false;
     }
@@ -316,18 +337,19 @@
   async function sendToDevice() {
     try {
       isSaving = true;
-      error = "";
       // Remove the frontend-only page_groups property before sending to backend
       const { page_groups, ...backendConfig } = config;
       await invoke("save_config", { config: backendConfig });
       await invoke("reload_keydeck");
+      // Only dismiss error after successful send
+      dismissError();
       hasUnsavedChanges = false;
       lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
       lastSaveTime = now.toLocaleTimeString();
       alert("Configuration sent to device and reloaded!");
     } catch (e) {
-      error = `Failed to send to device: ${e}`;
+      setError(`Failed to send to device: ${e}`);
     } finally {
       isSaving = false;
     }
@@ -350,7 +372,7 @@
         alert("Configuration exported successfully!");
       }
     } catch (e) {
-      error = `Failed to export configuration: ${e}`;
+      setError(`Failed to export configuration: ${e}`);
     }
   }
 
@@ -370,7 +392,7 @@
         alert("Configuration imported successfully!");
       }
     } catch (e) {
-      error = `Failed to import configuration: ${e}`;
+      setError(`Failed to import configuration: ${e}`);
     }
   }
 
@@ -546,8 +568,14 @@
 />
 
 <div class="app-container">
-  {#if error}
-    <div class="error">{error}</div>
+  {#if error && !errorDismissed}
+    <div class="error-banner">
+      <div class="error-content">
+        <div class="error-icon">⚠️</div>
+        <div class="error-message">{error}</div>
+        <button class="error-dismiss" onclick={dismissError} title="Dismiss error">✕</button>
+      </div>
+    </div>
   {/if}
 
   <div class="main-layout">
@@ -859,11 +887,67 @@
     opacity: 0.6;
   }
 
-  .error {
+  .error-banner {
     background-color: #5a1d1d;
+    border-bottom: 2px solid #be1100;
+    animation: slideDown 0.3s ease-out;
+    z-index: 1000;
+  }
+
+  @keyframes slideDown {
+    from {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .error-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    max-width: 100%;
+  }
+
+  .error-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .error-message {
+    flex: 1;
     color: #f48771;
-    padding: 12px 20px;
-    border-bottom: 1px solid #be1100;
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .error-dismiss {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background-color: transparent;
+    color: #f48771;
+    border: 1px solid #be1100;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, color 0.2s;
+  }
+
+  .error-dismiss:hover {
+    background-color: #be1100;
+    color: white;
   }
 
   .main-layout {

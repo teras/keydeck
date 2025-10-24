@@ -1368,17 +1368,31 @@ The `draw` configuration enables dynamic graphical visualizations on buttons, su
 button1:
   background: "#000000"    # Optional: button background
   draw:                    # Graphics layer
-    type: bar              # Required: graphic type
+    type: gauge            # Required: graphic type
     value: ${service:cpu}  # Required: data source
     range: [0, 100]        # Required: [min, max] values
     color: "#00ff00"       # Optional: solid color
-    direction: bottom_to_top  # Optional: fill direction
   text: "CPU"              # Optional: text overlay
 ```
 
 ### Graphic Types
 
-#### 1. `bar`
+#### 1. `gauge`
+Circular arc gauge (speedometer style), sweeping from bottom-left to bottom-right.
+
+**Use cases**: Percentage indicators, RPM, speed displays
+
+**Example**:
+```yaml
+button1:
+  draw:
+    type: gauge
+    value: ${service:disk_usage}
+    range: [0, 100]
+    color: "#00ffff"
+```
+
+#### 2. `bar`
 Unified progress bar supporting all 4 directions (horizontal and vertical).
 
 **Directions**:
@@ -1391,7 +1405,7 @@ Unified progress bar supporting all 4 directions (horizontal and vertical).
 
 **Example - Vertical (default)**:
 ```yaml
-button1:
+button2:
   background: "#1a1a1a"
   draw:
     type: bar
@@ -1403,7 +1417,7 @@ button1:
 
 **Example - Horizontal**:
 ```yaml
-button2:
+button3:
   background: "#1a1a1a"
   draw:
     type: bar
@@ -1412,21 +1426,6 @@ button2:
     direction: left_to_right
     color: "#00ff00"
   text: "Network"
-```
-
-#### 2. `gauge`
-Circular arc gauge (speedometer style), sweeping from bottom-left to bottom-right.
-
-**Use cases**: Percentage indicators, RPM, speed displays
-
-**Example**:
-```yaml
-button3:
-  draw:
-    type: gauge
-    value: ${service:disk_usage}
-    range: [0, 100]
-    color: "#00ffff"
 ```
 
 #### 3. `multi_bar`
@@ -1471,7 +1470,7 @@ button4:
 
 #### Required Parameters
 
-- **type**: Graphic type (`bar`, `gauge`, `multi_bar`)
+- **type**: Graphic type (`gauge`, `bar`, `multi_bar`)
 - **value**: Data source using `${service:name}` syntax (or static number for testing)
 - **range**: Array `[min, max]` defining the value range
 
@@ -1675,8 +1674,8 @@ pages:
 2. **Mark as dynamic**: Always use `dynamic: true` for buttons with draw configs that reference services
 3. **Use on_tick for updates**: Configure `on_tick: - refresh:` in your page to auto-update graphics
 4. **Choose appropriate types**:
-   - Bar: Linear metrics (percentages, speeds). Use `segments` for segmented VU meter style
    - Gauge: Rotary-style indicators (RPM, speed, percentage)
+   - Bar: Linear metrics (percentages, speeds). Use `segments` for segmented VU meter style
    - Multi-bar: Comparing multiple values (CPU cores, network interfaces)
 5. **Color coding**: Use `color_map` to indicate states (green=good, yellow=warning, red=critical)
 6. **Layering**: Combine graphics with text overlays for labeled displays
