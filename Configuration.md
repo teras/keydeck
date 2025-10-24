@@ -309,7 +309,7 @@ When it is based on a template, the name of the button template is used as a par
 
 - **icon**: *(optional)* Specifies the path to an image file for the button. This icon will be displayed on the button. If `image_dir` is specified in the global configuration, icons are looked up relative to this directory.
 - **background**: *(optional)* Background color for the button, in hexadecimal format or referencing a named color.
-- **draw**: *(optional)* Graphics configuration for rendering dynamic visualizations (bars, gauges, levels). Drawn after icon/background, before text. See [Graphics Rendering](#graphics-rendering).
+- **draw**: *(optional)* Graphics configuration for rendering dynamic visualizations (single bars, gauges, multiple bars). Drawn after icon/background, before text. See [Graphics Rendering](#graphics-rendering).
 - **text**: *(optional)* Text to display on the button. Supports dynamic parameters (see [Dynamic Parameters](#dynamic-parameters)).
 - **dynamic**: *(optional)* Boolean flag to override automatic dynamic detection. When `true`, the button is always included in `refresh:` actions. When `false`, the button is excluded even if it contains dynamic parameters. When omitted (recommended), automatic detection is used based on the presence of `${provider:arg}` patterns in the button's properties. See [Automatic Dynamic Detection](#automatic-dynamic-detection) for details.
 - **actions**: *(optional)* List of actions to execute when the button is pressed. Actions execute in sequence.
@@ -1303,7 +1303,7 @@ button1:
 
 button2:
   draw:
-    type: bar_vertical
+    type: bar
     value: ${service:memory}     # Automatically dynamic ✓
     range: [0, 100]
 
@@ -1354,7 +1354,7 @@ button5:
 
 ## Graphics Rendering
 
-The `draw` configuration enables dynamic graphical visualizations on buttons, such as progress bars, gauges, level meters, and multi-bar displays. Graphics are rendered in real-time based on data from services, creating visual dashboards for system monitoring and status indicators.
+The `draw` configuration enables dynamic graphical visualizations on buttons, such as progress bars, gauges, and multi-bar displays. Graphics are rendered in real-time based on data from services, creating visual dashboards for system monitoring and status indicators.
 
 **Rendering Pipeline**: Graphics are composited in this order:
 1. Background color
@@ -1368,51 +1368,53 @@ The `draw` configuration enables dynamic graphical visualizations on buttons, su
 button1:
   background: "#000000"    # Optional: button background
   draw:                    # Graphics layer
-    type: bar_horizontal   # Required: graphic type
+    type: bar              # Required: graphic type
     value: ${service:cpu}  # Required: data source
     range: [0, 100]        # Required: [min, max] values
     color: "#00ff00"       # Optional: solid color
+    direction: bottom_to_top  # Optional: fill direction
   text: "CPU"              # Optional: text overlay
 ```
 
 ### Graphic Types
 
-#### 1. `bar_horizontal`
-Horizontal progress bar filling from left to right.
+#### 1. `bar`
+Unified progress bar supporting all 4 directions (horizontal and vertical).
 
-**Use cases**: Network speed, download progress, memory usage
+**Directions**:
+- `left_to_right`: Horizontal fill from left (good for: network speed, download progress)
+- `right_to_left`: Horizontal fill from right
+- `top_to_bottom`: Vertical fill from top
+- `bottom_to_top`: Vertical fill from bottom (default - good for: CPU, memory, volume)
 
-**Example**:
+**Use cases**: CPU usage, memory usage, network speed, temperature, volume levels
+
+**Example - Vertical (default)**:
 ```yaml
 button1:
   background: "#1a1a1a"
   draw:
-    type: bar_horizontal
-    value: ${service:network_speed}
-    range: [0, 100]
-    color: "#00ff00"
-  text: "Network"
-```
-
-#### 2. `bar_vertical`
-Vertical progress bar filling from bottom to top (default) or top to bottom.
-
-**Use cases**: CPU usage, volume levels, temperature
-
-**Example**:
-```yaml
-button2:
-  background: "#1a1a1a"
-  draw:
-    type: bar_vertical
+    type: bar
     value: ${service:cpu_usage}
     range: [0, 100]
-    direction: bottom_to_top  # Default direction
     color: "#ff6600"
   text: "CPU"
 ```
 
-#### 3. `gauge`
+**Example - Horizontal**:
+```yaml
+button2:
+  background: "#1a1a1a"
+  draw:
+    type: bar
+    value: ${service:network_speed}
+    range: [0, 100]
+    direction: left_to_right
+    color: "#00ff00"
+  text: "Network"
+```
+
+#### 2. `gauge`
 Circular arc gauge (speedometer style), sweeping from bottom-left to bottom-right.
 
 **Use cases**: Percentage indicators, RPM, speed displays
@@ -1427,36 +1429,25 @@ button3:
     color: "#00ffff"
 ```
 
-#### 4. `level`
-Segmented level indicator (VU meter style), vertical or horizontal.
+#### 3. `multi_bar`
+Multiple bars with support for all 4 directions.
 
-**Use cases**: Audio levels, battery indicator, signal strength
-
-**Example**:
-```yaml
-button4:
-  draw:
-    type: level
-    value: ${service:volume}
-    range: [0, 100]
-    segments: 10           # 10 discrete LED-style segments
-    direction: bottom_to_top
-    color: "#00ff00"
-```
-
-#### 5. `multi_bar_vertical`
-Multiple vertical bars side-by-side (e.g., CPU cores, network interfaces).
+**Directions**:
+- `bottom_to_top` (default): Vertical bars side-by-side (good for: CPU cores, multi-channel levels)
+- `top_to_bottom`: Vertical bars side-by-side, filling from top
+- `left_to_right`: Horizontal bars stacked vertically (good for: network interfaces, storage volumes)
+- `right_to_left`: Horizontal bars stacked vertically, filling from right
 
 **Service must return space-separated values**: `"45 67 23 89"`
 
-**Example**:
+**Example - Vertical bars (default)**:
 ```yaml
 services:
   cpu_cores: "top -bn1 | awk '/Cpu/ {print $2}' | head -4 | tr '\n' ' '"
 
-button5:
+button3:
   draw:
-    type: multi_bar_vertical
+    type: multi_bar
     value: ${service:cpu_cores}
     range: [0, 100]
     color: "#ff00ff"
@@ -1464,16 +1455,14 @@ button5:
   text: "Cores"
 ```
 
-#### 6. `multi_bar_horizontal`
-Multiple horizontal bars stacked vertically.
-
-**Example**:
+**Example - Horizontal bars**:
 ```yaml
-button6:
+button4:
   draw:
-    type: multi_bar_horizontal
+    type: multi_bar
     value: ${service:network_interfaces}
     range: [0, 100]
+    direction: left_to_right
     color: "#00ffff"
     bar_spacing: 2
 ```
@@ -1482,7 +1471,7 @@ button6:
 
 #### Required Parameters
 
-- **type**: Graphic type (`bar_horizontal`, `bar_vertical`, `gauge`, `level`, `multi_bar_vertical`, `multi_bar_horizontal`)
+- **type**: Graphic type (`bar`, `gauge`, `multi_bar`)
 - **value**: Data source using `${service:name}` syntax (or static number for testing)
 - **range**: Array `[min, max]` defining the value range
 
@@ -1494,7 +1483,7 @@ button6:
 - **height**: Graphic height in pixels. Default: button height minus padding
 - **position**: Array `[x, y]` for top-left position. Default: centered
 - **padding**: Padding around graphic in pixels. Default: 5
-- **direction**: Fill direction for bars/levels (`bottom_to_top`, `top_to_bottom`, `left_to_right`, `right_to_left`)
+- **direction**: Fill direction for bars (`bottom_to_top`, `top_to_bottom`, `left_to_right`, `right_to_left`)
 - **segments**: Number of discrete blocks for segmented display (VU meter style). Default: continuous fill
 - **bar_spacing**: Spacing between bars for multi_bar types in pixels. Default: 2
 
@@ -1508,7 +1497,7 @@ Use `color_map` instead of `color` for smooth color transitions based on value p
 ```yaml
 button1:
   draw:
-    type: bar_vertical
+    type: bar
     value: ${service:cpu}
     range: [0, 100]
     color_map:
@@ -1526,18 +1515,20 @@ The `segments` parameter divides graphics into discrete LED-style blocks instead
 **Without segments** (continuous):
 ```yaml
 draw:
-  type: bar_horizontal
+  type: bar
   value: ${service:volume}
   range: [0, 100]
+  direction: left_to_right
   # Fills smoothly: ████████░░░░░░
 ```
 
 **With segments** (discrete blocks):
 ```yaml
 draw:
-  type: bar_horizontal
+  type: bar
   value: ${service:volume}
   range: [0, 100]
+  direction: left_to_right
   segments: 10
   # Fills in blocks: ██ ██ ██ ░░ ░░
 ```
@@ -1546,7 +1537,7 @@ draw:
 ```yaml
 button_audio:
   draw:
-    type: level
+    type: bar
     value: ${service:audio_level}
     range: [0, 100]
     direction: bottom_to_top
@@ -1577,7 +1568,7 @@ pages:
       dynamic: true
       background: "#1a1a1a"
       draw:
-        type: bar_vertical
+        type: bar
         value: ${service:cpu}
         range: [0, 100]
         color_map:
@@ -1590,7 +1581,7 @@ pages:
       dynamic: true
       background: "#1a1a1a"
       draw:
-        type: bar_vertical
+        type: bar
         value: ${service:memory}
         range: [0, 100]
         color: "#00ffff"
@@ -1628,7 +1619,7 @@ pages:
       dynamic: true
       background: "#000000"
       draw:
-        type: multi_bar_vertical
+        type: multi_bar
         value: ${service:cpu_cores}
         range: [0, 100]
         color_map:
@@ -1652,7 +1643,7 @@ pages:
     button1:
       dynamic: true
       draw:
-        type: level
+        type: bar
         value: ${service:audio_left}
         range: [0, 100]
         direction: bottom_to_top
@@ -1666,7 +1657,7 @@ pages:
     button2:
       dynamic: true
       draw:
-        type: level
+        type: bar
         value: ${service:audio_right}
         range: [0, 100]
         direction: bottom_to_top
@@ -1684,10 +1675,9 @@ pages:
 2. **Mark as dynamic**: Always use `dynamic: true` for buttons with draw configs that reference services
 3. **Use on_tick for updates**: Configure `on_tick: - refresh:` in your page to auto-update graphics
 4. **Choose appropriate types**:
-   - Bars: Linear metrics (percentages, speeds)
-   - Gauges: Rotary-style indicators (RPM, speed, percentage)
-   - Levels: Segmented displays (audio, battery, signal)
-   - Multi-bars: Comparing multiple values (CPU cores, network interfaces)
+   - Bar: Linear metrics (percentages, speeds). Use `segments` for segmented VU meter style
+   - Gauge: Rotary-style indicators (RPM, speed, percentage)
+   - Multi-bar: Comparing multiple values (CPU cores, network interfaces)
 5. **Color coding**: Use `color_map` to indicate states (green=good, yellow=warning, red=critical)
 6. **Layering**: Combine graphics with text overlays for labeled displays
 

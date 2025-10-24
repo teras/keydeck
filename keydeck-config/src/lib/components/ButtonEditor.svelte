@@ -2,6 +2,7 @@
   import ActionEditor from './ActionEditor.svelte';
   import ColorPicker from './ColorPicker.svelte';
   import TriStateCheckbox from './TriStateCheckbox.svelte';
+  import DrawConfigEditor from './DrawConfigEditor.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
@@ -470,6 +471,18 @@
     updateButton({ dynamic: newValue });
   }
 
+  function updateDraw(drawConfig: any) {
+    if (drawConfig === null || drawConfig === undefined) {
+      // Remove draw config
+      const detailed = getDetailedConfig();
+      const { draw, ...rest } = detailed;
+      updateButton(rest);
+    } else {
+      // Update draw config
+      updateButton({ draw: drawConfig });
+    }
+  }
+
   function addAction() {
     ensureButtonConfig();
     const detailed = getDetailedConfig();
@@ -931,6 +944,39 @@
         Button will never refresh even if dynamic patterns are detected
       {/if}
     </p>
+  </div>
+
+  <!-- Graphics Rendering (DrawConfig) -->
+  <div class="form-group">
+    <label>Graphics Rendering</label>
+    <div class="draw-config-section">
+      {#if getDetailedConfig()?.draw}
+        <DrawConfigEditor
+          drawConfig={getDetailedConfig().draw}
+          onUpdate={(newDrawConfig) => updateDraw(newDrawConfig)}
+          disabled={isReadOnly}
+        />
+        {#if !isReadOnly}
+          <button
+            class="btn-remove-draw"
+            onclick={() => updateDraw(null)}
+          >Remove Graphics Rendering</button>
+        {/if}
+      {:else}
+        <p class="no-draw">No graphics rendering configured.</p>
+        {#if !isReadOnly}
+          <button
+            class="btn-add-draw"
+            onclick={() => updateDraw({
+              type: 'gauge',
+              value: '',
+              range: [0, 100],
+              color: '#00ff00'
+            })}
+          >+ Add Graphics Rendering</button>
+        {/if}
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -1471,5 +1517,51 @@
 
   .reference-button:hover {
     background-color: #5a5a7a;
+  }
+
+  /* DrawConfig styles */
+  .draw-config-section {
+    background-color: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 12px;
+  }
+
+  .btn-remove-draw {
+    padding: 8px 12px;
+    background-color: #c24038;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+
+  .btn-remove-draw:hover {
+    background-color: #d85048;
+  }
+
+  .no-draw {
+    color: #888;
+    font-size: 12px;
+    font-style: italic;
+    margin: 0 0 8px 0;
+  }
+
+  .btn-add-draw {
+    padding: 8px 12px;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .btn-add-draw:hover {
+    background-color: #1177bb;
   }
 </style>

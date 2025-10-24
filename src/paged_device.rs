@@ -816,17 +816,20 @@ impl PagedDevice {
 
             // Render based on graphic type
             match &draw_config.graphic_type {
-                GraphicType::BarHorizontal => {
+                GraphicType::Bar => {
                     if let Ok(value) = value_str.trim().parse::<f32>() {
                         let color = self.get_color_for_value(draw_config, value, range, base_color);
-                        graphics_renderer::render_bar_horizontal(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments);
-                    }
-                }
-                GraphicType::BarVertical => {
-                    if let Ok(value) = value_str.trim().parse::<f32>() {
-                        let color = self.get_color_for_value(draw_config, value, range, base_color);
-                        let bottom_to_top = !matches!(draw_config.direction, Some(Direction::TopToBottom));
-                        graphics_renderer::render_bar_vertical(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments, bottom_to_top);
+
+                        // Determine direction from optional direction field
+                        let direction = match draw_config.direction.as_ref() {
+                            Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
+                            Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
+                            Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
+                            Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
+                            None => graphics_renderer::BarDirection::BottomToTop, // Default: bottom to top
+                        };
+
+                        graphics_renderer::render_bar(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments, direction);
                     }
                 }
                 GraphicType::Gauge => {
@@ -835,15 +838,7 @@ impl PagedDevice {
                         graphics_renderer::render_gauge(&mut canvas, x, y, value, range, draw_width, draw_height, color);
                     }
                 }
-                GraphicType::Level => {
-                    if let Ok(value) = value_str.trim().parse::<f32>() {
-                        let color = self.get_color_for_value(draw_config, value, range, base_color);
-                        let segments = draw_config.segments.unwrap_or(10);
-                        let reverse = !matches!(draw_config.direction, Some(Direction::TopToBottom));
-                        graphics_renderer::render_level(&mut canvas, x, y, value, range, draw_width, draw_height, color, segments, true, reverse);
-                    }
-                }
-                GraphicType::MultiBarVertical => {
+                GraphicType::MultiBar => {
                     let values: Vec<f32> = value_str.split_whitespace()
                         .filter_map(|s| s.parse::<f32>().ok())
                         .collect();
@@ -855,22 +850,16 @@ impl PagedDevice {
                             .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
                             .collect();
 
-                        graphics_renderer::render_multi_bar_vertical_colored(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments);
-                    }
-                }
-                GraphicType::MultiBarHorizontal => {
-                    let values: Vec<f32> = value_str.split_whitespace()
-                        .filter_map(|s| s.parse::<f32>().ok())
-                        .collect();
-                    if !values.is_empty() {
-                        let bar_spacing = draw_config.bar_spacing.unwrap_or(2);
+                        // Determine direction
+                        let direction = match draw_config.direction.as_ref() {
+                            Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
+                            Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
+                            Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
+                            Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
+                            None => graphics_renderer::BarDirection::BottomToTop, // Default: vertical bars side-by-side
+                        };
 
-                        // Calculate color for each bar based on its value
-                        let colors: Vec<(u8, u8, u8)> = values.iter()
-                            .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
-                            .collect();
-
-                        graphics_renderer::render_multi_bar_horizontal_colored(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments);
+                        graphics_renderer::render_multi_bar(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments, direction);
                     }
                 }
             }

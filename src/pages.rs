@@ -162,7 +162,7 @@ fn default_restore_mode() -> FocusChangeRestorePolicy {
 pub struct Page {
     /// Optional window name pattern for auto-switching to this page.
     /// Matches against both window class AND window title (case-insensitive substring match, OR logic).
-    #[serde(skip_serializing_if = "Option::is_none", alias = "window_class")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub window_name: Option<String>,
 
     /// Locking page. If true the page cannot be automatically changed when focus changes.
@@ -322,12 +322,9 @@ pub enum ColorMapEntry {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphicType {
-    BarHorizontal,
-    BarVertical,
     Gauge,
-    Level,
-    MultiBarHorizontal,
-    MultiBarVertical,
+    Bar,
+    MultiBar,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

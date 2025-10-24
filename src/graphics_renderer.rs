@@ -67,63 +67,17 @@ pub fn calculate_color_from_map(
     color_map[color_map.len() - 1].1
 }
 
-/// Render a horizontal progress bar directly onto canvas
-pub fn render_bar_horizontal(
-    canvas: &mut RgbaImage,
-    x: i64,
-    y: i64,
-    value: f32,
-    range: (f32, f32),
-    width: u32,
-    height: u32,
-    color: (u8, u8, u8),
-    segments: Option<u32>,
-) {
-    // Calculate percentage
-    let (min, max) = range;
-    let value = value.clamp(min, max);
-    let percent = if max > min { (value - min) / (max - min) } else { 0.0 };
-
-    let color_rgba = Rgba([color.0, color.1, color.2, 255]);
-
-    if let Some(seg_count) = segments {
-        // Segmented bar
-        if seg_count > 0 {
-            let segment_spacing = 2;
-            let total_spacing = (seg_count - 1) * segment_spacing;
-            let segment_width = (width - total_spacing) / seg_count;
-
-            // Calculate remaining space and distribute as padding
-            let used_width = seg_count * segment_width + total_spacing;
-            let remaining = width - used_width;
-            let offset_x = remaining / 2;
-
-            let filled_segments = (percent * seg_count as f32).floor() as u32;
-
-            for i in 0..filled_segments {
-                let seg_x = x + offset_x as i64 + (i * (segment_width + segment_spacing)) as i64;
-                draw_filled_rect_mut(
-                    canvas,
-                    Rect::at(seg_x as i32, y as i32).of_size(segment_width, height),
-                    color_rgba,
-                );
-            }
-        }
-    } else {
-        // Continuous bar
-        let filled_width = (width as f32 * percent) as u32;
-        if filled_width > 0 {
-            draw_filled_rect_mut(
-                canvas,
-                Rect::at(x as i32, y as i32).of_size(filled_width, height),
-                color_rgba,
-            );
-        }
-    }
+/// Direction for bar rendering
+#[derive(Debug, Clone, Copy)]
+pub enum BarDirection {
+    LeftToRight,
+    RightToLeft,
+    TopToBottom,
+    BottomToTop,
 }
 
-/// Render a vertical progress bar directly onto canvas
-pub fn render_bar_vertical(
+/// Render a progress bar directly onto canvas with support for all four directions
+pub fn render_bar(
     canvas: &mut RgbaImage,
     x: i64,
     y: i64,
@@ -133,7 +87,7 @@ pub fn render_bar_vertical(
     height: u32,
     color: (u8, u8, u8),
     segments: Option<u32>,
-    bottom_to_top: bool,
+    direction: BarDirection,
 ) {
     // Calculate percentage
     let (min, max) = range;
@@ -142,51 +96,106 @@ pub fn render_bar_vertical(
 
     let color_rgba = Rgba([color.0, color.1, color.2, 255]);
 
-    if let Some(seg_count) = segments {
-        // Segmented bar
-        if seg_count > 0 {
-            let segment_spacing = 2;
-            let total_spacing = (seg_count - 1) * segment_spacing;
-            let segment_height = (height - total_spacing) / seg_count;
+    match direction {
+        BarDirection::LeftToRight | BarDirection::RightToLeft => {
+            // Horizontal bar
+            if let Some(seg_count) = segments {
+                // Segmented bar
+                if seg_count > 0 {
+                    let segment_spacing = 2;
+                    let total_spacing = (seg_count - 1) * segment_spacing;
+                    let segment_width = (width - total_spacing) / seg_count;
 
-            // Calculate remaining space and distribute as padding
-            let used_height = seg_count * segment_height + total_spacing;
-            let remaining = height - used_height;
-            let offset_y = remaining / 2;
+                    // Calculate remaining space and distribute as padding
+                    let used_width = seg_count * segment_width + total_spacing;
+                    let remaining = width - used_width;
+                    let offset_x = remaining / 2;
 
-            let filled_segments = (percent * seg_count as f32).floor() as u32;
+                    let filled_segments = (percent * seg_count as f32).floor() as u32;
 
-            for i in 0..filled_segments {
-                let seg_y = if bottom_to_top {
-                    // Fill from bottom
-                    y + (height - offset_y - ((i + 1) * (segment_height + segment_spacing))) as i64
-                } else {
-                    // Fill from top
-                    y + offset_y as i64 + (i * (segment_height + segment_spacing)) as i64
-                };
+                    for i in 0..filled_segments {
+                        let seg_x = if matches!(direction, BarDirection::LeftToRight) {
+                            // Fill from left
+                            x + offset_x as i64 + (i * (segment_width + segment_spacing)) as i64
+                        } else {
+                            // Fill from right
+                            x + (width - offset_x - ((i + 1) * (segment_width + segment_spacing))) as i64
+                        };
 
-                draw_filled_rect_mut(
-                    canvas,
-                    Rect::at(x as i32, seg_y as i32).of_size(width, segment_height),
-                    color_rgba,
-                );
+                        draw_filled_rect_mut(
+                            canvas,
+                            Rect::at(seg_x as i32, y as i32).of_size(segment_width, height),
+                            color_rgba,
+                        );
+                    }
+                }
+            } else {
+                // Continuous bar
+                let filled_width = (width as f32 * percent) as u32;
+                if filled_width > 0 {
+                    let bar_x = if matches!(direction, BarDirection::LeftToRight) {
+                        x
+                    } else {
+                        x + (width - filled_width) as i64
+                    };
+
+                    draw_filled_rect_mut(
+                        canvas,
+                        Rect::at(bar_x as i32, y as i32).of_size(filled_width, height),
+                        color_rgba,
+                    );
+                }
             }
         }
-    } else {
-        // Continuous bar
-        let filled_height = (height as f32 * percent) as u32;
-        if filled_height > 0 {
-            let bar_y = if bottom_to_top {
-                y + (height - filled_height) as i64
-            } else {
-                y
-            };
+        BarDirection::TopToBottom | BarDirection::BottomToTop => {
+            // Vertical bar
+            if let Some(seg_count) = segments {
+                // Segmented bar
+                if seg_count > 0 {
+                    let segment_spacing = 2;
+                    let total_spacing = (seg_count - 1) * segment_spacing;
+                    let segment_height = (height - total_spacing) / seg_count;
 
-            draw_filled_rect_mut(
-                canvas,
-                Rect::at(x as i32, bar_y as i32).of_size(width, filled_height),
-                color_rgba,
-            );
+                    // Calculate remaining space and distribute as padding
+                    let used_height = seg_count * segment_height + total_spacing;
+                    let remaining = height - used_height;
+                    let offset_y = remaining / 2;
+
+                    let filled_segments = (percent * seg_count as f32).floor() as u32;
+
+                    for i in 0..filled_segments {
+                        let seg_y = if matches!(direction, BarDirection::BottomToTop) {
+                            // Fill from bottom
+                            y + (height - offset_y - ((i + 1) * (segment_height + segment_spacing))) as i64
+                        } else {
+                            // Fill from top
+                            y + offset_y as i64 + (i * (segment_height + segment_spacing)) as i64
+                        };
+
+                        draw_filled_rect_mut(
+                            canvas,
+                            Rect::at(x as i32, seg_y as i32).of_size(width, segment_height),
+                            color_rgba,
+                        );
+                    }
+                }
+            } else {
+                // Continuous bar
+                let filled_height = (height as f32 * percent) as u32;
+                if filled_height > 0 {
+                    let bar_y = if matches!(direction, BarDirection::BottomToTop) {
+                        y + (height - filled_height) as i64
+                    } else {
+                        y
+                    };
+
+                    draw_filled_rect_mut(
+                        canvas,
+                        Rect::at(x as i32, bar_y as i32).of_size(width, filled_height),
+                        color_rgba,
+                    );
+                }
+            }
         }
     }
 }
@@ -232,29 +241,10 @@ pub fn render_gauge(
     }
 }
 
-/// Render a level indicator (segmented bar) directly onto canvas
-pub fn render_level(
-    canvas: &mut RgbaImage,
-    x: i64,
-    y: i64,
-    value: f32,
-    range: (f32, f32),
-    width: u32,
-    height: u32,
-    color: (u8, u8, u8),
-    segments: u32,
-    vertical: bool,
-    reverse: bool,
-) {
-    if vertical {
-        render_bar_vertical(canvas, x, y, value, range, width, height, color, Some(segments), reverse);
-    } else {
-        render_bar_horizontal(canvas, x, y, value, range, width, height, color, Some(segments));
-    }
-}
-
-/// Render multiple vertical bars side-by-side with individual colors directly onto canvas
-pub fn render_multi_bar_vertical_colored(
+/// Render multiple bars with individual colors directly onto canvas
+/// Supports all 4 directions: bars can be arranged horizontally or vertically,
+/// and each bar can fill in any of the 4 directions
+pub fn render_multi_bar(
     canvas: &mut RgbaImage,
     x: i64,
     y: i64,
@@ -265,67 +255,58 @@ pub fn render_multi_bar_vertical_colored(
     colors: &[(u8, u8, u8)],
     bar_spacing: u32,
     segments: Option<u32>,
+    direction: BarDirection,
 ) {
     if values.is_empty() {
         return;
     }
 
     let bar_count = values.len() as u32;
-    let total_spacing = (bar_count - 1) * bar_spacing;
-    let bar_width = (width - total_spacing) / bar_count;
 
-    for (i, &value) in values.iter().enumerate() {
-        let bar_x = x + (i as u32 * (bar_width + bar_spacing)) as i64;
-        let color = colors.get(i).copied().unwrap_or((255, 255, 255));
-        render_bar_vertical(
-            canvas,
-            bar_x,
-            y,
-            value,
-            range,
-            bar_width,
-            height,
-            color,
-            segments,
-            true, // bottom_to_top
-        );
-    }
-}
+    match direction {
+        BarDirection::LeftToRight | BarDirection::RightToLeft => {
+            // Horizontal bars stacked vertically
+            let total_spacing = (bar_count - 1) * bar_spacing;
+            let bar_height = (height - total_spacing) / bar_count;
 
-/// Render multiple horizontal bars stacked vertically with individual colors directly onto canvas
-pub fn render_multi_bar_horizontal_colored(
-    canvas: &mut RgbaImage,
-    x: i64,
-    y: i64,
-    values: &[f32],
-    range: (f32, f32),
-    width: u32,
-    height: u32,
-    colors: &[(u8, u8, u8)],
-    bar_spacing: u32,
-    segments: Option<u32>,
-) {
-    if values.is_empty() {
-        return;
-    }
+            for (i, &value) in values.iter().enumerate() {
+                let bar_y = y + (i as u32 * (bar_height + bar_spacing)) as i64;
+                let color = colors.get(i).copied().unwrap_or((255, 255, 255));
+                render_bar(
+                    canvas,
+                    x,
+                    bar_y,
+                    value,
+                    range,
+                    width,
+                    bar_height,
+                    color,
+                    segments,
+                    direction,
+                );
+            }
+        }
+        BarDirection::TopToBottom | BarDirection::BottomToTop => {
+            // Vertical bars side-by-side
+            let total_spacing = (bar_count - 1) * bar_spacing;
+            let bar_width = (width - total_spacing) / bar_count;
 
-    let bar_count = values.len() as u32;
-    let total_spacing = (bar_count - 1) * bar_spacing;
-    let bar_height = (height - total_spacing) / bar_count;
-
-    for (i, &value) in values.iter().enumerate() {
-        let bar_y = y + (i as u32 * (bar_height + bar_spacing)) as i64;
-        let color = colors.get(i).copied().unwrap_or((255, 255, 255));
-        render_bar_horizontal(
-            canvas,
-            x,
-            bar_y,
-            value,
-            range,
-            width,
-            bar_height,
-            color,
-            segments,
-        );
+            for (i, &value) in values.iter().enumerate() {
+                let bar_x = x + (i as u32 * (bar_width + bar_spacing)) as i64;
+                let color = colors.get(i).copied().unwrap_or((255, 255, 255));
+                render_bar(
+                    canvas,
+                    bar_x,
+                    y,
+                    value,
+                    range,
+                    bar_width,
+                    height,
+                    color,
+                    segments,
+                    direction,
+                );
+            }
+        }
     }
 }
