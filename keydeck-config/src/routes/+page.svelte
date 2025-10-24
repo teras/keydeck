@@ -169,10 +169,9 @@
         // First load - just save snapshot, don't mark as changed
         lastConfigSnapshot = currentSnapshot;
         isInitialLoad = false;
-      } else if (currentSnapshot !== lastConfigSnapshot) {
-        // Actual change detected
-        hasUnsavedChanges = true;
-        lastConfigSnapshot = currentSnapshot;
+      } else {
+        // Check if current state matches the saved state
+        hasUnsavedChanges = currentSnapshot !== lastConfigSnapshot;
       }
     }
   });

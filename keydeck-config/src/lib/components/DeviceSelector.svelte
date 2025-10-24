@@ -136,9 +136,13 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 18px;
+    font-size: 24px;
     line-height: 1;
-    min-width: 38px;
+    min-width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   button:hover {

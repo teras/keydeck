@@ -373,6 +373,23 @@
     const detailed = getDetailedConfig();
     const newConfig = { ...detailed, ...updates };
 
+    // Remove properties that are undefined or empty (to clean up empty fields)
+    Object.keys(newConfig).forEach(key => {
+      const value = newConfig[key];
+      // Remove if undefined
+      if (value === undefined) {
+        delete newConfig[key];
+      }
+      // Remove if empty string (except for actions which can be legitimately empty)
+      else if (key !== 'actions' && value === '') {
+        delete newConfig[key];
+      }
+      // Remove if empty array (actions with no items)
+      else if (Array.isArray(value) && value.length === 0) {
+        delete newConfig[key];
+      }
+    });
+
     if (isTemplate && template) {
       // Update template
       template[buttonKey] = newConfig;
@@ -386,7 +403,7 @@
   }
 
   function updateText(value: string) {
-    updateButton({ text: value });
+    updateButton({ text: value || undefined });
   }
 
   function updateIcon(value: string) {
