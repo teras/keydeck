@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Macro {
     /// Optional default parameter values for the macro.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,7 +85,7 @@ pub struct Pages {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum ServiceConfig {
     /// Simple form: just the command string (uses default interval and timeout)
     Simple(String),
@@ -231,7 +232,7 @@ pub struct Button {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum ButtonConfig {
     /// Reference to a template name to use as the button configuration.
     Template(String),
@@ -545,10 +546,12 @@ impl KeyDeckConf {
             std::process::exit(1);
         });
 
-        let mut conf: KeyDeckConf = serde_yaml_ng::from_str(&data).unwrap_or_else(|e| {
-            eprintln!("Error: Failed to parse config file at {}", path.display());
-            eprintln!("Reason: {}", e);
-            eprintln!("\nPlease check your YAML syntax.");
+        let deserializer = serde_yaml_ng::Deserializer::from_str(&data);
+        let mut conf: KeyDeckConf = serde_path_to_error::deserialize(deserializer).unwrap_or_else(|e| {
+            eprintln!("Error parsing config file: {}", path.display());
+            eprintln!();
+            eprintln!("Path: {}", e.path());
+            eprintln!("{}", e.into_inner());
             std::process::exit(1);
         });
 
