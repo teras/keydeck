@@ -63,24 +63,9 @@
 
   onMount(async () => {
     try {
-      // Try to load existing config
-      config = await invoke("load_config");
-
-      // The config structure uses flattened page_groups, meaning page groups
-      // are at the root level (not under a "page_groups" key)
-      // We need to identify which root-level keys are page groups vs config fields
-      const knownConfigFields = ['image_dir', 'templates', 'buttons', 'colors', 'services', 'macros', 'tick_time'];
-
-      // Extract page_groups by filtering out known config fields
-      const pageGroups: any = {};
-      for (const key in config) {
-        if (!knownConfigFields.includes(key)) {
-          pageGroups[key] = config[key];
-        }
-      }
-
-      // Store page_groups separately for easier access in components
-      config.page_groups = pageGroups;
+      // Try to load existing config from default path
+      const loadedConfig = await invoke("load_config", { path: null });
+      processLoadedConfig(loadedConfig);
 
       // Ensure at least a default page group exists
       if (Object.keys(config.page_groups).length === 0) {
@@ -96,9 +81,6 @@
         // Also add to root level since it's flattened
         config.default = config.page_groups.default;
       }
-
-      // Auto-select the main page on load
-      selectInitialPage();
     } catch (e) {
       console.log("No existing config found, starting fresh", e);
       config = {
@@ -268,6 +250,31 @@
     }
   }
 
+  // Helper function to process loaded config (shared between reload and import)
+  function processLoadedConfig(loadedConfig: any) {
+    // Backend uses #[serde(flatten)] on page_groups, which means when serializing to JSON,
+    // page groups are at the root level. We need to extract them into a separate property
+    // for easier frontend access while keeping the flattened structure for saving.
+    const knownConfigFields = ['image_dir', 'templates', 'buttons', 'colors', 'services', 'macros', 'tick_time'];
+    const pageGroups: any = {};
+
+    for (const key in loadedConfig) {
+      if (!knownConfigFields.includes(key)) {
+        pageGroups[key] = loadedConfig[key];
+      }
+    }
+
+    // Add page_groups as a convenience property for frontend
+    loadedConfig.page_groups = pageGroups;
+
+    config = loadedConfig;
+    hasUnsavedChanges = false;
+    lastConfigSnapshot = JSON.stringify(config);
+
+    // Auto-select initial page after loading
+    selectInitialPage();
+  }
+
   async function reloadConfig() {
     if (hasUnsavedChanges) {
       if (!confirm("You have unsaved changes. Reload and discard them?")) {
@@ -277,26 +284,8 @@
     try {
       isSaving = true;
       error = "";
-      const loadedConfig = await invoke("load_config");
-
-      // Parse page_groups from flattened structure
-      const knownConfigFields = ['image_dir', 'templates', 'buttons', 'colors', 'services', 'macros', 'tick_time'];
-      const pageGroups: any = {};
-      for (const key in loadedConfig) {
-        if (!knownConfigFields.includes(key)) {
-          pageGroups[key] = loadedConfig[key];
-        }
-      }
-
-      // Store page_groups separately
-      loadedConfig.page_groups = pageGroups;
-
-      config = loadedConfig;
-      hasUnsavedChanges = false;
-      lastConfigSnapshot = JSON.stringify(config);
-
-      // Auto-select initial page after reload
-      selectInitialPage();
+      const loadedConfig = await invoke("load_config", { path: null });
+      processLoadedConfig(loadedConfig);
     } catch (e) {
       error = `Failed to reload configuration: ${e}`;
     } finally {
@@ -308,7 +297,10 @@
     try {
       isSaving = true;
       error = "";
-      await invoke("save_config", { config });
+      // Remove the frontend-only page_groups property before sending to backend
+      // The page groups are already at root level, which is what backend expects
+      const { page_groups, ...backendConfig } = config;
+      await invoke("save_config", { config: backendConfig });
       hasUnsavedChanges = false;
       lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
@@ -325,7 +317,9 @@
     try {
       isSaving = true;
       error = "";
-      await invoke("save_config", { config });
+      // Remove the frontend-only page_groups property before sending to backend
+      const { page_groups, ...backendConfig } = config;
+      await invoke("save_config", { config: backendConfig });
       await invoke("reload_keydeck");
       hasUnsavedChanges = false;
       lastConfigSnapshot = JSON.stringify(config);
@@ -350,7 +344,9 @@
       });
 
       if (filePath) {
-        await invoke("export_config", { config, path: filePath });
+        // Remove the frontend-only page_groups property before sending to backend
+        const { page_groups, ...backendConfig } = config;
+        await invoke("export_config", { config: backendConfig, path: filePath });
         alert("Configuration exported successfully!");
       }
     } catch (e) {
@@ -369,8 +365,8 @@
       });
 
       if (filePath) {
-        const importedConfig = await invoke("import_config", { path: filePath });
-        config = importedConfig;
+        const importedConfig = await invoke("load_config", { path: filePath });
+        processLoadedConfig(importedConfig);
         alert("Configuration imported successfully!");
       }
     } catch (e) {

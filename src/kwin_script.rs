@@ -199,15 +199,18 @@ impl KWinScriptClient {
                 var targetTitle = "{}";
                 var clients = workspace.windowList();
                 var found = false;
+                var useOrLogic = targetClass !== "" && targetTitle !== "" && targetClass === targetTitle;
 
                 for (var i = 0; i < clients.length; i++) {{
                     var client = clients[i];
-                    var classMatch = targetClass === "" ||
+                    var classMatch = targetClass === "" ? !useOrLogic :
                                    client.resourceClass.toLowerCase().indexOf(targetClass.toLowerCase()) >= 0;
-                    var titleMatch = targetTitle === "" ||
+                    var titleMatch = targetTitle === "" ? !useOrLogic :
                                    client.caption.toLowerCase().indexOf(targetTitle.toLowerCase()) >= 0;
 
-                    if (classMatch && titleMatch) {{
+                    var matches = useOrLogic ? (classMatch || titleMatch) : (classMatch && titleMatch);
+
+                    if (matches) {{
                         workspace.activeWindow = client;
                         found = true;
                         break;

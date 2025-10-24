@@ -277,9 +277,7 @@ A device can have multiple pages, allowing dynamic switching based on applicatio
 
 - **on_tick**: *(optional)* A list of actions to execute on each tick event (fires at the interval specified by the global `tick_time` setting, default 2 seconds). Useful for periodic updates, status checks, or time-based automations. Inherited from templates if not defined in the page. **Note:** If the page defines its own `on_tick`, it completely overrides (replaces) the inherited `on_tick` - actions are not merged. See [Available Actions for Buttons](#available-actions-for-buttons) for supported action types.
 
-- **window_class**: *(optional)* Specifies a window class that, when matched, automatically activates the page. This is useful for associating a page layout with a particular application.
-
-- **window_title**: *(optional)* A pattern used to match window titles, enabling the page to be displayed only when certain windows are active.
+- **window_name**: *(optional)* Specifies a window name pattern that, when matched, automatically activates the page. Matches against both window class AND window title using case-insensitive substring matching with OR logic. This is useful for associating a page layout with a particular application.
 
 - **lock**: *(optional)* A boolean value that, if `true`, prevents the page from automatically switching when focus changes. This is useful for pages that you want to remain active regardless of window focus changes (e.g., a numpad page). Note: locked pages can still be exited via manual actions like `jump` or `auto_jump`.
 
@@ -667,7 +665,7 @@ The following events are dispatched by the system and can be waited for using `w
     button4: button_from_termpate_2
    butt
   Kitty:
-    window_class: kitty
+    window_name: kitty
 # ...
 
 8B840A19374D:
@@ -679,7 +677,7 @@ The following events are dispatched by the system and can be waited for using `w
     button4:
       icon: firefox.png
       background: background
-    window_class: firefox
+    window_name: firefox
 ```
 
 
@@ -768,7 +766,7 @@ pages:
     button2:  # Override button2 from home_layout
       icon: firefox_custom.png
       background: "0xFF0000"
-    window_class: firefox
+    window_name: firefox
 ```
 
 **Result**: The `Main` page gets buttons 1, 2, 6, 12, 18 and on_tick. The `Firefox` page gets buttons 1, 6, 12, 18, on_tick, and its custom button2.
@@ -815,7 +813,7 @@ templates:
 
 - **Buttons**: Child buttons completely replace parent buttons with the same name
 - **on_tick**: Child's `on_tick` completely replaces parent's `on_tick` (not merged)
-- **Other fields** (window_class, window_title, lock): Not inherited, only defined in pages
+- **Other fields** (window_name, lock): Not inherited, only defined in pages
 
 #### Best Practices
 

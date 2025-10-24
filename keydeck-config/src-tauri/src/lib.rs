@@ -70,10 +70,14 @@ fn get_device_info(device_id: String) -> Result<DeviceInfo, String> {
         .map_err(|e| format!("Failed to parse device info: {}", e))
 }
 
-/// Load keydeck configuration from ~/.config/keydeck.yaml
+/// Load keydeck configuration from a file path (or default ~/.config/keydeck.yaml if path is None)
 #[tauri::command]
-fn load_config() -> Result<KeyDeckConf, String> {
-    let config_path = get_config_path();
+fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
+    let config_path = if let Some(p) = path {
+        PathBuf::from(p)
+    } else {
+        get_config_path()
+    };
 
     if !config_path.exists() {
         return Err(format!("Config file not found at {}", config_path.display()));
@@ -144,16 +148,6 @@ fn export_config(config: KeyDeckConf, path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to write config file: {}", e))?;
 
     Ok(())
-}
-
-/// Import configuration from a specified file path
-#[tauri::command]
-fn import_config(path: String) -> Result<KeyDeckConf, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read config file: {}", e))?;
-
-    serde_yaml_ng::from_str(&content)
-        .map_err(|e| format!("Failed to parse config: {}", e))
 }
 
 /// Get the full path to an image file from the image directory
@@ -283,7 +277,6 @@ pub fn run() {
             save_config,
             reload_keydeck,
             export_config,
-            import_config,
             get_image_path,
             check_directory_exists,
             list_icons,

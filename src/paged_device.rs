@@ -291,9 +291,9 @@ impl PagedDevice {
                     self.focus_changed(&class, &title, true)
                 }
                 Action::Focus { focus } => {
-                    // Simple focus action: just request focus, no verification
-                    set_focus(&focus, &"".to_string())?;
-                    verbose_log!("Requested focus for '{}'", focus);
+                    // Focus action: match against both window class and title
+                    set_focus(&focus, &focus)?;
+                    verbose_log!("Requested focus for '{}' (checking both class and title)", focus);
                 }
                 Action::WaitFor { wait_for_event, timeout } => {
                     let event_type = WaitEventType::from_str(&wait_for_event)?;
@@ -510,14 +510,13 @@ impl PagedDevice {
         // Determine what page the auto-matching logic would select
         let mut target_page: Option<String> = None;
         for (name, page) in &self.pages.pages {
-            if let Some(class_pattern) = &page.window_class {
-                if class.to_lowercase().contains(&class_pattern.to_lowercase()) {
-                    target_page = Some(name.clone());
-                    break;
-                }
-            }
-            if let Some(title_pattern) = &page.window_title {
-                if title.to_lowercase().contains(&title_pattern.to_lowercase()) {
+            if let Some(pattern) = &page.window_name {
+                let pattern_lower = pattern.to_lowercase();
+                let class_lower = class.to_lowercase();
+                let title_lower = title.to_lowercase();
+
+                // Check if pattern matches either window class OR title
+                if class_lower.contains(&pattern_lower) || title_lower.contains(&pattern_lower) {
                     target_page = Some(name.clone());
                     break;
                 }

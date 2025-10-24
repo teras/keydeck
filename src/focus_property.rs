@@ -69,6 +69,14 @@ fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
         )?;
 
         // Perform matching
+        // If both class and title are empty, skip (shouldn't happen due to earlier check)
+        // If title is empty, match by class only
+        // If class is empty, match by title only
+        // If both are provided AND they're the same string, use OR logic (either matches)
+        // If both are provided AND they're different, use AND logic (both must match)
+
+        let use_or_logic = !class.is_empty() && !title.is_empty() && class == title;
+
         let class_match = if !class.is_empty() {
             if let Some((res_name, res_class)) = &wm_class {
                 let class_target_lower = class.to_lowercase();
@@ -78,7 +86,7 @@ fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
                 false
             }
         } else {
-            true
+            !use_or_logic // If class empty and using OR logic, don't automatically match
         };
 
         let title_match = if !title.is_empty() {
@@ -89,11 +97,17 @@ fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
                 false
             }
         } else {
-            true
+            !use_or_logic // If title empty and using OR logic, don't automatically match
         };
 
-        // If both class and title match, activate the window
-        if class_match && title_match {
+        // Use OR logic if both parameters are the same string, AND logic otherwise
+        let matches = if use_or_logic {
+            class_match || title_match
+        } else {
+            class_match && title_match
+        };
+
+        if matches {
             // Construct the ClientMessage data
             let data32 = [
                 2, // Source indication (2 = pager)

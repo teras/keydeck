@@ -15,14 +15,14 @@
   let groupKey = $derived(config.page_groups?.[deviceSerial] ? deviceSerial : 'default');
   let openActionIndex = $state<number>(-1);
 
-  function updateWindowClass(value: string) {
+  function updateWindowName(value: string) {
     if (!page) return;
     if (value.trim()) {
-      page.window_class = value;
-      config[groupKey][pageName].window_class = value;
+      page.window_name = value;
+      config[groupKey][pageName].window_name = value;
     } else {
-      delete page.window_class;
-      delete config[groupKey][pageName].window_class;
+      delete page.window_name;
+      delete config[groupKey][pageName].window_name;
     }
   }
 
@@ -70,17 +70,15 @@
   <h3>Page: {pageName}</h3>
 
   <div class="section">
-    <h4>Page Settings</h4>
-
     <div class="form-group">
-      <label>Window Class / Title</label>
+      <label>Window Name</label>
       <input
         type="text"
-        value={page?.window_class || ""}
-        oninput={(e) => updateWindowClass(e.currentTarget.value)}
-        placeholder="window class or title pattern"
+        value={page?.window_name || ""}
+        oninput={(e) => updateWindowName(e.currentTarget.value)}
+        placeholder="window name pattern"
       />
-      <p class="help">Page will be activated when a window matching this class or title is focused</p>
+      <p class="help">Page will be activated when a window matching this name is focused</p>
     </div>
 
     <div class="form-group">

@@ -256,12 +256,12 @@
 
       {:else if actionType === 'focus'}
         <div class="form-row">
-          <label>Window Class</label>
+          <label>Window Name</label>
           <input
             type="text"
             value={action.focus || ''}
             oninput={(e) => onUpdate({ ...action, focus: e.currentTarget.value })}
-            placeholder="window class name"
+            placeholder="window name (matches class or title)"
             disabled={disabled}
           />
         </div>

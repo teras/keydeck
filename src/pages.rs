@@ -159,13 +159,10 @@ fn default_restore_mode() -> FocusChangeRestorePolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Page {
-    /// Optional window class for associating the page layout with specific applications.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_class: Option<String>,
-
-    /// Optional window title pattern for focusing on specific windows.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_title: Option<String>,
+    /// Optional window name pattern for auto-switching to this page.
+    /// Matches against both window class AND window title (case-insensitive substring match, OR logic).
+    #[serde(skip_serializing_if = "Option::is_none", alias = "window_class")]
+    pub window_name: Option<String>,
 
     /// Locking page. If true the page cannot be automatically changed when focus changes.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -359,9 +356,9 @@ pub enum Action {
     /// Automatically returns to the predefined page, based on the focus change policy.
     AutoJump { auto_jump: () },
 
-    /// Focuses on an application specified by window class.
-    /// Simple string action that attempts to focus the window.
-    /// Returns error if focus operation fails (can be caught with try/else).
+    /// Focuses on an application by matching window class OR title.
+    /// The focus string is checked against both window class and title (case-insensitive substring match).
+    /// Returns error if no matching window is found (can be caught with try/else).
     Focus { focus: String },
 
     /// Sends a keyboard shortcut event. Some examples include "LCtrl+LShift+z" or "F12".
