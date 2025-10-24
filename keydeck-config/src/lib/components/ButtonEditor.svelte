@@ -404,7 +404,49 @@
   }
 
   function updateText(value: string) {
-    updateButton({ text: value || undefined });
+    const detailed = getDetailedConfig();
+    const currentText = detailed?.text;
+
+    // If there's no value and no font_size, clear the text field
+    if (!value && (!currentText || typeof currentText === 'string' || !currentText.font_size)) {
+      updateButton({ text: undefined });
+      return;
+    }
+
+    // If there's a font_size already set, preserve it
+    if (currentText && typeof currentText === 'object' && currentText.font_size) {
+      updateButton({ text: { value, font_size: currentText.font_size } });
+    } else {
+      // Simple string form
+      updateButton({ text: value || undefined });
+    }
+  }
+
+  function updateFontSize(value: string) {
+    const detailed = getDetailedConfig();
+    const currentText = detailed?.text;
+    const textValue = getTextValue();
+
+    // Parse and validate font size
+    const fontSize = value ? parseFloat(value) : undefined;
+
+    // If no font size is specified, use simple string form (if there's text)
+    if (!fontSize || fontSize <= 0 || !isFinite(fontSize)) {
+      if (textValue) {
+        updateButton({ text: textValue });
+      } else {
+        updateButton({ text: undefined });
+      }
+      return;
+    }
+
+    // Use detailed form with font_size
+    updateButton({
+      text: {
+        value: textValue || "",
+        font_size: fontSize
+      }
+    });
   }
 
   function updateIcon(value: string) {
@@ -460,6 +502,13 @@
     if (typeof detailed.text === 'string') return detailed.text;
     if (detailed.text.value) return detailed.text.value;
     return '';
+  }
+
+  function getFontSize(): number | undefined {
+    const detailed = getDetailedConfig();
+    if (!detailed?.text) return undefined;
+    if (typeof detailed.text === 'string') return undefined;
+    return detailed.text.font_size;
   }
 
   async function clearButton() {
@@ -662,6 +711,64 @@
         disabled={isReadOnly}
       />
     </div>
+  </div>
+
+  <div class="form-group">
+    <label>Font Size</label>
+    <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <input
+        type="text"
+        inputmode="decimal"
+        value={getFontSize() ?? ""}
+        oninput={(e) => {
+          const input = e.currentTarget;
+          let value = input.value;
+
+          // Remove any non-numeric characters except the first decimal point
+          let cleaned = '';
+          let hasDecimal = false;
+          for (let i = 0; i < value.length; i++) {
+            const char = value[i];
+            if (char >= '0' && char <= '9') {
+              cleaned += char;
+            } else if (char === '.' && !hasDecimal) {
+              cleaned += char;
+              hasDecimal = true;
+            }
+            // Skip any other characters (including extra dots)
+          }
+
+          // Update input if value changed
+          if (cleaned !== value) {
+            const cursorPos = input.selectionStart || 0;
+            input.value = cleaned;
+            // Try to maintain cursor position
+            const newPos = Math.min(cursorPos, cleaned.length);
+            input.setSelectionRange(newPos, newPos);
+          }
+
+          updateFontSize(cleaned);
+        }}
+        onblur={(e) => {
+          // On blur, revalidate and clean up the value
+          const value = e.currentTarget.value;
+          const fontSize = value ? parseFloat(value) : undefined;
+          if (fontSize && fontSize > 0 && isFinite(fontSize)) {
+            // Valid value - ensure it's displayed correctly
+            e.currentTarget.value = fontSize.toString();
+          } else if (value) {
+            // Invalid value - clear it
+            e.currentTarget.value = "";
+            updateFontSize("");
+          }
+        }}
+        placeholder="Auto (leave empty for automatic)"
+        disabled={isReadOnly}
+      />
+    </div>
+    <p class="help">
+      Font size in points. Leave empty for automatic sizing based on canvas dimensions.
+    </p>
   </div>
 
   <div class="form-group">
