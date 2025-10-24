@@ -1,6 +1,7 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
   import TemplateSelector from './TemplateSelector.svelte';
+  import TriStateCheckbox from './TriStateCheckbox.svelte';
 
   interface Props {
     config: any;
@@ -41,6 +42,17 @@
     if (!page?.inherits) return [];
     if (Array.isArray(page.inherits)) return page.inherits;
     return [page.inherits];
+  }
+
+  function handleLockChange(newValue: boolean | undefined) {
+    if (!page) return;
+    if (newValue === undefined) {
+      delete page.lock;
+      delete config[groupKey][pageName].lock;
+    } else {
+      page.lock = newValue;
+      config[groupKey][pageName].lock = newValue;
+    }
   }
 
   function addOnTickAction() {
@@ -89,6 +101,26 @@
         onUpdate={updateInherits}
       />
       <p class="help">Select one or more templates to inherit</p>
+    </div>
+
+    <div class="form-group">
+      <TriStateCheckbox
+        value={page?.lock}
+        label="Lock Page"
+        onToggle={handleLockChange}
+        inheritLabel="Inherit from template"
+        trueLabel="Locked"
+        falseLabel="Unlocked"
+      />
+      <p class="help">
+        {#if page?.lock === undefined}
+          Will inherit lock state from template (if any)
+        {:else if page?.lock === true}
+          Prevents automatic page switching when window focus changes
+        {:else}
+          Allows automatic page switching when window focus changes
+        {/if}
+      </p>
     </div>
   </div>
 

@@ -311,7 +311,7 @@ When it is based on a template, the name of the button template is used as a par
 - **background**: *(optional)* Background color for the button, in hexadecimal format or referencing a named color.
 - **draw**: *(optional)* Graphics configuration for rendering dynamic visualizations (bars, gauges, levels). Drawn after icon/background, before text. See [Graphics Rendering](#graphics-rendering).
 - **text**: *(optional)* Text to display on the button. Supports dynamic parameters (see [Dynamic Parameters](#dynamic-parameters)).
-- **dynamic**: *(optional)* Boolean flag indicating this button should be automatically refreshed by `refresh:` action (no parameters). When true, the button updates whenever `refresh:` is called (typically in `on_tick` for auto-updating content).
+- **dynamic**: *(optional)* Boolean flag to override automatic dynamic detection. When `true`, the button is always included in `refresh:` actions. When `false`, the button is excluded even if it contains dynamic parameters. When omitted (recommended), automatic detection is used based on the presence of `${provider:arg}` patterns in the button's properties. See [Automatic Dynamic Detection](#automatic-dynamic-detection) for details.
 - **actions**: *(optional)* List of actions to execute when the button is pressed. Actions execute in sequence.
 
 **Rendering Order**: When multiple visual elements are specified, they are layered in this order:
@@ -692,6 +692,7 @@ The structure resembles a page configuration, with each template containing butt
 - `button#`: Each button configuration, similar to page buttons.
 - `inherits`: *(optional)* Templates can inherit from other templates, enabling multi-level inheritance.
 - `on_tick`: *(optional)* Tick actions that will be inherited by pages using this template.
+- `lock`: *(optional)* Boolean value that will be inherited by pages using this template. If true, pages inheriting this template will be locked (preventing automatic page switching on focus changes) unless the page explicitly overrides this value.
 
 #### Example
 
@@ -720,6 +721,7 @@ Template inheritance allows templates to inherit from other templates, and pages
 2. **Parent-first merge order**: Buttons are merged starting from the most distant ancestor down to the child
 3. **Child overrides parent**: Buttons defined in a child override identically-named buttons from parents
 4. **on_tick override**: The `on_tick` field is **not merged** - a child's `on_tick` completely replaces the parent's
+5. **lock override**: The `lock` field is **not merged** - a child's `lock` completely replaces the parent's. If not specified in the child, the parent's value is inherited
 
 #### Inheritance Chain Example
 
@@ -795,6 +797,49 @@ pages:
 
 Parents are applied in order - later parents override earlier ones if there are conflicts.
 
+#### Lock Inheritance Example
+
+The `lock` field can be inherited from templates, useful for creating categories of "locked" pages:
+
+```yaml
+templates:
+  # Base template for utility pages that should stay locked
+  utility_page_base:
+    lock: true
+    button1:
+      icon: back.png
+      actions:
+        - auto_jump:  # Manual "return to context" button
+
+pages:
+  # Numpad inherits lock: true from template
+  Numpad:
+    inherits:
+      - utility_page_base
+    # Gets lock: true automatically, plus back button
+    button2: { text: "1", actions: [text: "1"] }
+    button3: { text: "2", actions: [text: "2"] }
+    # ... more numpad buttons
+
+  # Calculator also inherits lock: true
+  Calculator:
+    inherits:
+      - utility_page_base
+    # Gets lock: true automatically, plus back button
+    button2: { text: "+", actions: [text: "+"] }
+    button3: { text: "-", actions: [text: "-"] }
+    # ... more calculator buttons
+
+  # Normal page that overrides the lock
+  SpecialPage:
+    inherits:
+      - utility_page_base
+    lock: false  # Override: this page can auto-switch
+    # Gets back button but NOT locked
+```
+
+**Result**: Both `Numpad` and `Calculator` pages are locked (won't auto-switch on focus changes), while `SpecialPage` explicitly overrides to unlock itself.
+
 #### Cycle Detection
 
 The system detects circular inheritance and reports an error:
@@ -813,7 +858,8 @@ templates:
 
 - **Buttons**: Child buttons completely replace parent buttons with the same name
 - **on_tick**: Child's `on_tick` completely replaces parent's `on_tick` (not merged)
-- **Other fields** (window_name, lock): Not inherited, only defined in pages
+- **lock**: Child's `lock` completely replaces parent's `lock` (not merged). If child doesn't specify lock, parent's value is inherited
+- **Other fields** (window_name): Page-specific, not inherited from templates
 
 #### Best Practices
 
@@ -1222,16 +1268,88 @@ pages:
         - refresh:  # Manual refresh button
 ```
 
-### Dynamic Button Best Practices
+### Automatic Dynamic Detection
 
-1. **Mark buttons as dynamic**: Use `dynamic: true` for buttons that change content
-2. **Use appropriate intervals**: Set service `interval` based on update frequency needs
+**New in this version**: Buttons are automatically detected as dynamic based on their content. You no longer need to manually add `dynamic: true` in most cases!
+
+#### How It Works
+
+At configuration load time, KeyDeck scans all buttons and automatically detects dynamic parameters:
+
+**Dynamic patterns** (with colon `:`):
+- `${time:FORMAT}` - Time provider
+- `${env:VAR}` - Environment variable
+- `${service:NAME}` - Service provider
+
+**Non-dynamic patterns** (no colon - these are macro parameters):
+- `${param}` - Macro parameter placeholder
+- `${value}` - Macro parameter placeholder
+
+#### What Gets Scanned
+
+The automatic detection analyzes:
+1. **Button text** field (both simple and detailed variants)
+2. **Button draw.value** field (graphics data sources)
+3. **Button actions** (exec, text, key, focus commands)
+4. **Macro calls** - both call-site parameters and macro body content
+5. **Nested actions** (try/else, and, or, not blocks)
+
+#### Examples
+
+**Automatic detection** (no `dynamic:` needed):
+```yaml
+button1:
+  text: "CPU: ${service:cpu}%"  # Automatically dynamic ✓
+
+button2:
+  draw:
+    type: bar_vertical
+    value: ${service:memory}     # Automatically dynamic ✓
+    range: [0, 100]
+
+button3:
+  actions:
+    - exec: "notify-send 'Time' '${time:%H:%M}'"  # Automatically dynamic ✓
+```
+
+**Manual override** (when needed):
+```yaml
+button4:
+  text: "Static Label"
+  dynamic: true   # Force dynamic even without ${...} patterns
+
+button5:
+  text: "Cached: ${service:cpu}%"
+  dynamic: false  # Exclude from auto-refresh despite having ${...}
+```
+
+#### Edge Cases and Limitations
+
+**Unsupported patterns** (will cause undefined behavior):
+- Macro parameter names containing colons: `${key:value}` as a parameter name
+- These are extremely rare and violate naming conventions
+
+**Safe workarounds**:
+- If a macro contains dynamic content, calling that macro makes the button dynamic
+- Nested macros are fully supported with cycle detection
+- Macro parameters can contain dynamic values at call sites
+
+#### Best Practices
+
+1. **Omit `dynamic:` field**: Let automatic detection handle it (works 95% of the time)
+2. **Use `dynamic: true`** only when:
+   - Button needs refresh but has no `${provider:arg}` patterns
+   - You want to force refresh for buttons with computed/complex content
+3. **Use `dynamic: false`** only when:
+   - Button has `${provider:arg}` but should NOT auto-refresh
+   - Content is intentionally static after initial evaluation
+4. **Use appropriate intervals**: Set service `interval` based on update frequency needs
    - Fast updates (1s): CPU, memory, time
    - Moderate (30-60s): Disk, network stats
    - Slow (600s+): Weather, external APIs
-3. **Handle errors gracefully**: Services show "⚠" on failure and automatically retry
-4. **Optimize commands**: Keep service commands fast (<1s) to avoid timeouts
-5. **Share services**: Multiple buttons can reference the same service efficiently
+5. **Handle errors gracefully**: Services show "⚠" on failure and automatically retry
+6. **Optimize commands**: Keep service commands fast (<1s) to avoid timeouts
+7. **Share services**: Multiple buttons can reference the same service efficiently
 
 
 ## Graphics Rendering

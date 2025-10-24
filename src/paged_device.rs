@@ -432,7 +432,9 @@ impl PagedDevice {
 
                             for button_id in 1..=button_count {
                                 if let Some(button) = self.find_button(current_page, button_id) {
-                                    if button.dynamic.unwrap_or(false) {
+                                    // Hybrid: explicit dynamic flag takes precedence, otherwise use computed
+                                    let is_dynamic = button.dynamic.unwrap_or(button.is_dynamic_computed);
+                                    if is_dynamic {
                                         self.invalidate_and_refresh_button(button_id)?;
                                     }
                                 }

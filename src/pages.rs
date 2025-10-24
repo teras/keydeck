@@ -214,8 +214,16 @@ pub struct Button {
 
     /// Whether this button should be refreshed automatically by the `refresh:` action (no parameters).
     /// When true, the button will be included in automatic refresh cycles (e.g., on_tick).
+    /// When None, automatic detection is used (see is_dynamic_computed).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<bool>,
+
+    /// Computed at configuration load time: whether this button contains dynamic parameters.
+    /// Automatically detected by scanning text, draw.value, and actions for ${provider:arg} patterns.
+    /// This field is not serialized (not part of YAML config).
+    /// Used as fallback when `dynamic` is None.
+    #[serde(skip, default)]
+    pub is_dynamic_computed: bool,
 
     /// List of actions that will be executed when the button is pressed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -460,12 +468,12 @@ pub enum Action {
 
 impl KeyDeckConf {
     /// Recursively resolves a template and all its parent templates, with cycle detection.
-    /// Returns merged buttons and on_tick actions in parent-first order (grandparent -> parent -> child).
+    /// Returns merged buttons, on_tick actions, and lock value in parent-first order (grandparent -> parent -> child).
     fn resolve_template_recursive(
         template_name: &str,
         templates: &IndexMap<String, Page>,
         visited: &mut Vec<String>,
-    ) -> Result<(HashMap<String, ButtonConfig>, Option<Vec<Action>>), String> {
+    ) -> Result<(HashMap<String, ButtonConfig>, Option<Vec<Action>>, Option<bool>), String> {
         // Check for circular inheritance
         if visited.contains(&template_name.to_string()) {
             visited.push(template_name.to_string());
@@ -483,11 +491,12 @@ impl KeyDeckConf {
 
         let mut merged_buttons = HashMap::new();
         let mut merged_on_tick: Option<Vec<Action>> = None;
+        let mut merged_lock: Option<bool> = None;
 
         // First, recursively resolve parent templates
         if let Some(parent_templates) = &template.inherits {
             for parent_name in parent_templates {
-                let (parent_buttons, parent_on_tick) = Self::resolve_template_recursive(
+                let (parent_buttons, parent_on_tick, parent_lock) = Self::resolve_template_recursive(
                     parent_name,
                     templates,
                     visited,
@@ -497,6 +506,10 @@ impl KeyDeckConf {
                 // on_tick is overridden by later parents (not merged)
                 if parent_on_tick.is_some() {
                     merged_on_tick = parent_on_tick;
+                }
+                // lock is overridden by later parents (not merged)
+                if parent_lock.is_some() {
+                    merged_lock = parent_lock;
                 }
             }
         }
@@ -509,10 +522,15 @@ impl KeyDeckConf {
             merged_on_tick = template.on_tick.clone();
         }
 
+        // lock is overridden by child (not merged)
+        if template.lock.is_some() {
+            merged_lock = template.lock;
+        }
+
         // Remove from visited (backtrack for DFS)
         visited.pop();
 
-        Ok((merged_buttons, merged_on_tick))
+        Ok((merged_buttons, merged_on_tick, merged_lock))
     }
 
     pub fn new() -> Self {
@@ -542,6 +560,20 @@ impl KeyDeckConf {
             std::process::exit(1);
         }
 
+        // Validate that templates don't have window_name (only valid for pages)
+        if let Some(templates) = &conf.templates {
+            for (template_name, template) in templates {
+                if template.window_name.is_some() {
+                    eprintln!("Error: Template '{}' has 'window_name' field", template_name);
+                    eprintln!("The 'window_name' field is only valid in pages, not templates.");
+                    eprintln!("Templates are never directly displayed, so window matching doesn't apply.");
+                    eprintln!("\nPlease remove the 'window_name' field from template '{}'", template_name);
+                    eprintln!("Config file: {}", path.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+
         // Resolve template inheritance for all pages
         let empty_templates = IndexMap::new();
         for (_, pages) in &mut conf.page_groups {
@@ -553,7 +585,7 @@ impl KeyDeckConf {
                     for template_name in template_names {
                         let mut visited = Vec::new();
                         match Self::resolve_template_recursive(template_name, templates_map, &mut visited) {
-                            Ok((resolved_buttons, resolved_on_tick)) => {
+                            Ok((resolved_buttons, resolved_on_tick, resolved_lock)) => {
                                 // Merge resolved buttons into page (page buttons take priority)
                                 for (button_name, button_config) in resolved_buttons {
                                     page.buttons
@@ -563,6 +595,10 @@ impl KeyDeckConf {
                                 // Merge on_tick (page's on_tick takes priority over template's)
                                 if page.on_tick.is_none() && resolved_on_tick.is_some() {
                                     page.on_tick = resolved_on_tick;
+                                }
+                                // Merge lock (page's lock takes priority over template's)
+                                if page.lock.is_none() && resolved_lock.is_some() {
+                                    page.lock = resolved_lock;
                                 }
                             }
                             Err(e) => {
@@ -575,6 +611,10 @@ impl KeyDeckConf {
                 }
             }
         }
+
+        // Compute dynamic flags for all buttons after template resolution
+        crate::dynamic_detection::compute_all_dynamic_flags(&mut conf);
+
         conf
     }
 }

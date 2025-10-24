@@ -1,6 +1,7 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
   import TemplateSelector from './TemplateSelector.svelte';
+  import TriStateCheckbox from './TriStateCheckbox.svelte';
 
   interface Props {
     config: any;
@@ -27,6 +28,17 @@
     if (!template.inherits) return [];
     if (Array.isArray(template.inherits)) return template.inherits;
     return [template.inherits];
+  }
+
+  function handleLockChange(newValue: boolean | undefined) {
+    if (!config.templates) config.templates = {};
+    if (!config.templates[templateName]) config.templates[templateName] = {};
+
+    if (newValue === undefined) {
+      delete config.templates[templateName].lock;
+    } else {
+      config.templates[templateName].lock = newValue;
+    }
   }
 
   function addOnTickAction() {
@@ -71,6 +83,26 @@
         onUpdate={updateInherits}
       />
       <p class="help">Select one or more templates to inherit from</p>
+    </div>
+
+    <div class="form-group">
+      <TriStateCheckbox
+        value={template?.lock}
+        label="Lock Template"
+        onToggle={handleLockChange}
+        inheritLabel="Inherit from parent template"
+        trueLabel="Locked"
+        falseLabel="Unlocked"
+      />
+      <p class="help">
+        {#if template?.lock === undefined}
+          Will inherit lock state from parent template (if any)
+        {:else if template?.lock === true}
+          Pages inheriting this template will be locked by default
+        {:else}
+          Pages inheriting this template will be unlocked by default
+        {/if}
+      </p>
     </div>
   </div>
 
@@ -162,6 +194,7 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    margin-bottom: 16px;
   }
 
   label {

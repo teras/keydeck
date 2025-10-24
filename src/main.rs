@@ -23,6 +23,7 @@ mod text_renderer;
 mod graphics_renderer;
 mod services;
 mod dynamic_params;
+mod dynamic_detection;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;

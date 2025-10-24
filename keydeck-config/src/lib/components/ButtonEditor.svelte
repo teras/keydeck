@@ -1,6 +1,7 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
   import ColorPicker from './ColorPicker.svelte';
+  import TriStateCheckbox from './TriStateCheckbox.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
@@ -422,6 +423,10 @@
     updateButton({ outline: value || undefined });
   }
 
+  function handleDynamicChange(newValue: boolean | undefined) {
+    updateButton({ dynamic: newValue });
+  }
+
   function addAction() {
     ensureButtonConfig();
     const detailed = getDetailedConfig();
@@ -763,6 +768,27 @@
         />
       </div>
     </div>
+  </div>
+
+  <div class="form-group">
+    <TriStateCheckbox
+      value={getDetailedConfig()?.dynamic}
+      label="Dynamic Button"
+      onToggle={handleDynamicChange}
+      inheritLabel="Auto-detect"
+      trueLabel="Always dynamic"
+      falseLabel="Never dynamic"
+      disabled={isReadOnly}
+    />
+    <p class="help">
+      {#if getDetailedConfig()?.dynamic === undefined}
+        Automatically detected based on button content (${'{provider:arg}'} patterns)
+      {:else if getDetailedConfig()?.dynamic === true}
+        Button will always refresh periodically
+      {:else}
+        Button will never refresh even if dynamic patterns are detected
+      {/if}
+    </p>
   </div>
 
   <div class="form-group">
@@ -1191,6 +1217,13 @@
     font-size: 12px;
     font-style: italic;
     margin: 8px 0;
+  }
+
+  .help {
+    margin: 0;
+    font-size: 11px;
+    color: #666;
+    font-style: italic;
   }
 
   button {

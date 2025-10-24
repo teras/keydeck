@@ -3,6 +3,7 @@
 
 pub mod pages;
 pub mod device_info;
+pub mod dynamic_detection;
 
 // Re-export commonly used types
 pub use pages::{
