@@ -443,7 +443,16 @@
       {:else if actionType === 'try'}
         <div class="nested-actions">
           <div class="nested-section">
-            <label class="nested-label">Try Actions:</label>
+            <div class="nested-header">
+              <label class="nested-label">Try Actions</label>
+              {#if !disabled}
+                <button class="btn-add-nested" onclick={() => {
+                  if (!action.try) action.try = [];
+                  action.try.push({ exec: '' });
+                  onUpdate(action);
+                }}>+</button>
+              {/if}
+            </div>
             <div class="nested-list">
               {#if action.try && action.try.length > 0}
                 {#each action.try as tryAction, i}
@@ -470,17 +479,19 @@
                 <p class="empty-nested">No try actions</p>
               {/if}
             </div>
-            {#if !disabled}
-              <button class="btn-add-nested" onclick={() => {
-                if (!action.try) action.try = [];
-                action.try.push({ exec: '' });
-                onUpdate(action);
-              }}>+ Add Try Action</button>
-            {/if}
           </div>
 
           <div class="nested-section">
-            <label class="nested-label">Else Actions:</label>
+            <div class="nested-header">
+              <label class="nested-label">Else Actions</label>
+              {#if !disabled}
+                <button class="btn-add-nested" onclick={() => {
+                  if (!action.else) action.else = [];
+                  action.else.push({ exec: '' });
+                  onUpdate(action);
+                }}>+</button>
+              {/if}
+            </div>
             <div class="nested-list">
               {#if action.else && action.else.length > 0}
                 {#each action.else as elseAction, i}
@@ -507,20 +518,22 @@
                 <p class="empty-nested">No else actions</p>
               {/if}
             </div>
-            {#if !disabled}
-              <button class="btn-add-nested" onclick={() => {
-                if (!action.else) action.else = [];
-                action.else.push({ exec: '' });
-                onUpdate(action);
-              }}>+ Add Else Action</button>
-            {/if}
           </div>
         </div>
 
       {:else if actionType === 'and'}
         <div class="nested-actions">
           <div class="nested-section">
-            <label class="nested-label">And Actions (all must succeed):</label>
+            <div class="nested-header">
+              <label class="nested-label">And Actions (all must succeed)</label>
+              {#if !disabled}
+                <button class="btn-add-nested" onclick={() => {
+                  if (!action.and) action.and = [];
+                  action.and.push({ exec: '' });
+                  onUpdate(action);
+                }}>+</button>
+              {/if}
+            </div>
             <div class="nested-list">
               {#if action.and && action.and.length > 0}
                 {#each action.and as andAction, i}
@@ -547,20 +560,22 @@
                 <p class="empty-nested">No actions</p>
               {/if}
             </div>
-            {#if !disabled}
-              <button class="btn-add-nested" onclick={() => {
-                if (!action.and) action.and = [];
-                action.and.push({ exec: '' });
-                onUpdate(action);
-              }}>+ Add Action</button>
-            {/if}
           </div>
         </div>
 
       {:else if actionType === 'or'}
         <div class="nested-actions">
           <div class="nested-section">
-            <label class="nested-label">Or Actions (any must succeed):</label>
+            <div class="nested-header">
+              <label class="nested-label">Or Actions (any must succeed)</label>
+              {#if !disabled}
+                <button class="btn-add-nested" onclick={() => {
+                  if (!action.or) action.or = [];
+                  action.or.push({ exec: '' });
+                  onUpdate(action);
+                }}>+</button>
+              {/if}
+            </div>
             <div class="nested-list">
               {#if action.or && action.or.length > 0}
                 {#each action.or as orAction, i}
@@ -587,13 +602,6 @@
                 <p class="empty-nested">No actions</p>
               {/if}
             </div>
-            {#if !disabled}
-              <button class="btn-add-nested" onclick={() => {
-                if (!action.or) action.or = [];
-                action.or.push({ exec: '' });
-                onUpdate(action);
-              }}>+ Add Action</button>
-            {/if}
           </div>
         </div>
 
@@ -848,6 +856,14 @@
     border-left: 2px solid #4ec9b0;
   }
 
+  .nested-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
   .nested-list {
     display: flex;
     flex-direction: column;
@@ -862,7 +878,6 @@
     color: #4ec9b0;
     text-transform: none;
     margin: 0;
-    padding-left: 6px;
   }
 
   .empty-nested {
@@ -873,15 +888,18 @@
   }
 
   .btn-add-nested {
-    padding: 6px 8px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
     background-color: #0e639c;
     color: white;
     border: none;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
-    font-size: 11px;
-    align-self: flex-start;
-    margin-left: 6px;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .btn-add-nested:hover {

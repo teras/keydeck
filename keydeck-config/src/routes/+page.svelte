@@ -750,7 +750,15 @@
 
             <!-- Macro Actions -->
             <div class="form-group">
-              <label>Actions</label>
+              <div class="actions-header">
+                <label>Actions</label>
+                <button class="add-btn" onclick={() => {
+                  if (!config.macros[currentMacro].actions) {
+                    config.macros[currentMacro].actions = [];
+                  }
+                  config.macros[currentMacro].actions.push({ jump: "" });
+                }}>+</button>
+              </div>
               <div class="actions-list">
                 {#if config.macros[currentMacro].actions && config.macros[currentMacro].actions.length > 0}
                   {#each config.macros[currentMacro].actions as action, i (currentMacro + '-' + i)}
@@ -771,12 +779,6 @@
                   <p class="empty">No actions configured</p>
                 {/if}
               </div>
-              <button onclick={() => {
-                if (!config.macros[currentMacro].actions) {
-                  config.macros[currentMacro].actions = [];
-                }
-                config.macros[currentMacro].actions.push({ jump: "" });
-              }}>+ Add Action</button>
             </div>
           {/if}
         </div>
@@ -961,6 +963,31 @@
     gap: 6px;
   }
 
+  .actions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .add-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
+  }
+
   .form-group label {
     font-size: 12px;
     font-weight: 600;
@@ -1015,15 +1042,15 @@
   }
 
   .add-btn {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     background-color: #0e639c;
     color: white;
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 16px;
+    font-size: 15px;
     display: flex;
     align-items: center;
     justify-content: center;

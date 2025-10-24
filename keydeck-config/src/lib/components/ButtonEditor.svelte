@@ -749,7 +749,12 @@
   </div>
 
   <div class="form-group">
-    <label>Actions</label>
+    <div class="actions-header">
+      <label>Actions</label>
+      {#if !isReadOnly}
+        <button class="add-btn" onclick={addAction}>+</button>
+      {/if}
+    </div>
     <div class="actions-list">
       {#if getDetailedConfig()?.actions && getDetailedConfig().actions.length > 0}
         {#each getDetailedConfig().actions as action, i (buttonIndex + '-' + i)}
@@ -771,9 +776,6 @@
         <p class="empty">No actions configured</p>
       {/if}
     </div>
-    {#if !isReadOnly}
-      <button onclick={addAction}>+ Add Action</button>
-    {/if}
   </div>
 
   {#if hasLocalConfig}
@@ -838,6 +840,31 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .actions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .add-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
   }
 
   label {

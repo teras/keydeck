@@ -75,7 +75,10 @@
   </div>
 
   <div class="section">
-    <h4>On Tick Actions</h4>
+    <div class="actions-header">
+      <h4>On Tick Actions</h4>
+      <button class="add-btn" onclick={addOnTickAction}>+</button>
+    </div>
     <p class="help">Actions executed periodically based on global tick_time</p>
     <div class="actions-list">
       {#if template?.on_tick && template.on_tick.length > 0}
@@ -95,7 +98,6 @@
         <p class="empty">No on_tick actions configured</p>
       {/if}
     </div>
-    <button onclick={addOnTickAction}>+ Add On Tick Action</button>
   </div>
 </div>
 
@@ -115,9 +117,35 @@
   }
 
   h4 {
-    margin: 0 0 12px 0;
+    margin: 0;
     font-size: 13px;
     color: #aaa;
+  }
+
+  .actions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .add-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
   }
 
   .section {
