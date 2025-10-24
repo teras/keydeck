@@ -546,24 +546,14 @@
     }
   }
 
-  async function createOverride() {
-    const confirmed = await ask(
-      `Create a local editable copy of this button configuration?\n\nThis will allow you to edit the button independently from the ${buttonDefReference ? 'button definition' : 'template'}.`,
-      {
-        title: 'Create Override',
-        kind: 'info'
-      }
-    );
-
-    if (confirmed) {
-      ensureButtonConfig();
-      // Trigger reactivity
-      if (isTemplate) {
-        config.templates = { ...config.templates };
-      } else {
-        const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
-        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
-      }
+  function createOverride() {
+    ensureButtonConfig();
+    // Trigger reactivity
+    if (isTemplate) {
+      config.templates = { ...config.templates };
+    } else {
+      const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
+      config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
     }
   }
 
