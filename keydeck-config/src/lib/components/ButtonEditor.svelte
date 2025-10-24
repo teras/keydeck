@@ -311,8 +311,9 @@
   let hasLocalConfig = $derived.by(() => {
     if (isTemplate && currentTemplate && config.templates?.[currentTemplate]) {
       return config.templates[currentTemplate].hasOwnProperty(buttonKey);
-    } else if (!isTemplate && pageGroup && currentPage) {
-      return pageGroup[currentPage]?.hasOwnProperty(buttonKey) || false;
+    } else if (!isTemplate && currentPage) {
+      const groupKey = config.page_groups?.[deviceSerial] ? deviceSerial : 'default';
+      return config.page_groups?.[groupKey]?.[currentPage]?.hasOwnProperty(buttonKey) || false;
     }
     return false;
   });
@@ -521,19 +522,26 @@
     );
 
     if (confirmed) {
-      if (isTemplate && template) {
+      if (isTemplate && currentTemplate) {
         // Delete from template
-        delete template[buttonKey];
         delete config.templates[currentTemplate][buttonKey];
-        // Trigger reactivity
-        config.templates = { ...config.templates };
-      } else if (page) {
+        // Trigger reactivity by creating a new object
+        config.templates = {
+          ...config.templates,
+          [currentTemplate]: { ...config.templates[currentTemplate] }
+        };
+      } else if (currentPage) {
         // Delete from page
         const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
-        delete page[buttonKey];
-        delete config[groupKey][currentPage][buttonKey];
-        // Trigger reactivity
-        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
+        delete config.page_groups[groupKey][currentPage][buttonKey];
+        // Trigger reactivity by creating new nested objects
+        config.page_groups = {
+          ...config.page_groups,
+          [groupKey]: {
+            ...config.page_groups[groupKey],
+            [currentPage]: { ...config.page_groups[groupKey][currentPage] }
+          }
+        };
       }
     }
   }
@@ -611,14 +619,21 @@
 
 <div class="button-editor">
   <div class="button-header">
-    <h3>{buttonDisplayName}</h3>
-    {#if buttonDefReference && onNavigateToButtonDef}
-      <button class="reference-link" onclick={() => onNavigateToButtonDef(buttonDefReference, true)}>
-        {buttonDefReference} →
-      </button>
-    {:else if inheritedSource && onNavigateToTemplate}
-      <button class="inherited-link" onclick={() => onNavigateToTemplate(inheritedSource, true)}>
-        {inheritedSource} →
+    <div class="header-left">
+      <h3>{buttonDisplayName}</h3>
+      {#if buttonDefReference && onNavigateToButtonDef}
+        <button class="reference-link" onclick={() => onNavigateToButtonDef(buttonDefReference, true)}>
+          {buttonDefReference} →
+        </button>
+      {:else if inheritedSource && onNavigateToTemplate}
+        <button class="inherited-link" onclick={() => onNavigateToTemplate(inheritedSource, true)}>
+          {inheritedSource} →
+        </button>
+      {/if}
+    </div>
+    {#if hasLocalConfig}
+      <button class="header-clear-button" onclick={clearButton} title="Remove Configuration">
+        ✕
       </button>
     {/if}
   </div>
@@ -927,10 +942,6 @@
       {/if}
     </p>
   </div>
-
-  {#if hasLocalConfig}
-    <button class="clear-button" onclick={clearButton}>🗑️ Remove Configuration</button>
-  {/if}
 </div>
 
 <style>
@@ -946,6 +957,13 @@
     align-items: center;
     padding-bottom: 12px;
     border-bottom: 1px solid #3e3e42;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
   }
 
   h3 {
@@ -1347,16 +1365,23 @@
     background-color: #1177bb;
   }
 
-  .clear-button {
+  .header-clear-button {
+    padding: 4px 8px;
     background-color: #7a2d2d;
     color: white;
-    padding: 8px;
-    font-size: 13px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
     font-weight: 600;
-    margin-top: 8px;
+    transition: background-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
   }
 
-  .clear-button:hover {
+  .header-clear-button:hover {
     background-color: #9a3d3d;
   }
 
