@@ -270,6 +270,7 @@
   }
 
   // Helper function to process loaded config (shared between reload and import)
+  // preserveSelection: true for reload (from default config), false for import (from arbitrary file)
   function processLoadedConfig(loadedConfig: any, preserveSelection: boolean = false) {
     // Save current selection state before reloading
     const savedTemplate = preserveSelection ? currentTemplate : null;
@@ -291,8 +292,17 @@
     loadedConfig.page_groups = pageGroups;
 
     config = loadedConfig;
-    hasUnsavedChanges = false;
-    lastConfigSnapshot = JSON.stringify(config);
+
+    // When reloading from default config file (preserveSelection=true), update the snapshot
+    // When importing (preserveSelection=false), compare against the snapshot to detect changes
+    const newConfigSnapshot = JSON.stringify(config);
+    if (preserveSelection) {
+      hasUnsavedChanges = false;
+      lastConfigSnapshot = newConfigSnapshot;
+    } else {
+      // Importing: check if different from saved config
+      hasUnsavedChanges = newConfigSnapshot !== lastConfigSnapshot;
+    }
 
     // Restore previous selection if requested, otherwise auto-select initial page
     if (preserveSelection) {
@@ -350,7 +360,7 @@
     isSaving = true;
     try {
       const loadedConfig = await invoke("load_config", { path: null });
-      processLoadedConfig(loadedConfig, true); // Preserve current selection
+      processLoadedConfig(loadedConfig, true); // Preserve current selection, reload from default config
       // Only dismiss error after successful reload
       dismissError();
     } catch (e) {
@@ -428,7 +438,7 @@
 
       if (filePath) {
         const importedConfig = await invoke("load_config", { path: filePath });
-        processLoadedConfig(importedConfig);
+        processLoadedConfig(importedConfig, false); // Don't preserve selection, import from arbitrary file
       }
     } catch (e) {
       setError(`Failed to import configuration: ${e}`);

@@ -480,9 +480,8 @@
       // Remove draw config at index
       const newDraw = currentDraw.filter((_: any, i: number) => i !== index);
       if (newDraw.length === 0) {
-        // Remove draw field entirely if empty
-        const { draw, ...rest } = detailed;
-        updateButton(rest);
+        // Remove draw field entirely if empty - pass draw: undefined to signal deletion
+        updateButton({ draw: undefined });
       } else {
         updateButton({ draw: newDraw });
       }
