@@ -36,7 +36,7 @@ pub struct KeyDeckConf {
 
     /// Map of template layouts, where each template can define a reusable page layout.
     #[serde(skip_serializing_if = "Option::is_none")]
-    templates: Option<IndexMap<String, Page>>,
+    pub templates: Option<IndexMap<String, Page>>,
 
     /// Map of predefined button configurations, accessible by name for reusability across pages.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -172,7 +172,7 @@ pub struct Page {
     /// List of templates this page/template inherits from. Buttons are merged in order (parent first, child overrides).
     /// Templates can also inherit from other templates, enabling multi-level inheritance.
     #[serde(skip_serializing_if = "Option::is_none")]
-    inherits: Option<Vec<String>>,
+    pub inherits: Option<Vec<String>>,
 
     /// Actions to execute on each tick event (fires every 1 second).
     /// Useful for periodic updates, status checks, or time-based automations.
@@ -468,7 +468,7 @@ pub enum Action {
 impl KeyDeckConf {
     /// Recursively resolves a template and all its parent templates, with cycle detection.
     /// Returns merged buttons, on_tick actions, and lock value in parent-first order (grandparent -> parent -> child).
-    fn resolve_template_recursive(
+    pub fn resolve_template_recursive(
         template_name: &str,
         templates: &IndexMap<String, Page>,
         visited: &mut Vec<String>,

@@ -24,6 +24,7 @@ mod graphics_renderer;
 mod services;
 mod dynamic_params;
 mod dynamic_detection;
+mod validate;
 
 use crate::device_manager::DeviceManager;
 use crate::server::start_server;
@@ -52,6 +53,8 @@ fn print_help() {
     println!("      --shutdown              Shutdown devices");
     println!("      --list                  List all devices");
     println!("      --info <DEVICE>         Show detailed device information as YAML");
+    println!("      --validate <FILE>       Validate configuration file and test services");
+    println!("      --json                  Output validation results as JSON (use with --validate)");
     println!("      --quiet                 Do not print verbose messages");
     println!("      --verbose               Print verbose messages");
     println!("      --server                Start the server");
@@ -193,6 +196,18 @@ fn main() {
                     error_log!("Error: --info requires a device identifier argument");
                 }
             }
+            "--validate" => {
+                if let Some(config_path) = arg_iter.next() {
+                    // Check if --json flag is present
+                    let json_output = args.iter().any(|a| a == "--json");
+                    let success = crate::validate::validate_config(config_path, json_output);
+                    std::process::exit(if success { 0 } else { 1 });
+                } else {
+                    error_log!("Error: --validate requires a configuration file path argument");
+                    std::process::exit(1);
+                }
+            }
+            "--json" => {}, // Processed in --validate
             "--quiet" | "--verbose" => {}, // Already processed in first pass
             "--server" => should_start_server = true,
             _ => {
