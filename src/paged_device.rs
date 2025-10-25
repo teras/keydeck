@@ -67,13 +67,13 @@ impl PagedDevice {
                device: KeyDeckDevice,
                tx: &Sender<DeviceEvent>,
                time_manager: Arc<TimeManager>,
-               initial_page: Option<String>) -> Self {
+               initial_page: Option<String>,
+               brightness: u8) -> Self {
         let button_count = { device.get_button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&device.serial, tx, &active_events);
         device.reset().unwrap_or_else(|e| { error_log!("Error while resetting device: {}", e) });
         device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
-        device.set_brightness(50).unwrap_or_else(|e| { error_log!("Error while setting brightness: {}", e) });
 
         // Determine which page to display initially
         // Priority: initial_page (if exists) > main_page (if exists) > first page
@@ -131,11 +131,24 @@ impl PagedDevice {
             error_log!("Available pages: {:?}", paged_device.pages.pages.keys().collect::<Vec<_>>());
         }
 
+        // The hardware may not accept brightness commands immediately after reset/reconnect
+        // Try at 100ms first, then again at 1000ms to ensure it gets set
+        paged_device.time_manager.schedule_brightness(
+            paged_device.device.serial.clone(),
+            brightness,
+            Duration::from_millis(100)
+        );
+        paged_device.time_manager.schedule_brightness(
+            paged_device.device.serial.clone(),
+            brightness,
+            Duration::from_millis(1000)
+        );
+
         paged_device
     }
 
-    pub fn keep_alive(&self) {
-        self.device.keep_alive();
+    pub fn get_hardware(&self) -> &KeyDeckDevice {
+        &self.device
     }
 
     /// Returns the name of the currently displayed page, or None if no page is set
@@ -842,13 +855,10 @@ impl PagedDevice {
 
                 // Parse color
                 let base_color = if let Some(ref color_str) = draw_config.color {
-                    match graphics_renderer::parse_hex_color(color_str) {
-                        Ok(rgb) => rgb,
-                        Err(e) => {
-                            error_log!("Error parsing draw color: {}", e);
-                            (255, 255, 255)
-                        }
-                    }
+                    graphics_renderer::parse_hex_color(color_str).unwrap_or_else(|e| {
+                        error_log!("Error parsing draw color: {}", e);
+                        (255, 255, 255)
+                    })
                 } else {
                     (255, 255, 255)
                 };

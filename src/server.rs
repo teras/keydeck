@@ -37,6 +37,7 @@ pub fn start_server() {
     let mut conf_macros = Arc::new(conf.macros.clone());
     let mut conf_services = Arc::new(conf.services.clone());
     let mut conf_image_dir = conf.image_dir.clone();
+    let mut conf_brightness = conf.brightness;
 
     // Initialize with empty focus - listener will send current window immediately
     let (mut current_class, mut current_title) = (String::new(), String::new());
@@ -128,7 +129,7 @@ pub fn start_server() {
                 dispatch_wait_event(message, &devices);
                 // Then handle tick
                 for device in devices.values() {
-                    device.keep_alive();
+                    device.get_hardware().keep_alive();
                     device.handle_tick();
                 }
             }
@@ -153,7 +154,7 @@ pub fn start_server() {
                                 verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
                             }
 
-                            let new_device = PagedDevice::new(pages, conf_image_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone(), initial_page);
+                            let new_device = PagedDevice::new(pages, conf_image_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone(), initial_page, conf_brightness);
                             new_device.focus_changed(&current_class, &current_title, false);
                             info_log!("Adding device {}", sn);
                             devices.insert(sn.clone(), new_device);
@@ -201,6 +202,7 @@ pub fn start_server() {
                 conf_macros = Arc::new(new_conf.macros.clone());
                 conf_services = Arc::new(new_conf.services.clone());
                 conf_image_dir = new_conf.image_dir.clone();
+                conf_brightness = new_conf.brightness;
 
                 // Create new services state and active flag
                 services_state = new_services_state();
@@ -243,6 +245,14 @@ pub fn start_server() {
                 // Dispatch wait event to the specific device waiting for this timer
                 dispatch_wait_event(message, &devices);
                 verbose_log!("Timer completed for device {}", sn);
+            }
+            DeviceEvent::SetBrightness { sn, brightness } => {
+                if let Some(device) = devices.get(&sn) {
+                    verbose_log!("Setting brightness to {} for device {}", brightness, sn);
+                    device.get_hardware().set_brightness(brightness).unwrap_or_else(|e| {
+                        error_log!("Error while setting brightness on device {}: {}", sn, e)
+                    });
+                }
             }
         }
     }

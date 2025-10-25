@@ -61,6 +61,10 @@ pub struct KeyDeckConf {
     #[serde(default = "default_tick_time")]
     pub tick_time: f64,
 
+    /// Global device brightness level (0-100, default: 80).
+    #[serde(default = "default_brightness")]
+    pub brightness: u8,
+
     /// A collection of pages, each group identified by the device serial number. When a
     /// device is connected, the corresponding page group is loaded.
     /// When no specific page group is found, the "default" page group is used.
@@ -138,6 +142,10 @@ fn default_service_timeout() -> f64 {
 
 fn default_tick_time() -> f64 {
     2.0 // 2 seconds
+}
+
+fn default_brightness() -> u8 {
+    80 // 80%
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

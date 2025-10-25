@@ -90,4 +90,13 @@ impl TimeManager {
             event: DeviceEvent::TimerComplete { sn },
         });
     }
+
+    /// Schedule a brightness change to fire after the specified duration
+    pub fn schedule_brightness(&self, sn: String, brightness: u8, duration: Duration) {
+        let mut heap = self.events.lock().unwrap();
+        heap.push(ScheduledEvent {
+            fire_at: Instant::now() + duration,
+            event: DeviceEvent::SetBrightness { sn, brightness },
+        });
+    }
 }

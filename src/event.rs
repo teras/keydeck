@@ -62,6 +62,9 @@ pub enum DeviceEvent {
 
     /// Timer completed for a wait action
     TimerComplete { sn: String },
+
+    /// Set brightness on a device
+    SetBrightness { sn: String, brightness: u8 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

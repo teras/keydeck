@@ -278,7 +278,7 @@
     // Backend uses #[serde(flatten)] on page_groups, which means when serializing to JSON,
     // page groups are at the root level. We need to extract them into a separate property
     // for easier frontend access while keeping the flattened structure for saving.
-    const knownConfigFields = ['image_dir', 'templates', 'buttons', 'colors', 'services', 'macros', 'tick_time'];
+    const knownConfigFields = ['image_dir', 'templates', 'buttons', 'colors', 'services', 'macros', 'tick_time', 'brightness'];
     const pageGroups: any = {};
 
     for (const key in loadedConfig) {

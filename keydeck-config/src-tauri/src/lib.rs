@@ -31,7 +31,6 @@ fn list_devices() -> Result<Vec<DeviceListItem>, String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut devices = Vec::new();
 
-    // Parse output format: "0300:1010 355499441494 Akp153E"
     for line in stdout.lines() {
         if line.starts_with("Total devices:") || line.trim().is_empty() {
             continue;

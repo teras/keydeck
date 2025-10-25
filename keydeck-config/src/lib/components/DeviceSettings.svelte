@@ -39,6 +39,15 @@
 
   let pageGroup = $derived(getDevicePageGroup());
   let availablePages = $derived(getAvailablePages());
+
+  // Initialize brightness with default value if not set
+  if (config.brightness === undefined) {
+    config.brightness = 80;
+  }
+
+  function updateBrightness(value: number) {
+    config.brightness = value;
+  }
 </script>
 
 <div class="device-settings">
@@ -74,6 +83,19 @@
         <option value="main">Main - Return to main page</option>
       </select>
       <p class="help">Page behavior on window focus change</p>
+    </div>
+
+    <div class="form-group">
+      <label>Brightness ({config.brightness}%)</label>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={config.brightness}
+        oninput={(e) => updateBrightness(parseInt(e.currentTarget.value))}
+        class="brightness-slider"
+      />
+      <p class="help">Global brightness level for all devices (0-100%)</p>
     </div>
   </div>
 </div>
@@ -139,5 +161,52 @@
     font-size: 11px;
     color: #666;
     font-style: italic;
+  }
+
+  .brightness-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: linear-gradient(to right, #3c3c3c 0%, #0e639c 100%);
+    border-radius: 4px;
+    outline: none;
+    transition: opacity 0.2s;
+  }
+
+  .brightness-slider:hover {
+    opacity: 0.9;
+  }
+
+  .brightness-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #0e639c;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+  }
+
+  .brightness-slider::-webkit-slider-thumb:hover {
+    background: #1177bb;
+    transform: scale(1.1);
+  }
+
+  .brightness-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: #0e639c;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+  }
+
+  .brightness-slider::-moz-range-thumb:hover {
+    background: #1177bb;
+    transform: scale(1.1);
   }
 </style>
