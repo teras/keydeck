@@ -1,6 +1,7 @@
 <script lang="ts">
   import { convertFileSrc } from '@tauri-apps/api/core';
   import DeviceSelector from './DeviceSelector.svelte';
+  import { processEscapeSequences } from '$lib/utils/escapeChars';
 
   interface DeviceInfo {
     device_id: string;
@@ -229,6 +230,11 @@
       } else if (buttonConfig.text.value) {
         text = buttonConfig.text.value;
       }
+    }
+
+    // Process escape sequences
+    if (text) {
+      text = processEscapeSequences(text);
     }
 
     // Replace ${...} dynamic variables with ⏱ for preview

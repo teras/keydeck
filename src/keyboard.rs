@@ -196,9 +196,10 @@ pub fn send_key_combination(combination: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Processes escape sequences in a string and returns the actual character to send.
-/// Supported escape sequences: \n (Enter), \t (Tab), \r (Enter), \\ (backslash), \e (Escape)
-fn process_escape_sequences(text: &str) -> Vec<char> {
+/// Processes escape sequences in a string and returns the actual characters.
+/// Supported escape sequences: \n (newline/Enter), \t (Tab), \r (carriage return), \\ (backslash), \e (Escape)
+/// This is used both for keyboard input and for text display rendering.
+pub fn process_escape_sequences(text: &str) -> Vec<char> {
     let mut result = Vec::new();
     let mut chars = text.chars().peekable();
 

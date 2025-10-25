@@ -1,5 +1,6 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
+  import { processEscapeSequences } from '$lib/utils/escapeChars';
 
   interface Props {
     action: any;
@@ -136,7 +137,9 @@
       case 'key':
         return `Send Key: ${action.key || '(empty)'}`;
       case 'text':
-        return `Send Text: ${action.text || '(empty)'}`;
+        const textValue = action.text || '(empty)';
+        const processedText = textValue !== '(empty)' ? processEscapeSequences(textValue) : textValue;
+        return `Send Text: ${processedText}`;
       case 'wait':
         return `Wait ${action.wait || 0}s`;
       case 'try':

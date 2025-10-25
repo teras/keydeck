@@ -3,7 +3,7 @@ use crate::listener_time::TimeManager;
 use crate::device_manager::{find_path, KeyDeckDevice};
 use crate::event::{DeviceEvent, WaitEventType};
 use crate::focus_property::set_focus;
-use crate::keyboard::{send_key_combination, send_string};
+use crate::keyboard::{process_escape_sequences, send_key_combination, send_string};
 use crate::pages::{Action, Button, ButtonConfig, DrawConfig, FocusChangeRestorePolicy, GraphicType, Direction, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig};
 use crate::text_renderer;
 use crate::graphics_renderer;
@@ -696,6 +696,11 @@ impl PagedDevice {
                 let full_pattern = format!("${{{}}}", pattern);
                 text_str = text_str.replace(&full_pattern, &value);
             }
+        }
+
+        // Process escape sequences (\n, \t, \r, \\, \e) for display
+        if !text_str.is_empty() {
+            text_str = process_escape_sequences(&text_str).into_iter().collect();
         }
 
         // Find the icon path if provided
