@@ -31,23 +31,75 @@ fn listener_focus_x11(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>) {
     let active = active.clone();
     let tx = tx.clone();
     thread::spawn(move || {
-        let mut listener = match X11FocusListener::new() {
-            Ok(l) => l,
-            Err(e) => {
-                error_log!("Error while creating X11 focus listener: {}", e);
-                return;
-            }
-        };
-        verbose_log!("Starting X11 focus listener");
+        verbose_log!("Starting X11 focus listener with auto-restart");
+
+        let mut restart_count = 0;
+        const MAX_RESTARTS: u32 = 10;
+        const RESTART_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
+        let mut last_restart = std::time::Instant::now();
+
+        // Main restart loop
         while active.load(std::sync::atomic::Ordering::Relaxed) {
-            if let Ok((class, title)) = listener.get_next_focus_change() {
-                send(&tx, DeviceEvent::FocusChanges { class, title });
-            } else {
-                error_log!("Error while getting next focus change");
-                return;
+            let mut listener = match X11FocusListener::new() {
+                Ok(l) => l,
+                Err(e) => {
+                    error_log!("Error while creating X11 focus listener: {}", e);
+                    error_log!("Will retry in 30 seconds...");
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    continue;
+                }
+            };
+
+            verbose_log!("X11 focus listener started (restart count: {})", restart_count);
+            let mut should_restart = false;
+
+            // Event loop
+            while active.load(std::sync::atomic::Ordering::Relaxed) {
+                match listener.get_next_focus_change() {
+                    Ok((class, title)) => {
+                        send(&tx, DeviceEvent::FocusChanges { class, title });
+                    }
+                    Err(e) => {
+                        error_log!("Error while getting next focus change: {}", e);
+                        should_restart = true;
+                        break;
+                    }
+                }
             }
+
+            // Check if we should restart or exit
+            if !active.load(std::sync::atomic::Ordering::Relaxed) {
+                verbose_log!("X11 focus listener stopped (shutdown requested)");
+                break;
+            }
+
+            if should_restart {
+                // Implement restart backoff to avoid tight restart loop
+                let time_since_last_restart = last_restart.elapsed();
+                if time_since_last_restart < RESTART_COOLDOWN {
+                    restart_count += 1;
+                    if restart_count >= MAX_RESTARTS {
+                        error_log!("X11 focus listener failed too many times ({} restarts in {}s), giving up",
+                                 restart_count, time_since_last_restart.as_secs());
+                        break;
+                    }
+                    verbose_log!("Waiting {} seconds before restart attempt {}...",
+                               RESTART_COOLDOWN.as_secs(), restart_count + 1);
+                    std::thread::sleep(RESTART_COOLDOWN);
+                } else {
+                    // Reset restart count if enough time has passed
+                    restart_count = 0;
+                }
+                last_restart = std::time::Instant::now();
+
+                verbose_log!("Restarting X11 focus listener...");
+                continue;
+            }
+
+            break;
         }
-        verbose_log!("Exiting X11 focus listener");
+
+        verbose_log!("X11 focus listener thread exiting");
     });
 }
 

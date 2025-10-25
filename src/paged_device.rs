@@ -569,7 +569,7 @@ impl PagedDevice {
             }
         }
 
-        // Target has changed (or force_change=true), update tracking and proceed with page change
+        // Target has changed (or force_change=true), update tracking
         verbose_log!("Focus event: target page changed to {:?} (force_change={})", target_page, force_change);
         self.last_auto_target_page.replace(target_page.clone());
 
