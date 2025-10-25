@@ -1,87 +1,187 @@
-use ab_glyph::{FontArc, PxScale, Font, ScaleFont};
-use font_kit::family_name::FamilyName;
-use font_kit::properties::Properties;
-use font_kit::source::SystemSource;
+use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap};
 use image::{Rgba, RgbaImage};
-use imageproc::drawing::draw_text_mut;
+use std::sync::OnceLock;
 
 /// Padding around text when auto-sizing (percentage of image dimension)
 const AUTO_SIZE_PADDING: f32 = 0.1;
 
-/// Calculate line width for a given text and font
-fn calculate_line_width(font: &FontArc, line: &str, scale: PxScale) -> f32 {
-    let scaled_font = font.as_scaled(scale);
-    let mut width = 0.0;
-    for c in line.chars() {
-        let glyph_id = font.glyph_id(c);
-        width += scaled_font.h_advance(glyph_id);
-    }
-    width
+/// Line spacing as multiple of font size (baseline-to-baseline)
+const LINE_SPACING_FACTOR: f32 = 1.3;
+
+/// Default maximum font size when no user preference is specified
+const DEFAULT_FONT_SIZE: f32 = 28.0;
+
+/// Cache for the detected emoji font name
+static EMOJI_FONT_NAME: OnceLock<String> = OnceLock::new();
+
+/// Get platform-specific color emoji font names in order of preference
+fn get_emoji_font_candidates() -> &'static [&'static str] {
+    #[cfg(target_os = "windows")]
+    return &["Segoe UI Emoji", "Noto Color Emoji"];
+
+    #[cfg(target_os = "macos")]
+    return &["Apple Color Emoji", "Noto Color Emoji"];
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    return &[
+        "Noto Color Emoji",
+        "Twitter Color Emoji",
+        "Twemoji",
+        "JoyPixels",
+        "OpenMoji",
+        "Blobmoji",
+        "Symbola",
+    ];
 }
 
-/// Calculate optimal font size to fit multi-line text within given dimensions
-/// Uses binary search to find the largest font size that fits
+/// Find the first available emoji font from the candidates list
+fn find_available_emoji_font(font_system: &FontSystem) -> Option<String> {
+    let db = font_system.db();
+    let candidates = get_emoji_font_candidates();
+
+    for candidate in candidates {
+        for face in db.faces() {
+            for family in &face.families {
+                if family.0.eq_ignore_ascii_case(candidate) {
+                    return Some(candidate.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Get the emoji font name (cached after first lookup)
+fn get_emoji_font_name(font_system: &FontSystem) -> &'static str {
+    EMOJI_FONT_NAME.get_or_init(|| {
+        find_available_emoji_font(font_system)
+            .unwrap_or_else(|| get_emoji_font_candidates()[0].to_string())
+    })
+}
+
+/// Check if a character is an emoji
+fn is_emoji(c: char) -> bool {
+    matches!(c as u32,
+        0x1F300..=0x1F9FF | // Misc Symbols and Pictographs, Emoticons, etc.
+        0x2600..=0x26FF |   // Misc symbols
+        0x2700..=0x27BF |   // Dingbats
+        0xFE00..=0xFE0F |   // Variation Selectors
+        0x1F1E6..=0x1F1FF   // Regional Indicator Symbols (flags)
+    )
+}
+
+/// Build rich text spans with proper font family for emoji
+fn build_rich_text_spans<'a>(text: &'a str, font_system: &FontSystem) -> Vec<(&'a str, Attrs<'a>)> {
+    let mut spans = Vec::new();
+    let emoji_font = get_emoji_font_name(font_system);
+
+    let mut current_start = 0;
+    let mut in_emoji = false;
+    let mut emoji_start = 0;
+
+    for (i, c) in text.char_indices() {
+        let is_emoji_char = is_emoji(c);
+
+        if is_emoji_char && !in_emoji {
+            if i > current_start {
+                spans.push((&text[current_start..i], Attrs::new()));
+            }
+            in_emoji = true;
+            emoji_start = i;
+        } else if !is_emoji_char && in_emoji {
+            spans.push((&text[emoji_start..i], Attrs::new().family(Family::Name(emoji_font))));
+            in_emoji = false;
+            current_start = i;
+        }
+    }
+
+    // Handle final section
+    let text_len = text.len();
+    if in_emoji {
+        spans.push((&text[emoji_start..text_len], Attrs::new().family(Family::Name(emoji_font))));
+    } else if current_start < text_len {
+        spans.push((&text[current_start..text_len], Attrs::new()));
+    }
+
+    if spans.is_empty() {
+        spans.push((text, Attrs::new()));
+    }
+
+    spans
+}
+
+/// Calculate optimal font size using binary search
+/// Works for both single-line and multi-line text
 fn calculate_optimal_font_size(
-    font: &FontArc,
-    text: &str,
+    font_system: &mut FontSystem,
+    lines: &[&str],
     width: u32,
     height: u32,
+    preferred_size: f32,
 ) -> f32 {
     let target_width = width as f32 * (1.0 - AUTO_SIZE_PADDING);
     let target_height = height as f32 * (1.0 - AUTO_SIZE_PADDING);
 
-    let lines: Vec<&str> = text.split('\n').collect();
-    let line_count = lines.len();
+    // Find the longest line (measured at an arbitrary test size)
+    let test_size = 16.0;
+    let test_metrics = Metrics::new(test_size, test_size * LINE_SPACING_FACTOR);
 
-    let mut min_size = 6.0;
-    let mut max_size = 32.0;
-    let mut best_size = min_size;
+    let mut longest_line = lines[0];
+    let mut max_width = 0.0f32;
 
-    // Binary search for optimal font size, starting at 32
-    let mut test_size = 32.0;
+    for line in lines.iter() {
+        let mut buffer = Buffer::new(font_system, test_metrics);
+        buffer.set_wrap(font_system, Wrap::None);
+        buffer.set_size(font_system, Some(width as f32), None);
 
-    // First, check if 12 fits
-    let scale = PxScale::from(test_size);
-    let scaled_font = font.as_scaled(scale);
+        let spans = build_rich_text_spans(line, font_system);
+        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, None);
+        buffer.shape_until_scroll(font_system, false);
 
-    // Find the widest line
-    let max_line_width = lines.iter()
-        .map(|line| calculate_line_width(font, line, scale))
-        .fold(0.0f32, f32::max);
-
-    let ascent = scaled_font.ascent();
-    let descent = scaled_font.descent();
-    let line_height = ascent - descent;
-    let total_text_height = line_height * line_count as f32;
-
-    if max_line_width <= target_width && total_text_height <= target_height {
-        // 32 fits, use it
-        best_size = test_size;
-        min_size = test_size;
-    } else {
-        // 32 doesn't fit, search downward (6-32)
-        max_size = test_size;
+        for run in buffer.layout_runs() {
+            if run.line_w > max_width {
+                max_width = run.line_w;
+                longest_line = line;
+            }
+        }
     }
 
-    // Continue binary search
+    // Binary search for optimal font size using only the longest line
+    // Start from user's preferred size (or default if none)
+    let mut min_size = 6.0;
+    let mut max_size = preferred_size;
+    let mut best_size = min_size;
+
     while max_size - min_size > 0.5 {
-        test_size = (min_size + max_size) / 2.0;
-        let scale = PxScale::from(test_size);
-        let scaled_font = font.as_scaled(scale);
+        let test_size = (min_size + max_size) / 2.0;
+        let line_height = test_size * LINE_SPACING_FACTOR;
+        let total_height_needed = lines.len() as f32 * line_height;
 
-        // Find the widest line
-        let max_line_width = lines.iter()
-            .map(|line| calculate_line_width(font, line, scale))
-            .fold(0.0f32, f32::max);
+        // Check if total height fits
+        if total_height_needed > target_height {
+            max_size = test_size;
+            continue;
+        }
 
-        // Calculate total text height
-        let ascent = scaled_font.ascent();
-        let descent = scaled_font.descent();
-        let line_height = ascent - descent;
-        let total_text_height = line_height * line_count as f32;
+        // Check if the longest line fits horizontally
+        let metrics = Metrics::new(test_size, line_height);
+        let mut buffer = Buffer::new(font_system, metrics);
+        buffer.set_wrap(font_system, Wrap::None);
+        buffer.set_size(font_system, Some(target_width), None);
 
-        // Check if text fits
-        if max_line_width <= target_width && total_text_height <= target_height {
+        let spans = build_rich_text_spans(longest_line, font_system);
+        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, None);
+        buffer.shape_until_scroll(font_system, false);
+
+        let mut line_width = 0.0f32;
+        for run in buffer.layout_runs() {
+            if run.line_w > line_width {
+                line_width = run.line_w;
+            }
+        }
+
+        if line_width <= target_width {
             best_size = test_size;
             min_size = test_size;
         } else {
@@ -92,41 +192,7 @@ fn calculate_optimal_font_size(
     best_size
 }
 
-/// Find and load a system font using fontconfig
-/// Tries to find DejaVu Sans, then Liberation Sans, then falls back to SansSerif
-fn load_system_font() -> Result<FontArc, String> {
-    let source = SystemSource::new();
-
-    // Try font families in order of preference
-    let font_families = vec![
-        FamilyName::Title("DejaVu Sans".to_string()),
-        FamilyName::Title("Liberation Sans".to_string()),
-        FamilyName::SansSerif,
-    ];
-
-    for family in font_families {
-        if let Ok(handle) = source.select_best_match(&[family], &Properties::new()) {
-            if let Ok(font_data) = handle.load() {
-                if let Some(font_vec) = font_data.copy_font_data() {
-                    if let Ok(font) = FontArc::try_from_vec(font_vec.to_vec()) {
-                        return Ok(font);
-                    }
-                }
-            }
-        }
-    }
-
-    Err("No suitable system font found. Please install DejaVu Sans or Liberation Sans fonts.".to_string())
-}
-
-/// Render text directly onto a canvas (in-place modification)
-///
-/// # Arguments
-/// * `canvas` - Mutable reference to the canvas to draw on
-/// * `text` - The text to render
-/// * `font_size` - Optional font size (defaults to auto-sizing based on canvas dimensions)
-/// * `text_color` - Text color as Rgba (defaults to white with full opacity)
-/// * `outline_color` - Optional outline color as RGB array (draws 1px outline around text)
+/// Render text directly onto a canvas
 pub fn render_text_on_canvas(
     canvas: &mut RgbaImage,
     text: &str,
@@ -134,88 +200,180 @@ pub fn render_text_on_canvas(
     text_color: Option<Rgba<u8>>,
     outline_color: Option<[u8; 3]>,
 ) {
-    // Load system font using fontconfig
-    let font = match load_system_font() {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("Failed to load system font: {}", e);
-            return;
-        }
-    };
-
     let width = canvas.width();
     let height = canvas.height();
-
-    // Determine font size: use provided value, or auto-calculate
-    let font_size = match font_size {
-        Some(size) => size,
-        None => calculate_optimal_font_size(&font, text, width, height),
-    };
-
-    // Calculate scale for the font
-    let scale = PxScale::from(font_size);
-
-    // Text color (default to white with full opacity)
-    let text_color = text_color.unwrap_or(Rgba([255u8, 255u8, 255u8, 255u8]));
-
-    let scaled_font = font.as_scaled(scale);
+    let mut font_system = FontSystem::new();
 
     // Split text into lines
     let lines: Vec<&str> = text.split('\n').collect();
 
-    // Calculate line height and total text block height
-    let ascent = scaled_font.ascent();
-    let descent = scaled_font.descent();
-    let line_height = ascent - descent;
-    let total_text_height = line_height * lines.len() as f32;
+    // Determine final font size - always run auto-scaling
+    // Use user's font size as preferred (or default if not specified)
+    let preferred_size = font_size.unwrap_or(DEFAULT_FONT_SIZE);
+    let final_font_size = calculate_optimal_font_size(&mut font_system, &lines, width, height, preferred_size);
 
-    // Start y position (vertically center the entire text block)
-    let base_y = ((height as f32 - total_text_height) / 2.0) as i32;
+    // Calculate line height and total block height
+    let line_height = final_font_size * LINE_SPACING_FACTOR;
+    let total_block_height = lines.len() as f32 * line_height;
 
-    // Draw outline if specified (draw text in 4 directions: up, down, left, right)
+    // Center the block vertically
+    let mut y_offset = ((height as f32 - total_block_height) / 2.0).max(0.0);
+
+    // Render each line
+    for line in lines.iter() {
+        let line_canvas_height = (line_height.ceil() as u32).min(height);
+        let mut line_canvas = RgbaImage::new(width, line_canvas_height);
+
+        // Render the line onto its own canvas
+        render_line_on_canvas(
+            &mut line_canvas,
+            line,
+            final_font_size,
+            text_color,
+            outline_color,
+        );
+
+        // Composite onto main canvas
+        let dst_y_start = y_offset as u32;
+        for y in 0..line_canvas_height {
+            let dst_y = dst_y_start + y;
+            if dst_y >= height {
+                break;
+            }
+
+            for x in 0..width {
+                let src = line_canvas.get_pixel(x, y);
+                let dst = canvas.get_pixel_mut(x, dst_y);
+
+                // Alpha blend
+                let alpha = src[3] as f32 / 255.0;
+                let inv_alpha = 1.0 - alpha;
+                dst[0] = ((src[0] as f32 * alpha + dst[0] as f32 * inv_alpha) as u8).min(255);
+                dst[1] = ((src[1] as f32 * alpha + dst[1] as f32 * inv_alpha) as u8).min(255);
+                dst[2] = ((src[2] as f32 * alpha + dst[2] as f32 * inv_alpha) as u8).min(255);
+                dst[3] = ((src[3] as f32 + dst[3] as f32 * inv_alpha) as u8).min(255);
+            }
+        }
+
+        y_offset += line_height;
+    }
+}
+
+/// Render a single line of text onto a canvas
+fn render_line_on_canvas(
+    canvas: &mut RgbaImage,
+    text: &str,
+    font_size: f32,
+    text_color: Option<Rgba<u8>>,
+    outline_color: Option<[u8; 3]>,
+) {
+    let width = canvas.width();
+    let height = canvas.height();
+    let mut font_system = FontSystem::new();
+
+    // Create metrics and buffer
+    let line_height = font_size * LINE_SPACING_FACTOR;
+    let metrics = Metrics::new(font_size, line_height);
+    let mut buffer = Buffer::new(&mut font_system, metrics);
+
+    buffer.set_wrap(&mut font_system, Wrap::None);
+    buffer.set_size(&mut font_system, Some(width as f32), Some(height as f32));
+
+    // Set text with emoji-aware rich text
+    let spans = build_rich_text_spans(text, &font_system);
+    buffer.set_rich_text(&mut font_system, spans, &Attrs::new(), Shaping::Advanced, None);
+    buffer.shape_until_scroll(&mut font_system, false);
+
+    // Calculate vertical centering
+    let layout_runs: Vec<_> = buffer.layout_runs().collect();
+    let total_height = if let Some(last_run) = layout_runs.last() {
+        last_run.line_top + last_run.line_height
+    } else {
+        0.0
+    };
+
+    let y_offset = ((height as f32 - total_height) / 2.0).max(0.0);
+
+    // Text color (default to white)
+    let text_color = text_color.unwrap_or(Rgba([255u8, 255u8, 255u8, 255u8]));
+    let cosmic_color = Color::rgba(text_color[0], text_color[1], text_color[2], text_color[3]);
+
+    let mut swash_cache = SwashCache::new();
+
+    // Draw outline if specified
     if let Some(outline_rgb) = outline_color {
-        let outline_rgba = Rgba([outline_rgb[0], outline_rgb[1], outline_rgb[2], 255]);
-
-        // Outline offsets: up, down, left, right
-        let offsets = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+        let outline_color = Color::rgba(outline_rgb[0], outline_rgb[1], outline_rgb[2], 255);
+        let offsets = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
 
         for &(dx, dy) in &offsets {
-            let mut y = base_y + dy;
+            let layout_runs_for_outline: Vec<_> = buffer.layout_runs().collect();
 
-            for line in &lines {
-                let line_width = calculate_line_width(&font, line, scale);
-                let x = ((width as f32 - line_width) / 2.0).max(0.0) as i32 + dx;
+            buffer.draw(&mut font_system, &mut swash_cache, outline_color, |x, y, w, h, color| {
+                let mut x_offset = 0.0;
+                let y_f32 = y as f32;
+                for run in &layout_runs_for_outline {
+                    if y_f32 >= run.line_top && y_f32 < run.line_top + run.line_height {
+                        x_offset = ((width as f32 - run.line_w) / 2.0).max(0.0);
+                        break;
+                    }
+                }
 
-                draw_text_mut(canvas, outline_rgba, x, y, scale, &font, line);
-                y += line_height as i32;
-            }
+                let final_x = (x as f32 + x_offset + dx) as i32;
+                let final_y = (y as f32 + y_offset + dy) as i32;
+
+                if final_x >= 0 && final_y >= 0 {
+                    draw_glyph(canvas, final_x, final_y, w, h, color);
+                }
+            });
         }
     }
 
-    // Draw main text on top
-    let mut y = base_y;
-    for line in lines {
-        // Calculate line width
-        let line_width = calculate_line_width(&font, line, scale);
+    // Draw main text
+    let layout_runs_for_drawing: Vec<_> = buffer.layout_runs().collect();
 
-        // Center horizontally
-        let x = ((width as f32 - line_width) / 2.0).max(0.0) as i32;
+    buffer.draw(&mut font_system, &mut swash_cache, cosmic_color, |x, y, w, h, color| {
+        let mut x_offset = 0.0;
+        let y_f32 = y as f32;
+        for run in &layout_runs_for_drawing {
+            if y_f32 >= run.line_top && y_f32 < run.line_top + run.line_height {
+                x_offset = ((width as f32 - run.line_w) / 2.0).max(0.0);
+                break;
+            }
+        }
 
-        // Draw the line
-        draw_text_mut(canvas, text_color, x, y, scale, &font, line);
+        let final_x = (x as f32 + x_offset) as i32;
+        let final_y = (y as f32 + y_offset) as i32;
 
-        // Move to next line
-        y += line_height as i32;
-    }
+        if final_x >= 0 && final_y >= 0 {
+            draw_glyph(canvas, final_x, final_y, w, h, color);
+        }
+    });
+}
 
-    // Fix alpha channel: imageproc's draw_text_mut blends with background,
-    // so on transparent backgrounds it produces low-alpha pixels.
-    // We need to boost the alpha channel to make text visible when overlaid.
-    for pixel in canvas.pixels_mut() {
-        if pixel[3] > 0 {
-            // If there's any alpha, set it to full opacity
-            // The RGB values are already correctly anti-aliased
-            pixel[3] = 255;
+/// Helper function to draw a single glyph onto the canvas
+fn draw_glyph(canvas: &mut RgbaImage, x: i32, y: i32, w: u32, h: u32, color: Color) {
+    let canvas_width = canvas.width() as i32;
+    let canvas_height = canvas.height() as i32;
+
+    for row in 0..h {
+        for col in 0..w {
+            let px = x + col as i32;
+            let py = y + row as i32;
+
+            if px < 0 || py < 0 || px >= canvas_width || py >= canvas_height {
+                continue;
+            }
+
+            let pixel = canvas.get_pixel_mut(px as u32, py as u32);
+
+            // Alpha compositing
+            let alpha = color.a() as f32 / 255.0;
+            let inv_alpha = 1.0 - alpha;
+
+            pixel[0] = ((color.r() as f32 * alpha + pixel[0] as f32 * inv_alpha) as u8).min(255);
+            pixel[1] = ((color.g() as f32 * alpha + pixel[1] as f32 * inv_alpha) as u8).min(255);
+            pixel[2] = ((color.b() as f32 * alpha + pixel[2] as f32 * inv_alpha) as u8).min(255);
+            pixel[3] = ((color.a() as f32 + pixel[3] as f32 * inv_alpha) as u8).min(255);
         }
     }
 }
