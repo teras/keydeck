@@ -670,7 +670,7 @@ impl PagedDevice {
         Ok(())
     }
 
-    fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, draw: Option<DrawConfig>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
+    fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, draw: Option<Vec<DrawConfig>>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
         // Get the button size from the device's image format
         let (width, height) = {
             let (w, h) = self.device.get_deck().kind().key_image_format().size;
@@ -772,94 +772,97 @@ impl PagedDevice {
             }
         }
 
-        // Step 3: Render graphics directly on the canvas
-        if let Some(ref draw_config) = draw {
-            verbose_log!("Rendering graphic: type={:?}, value={}", draw_config.graphic_type, draw_config.value);
+        // Step 3: Render graphics array directly on the canvas
+        // Graphics are drawn in order (first item drawn first, last item on top)
+        if let Some(ref draw_configs) = draw {
+            for draw_config in draw_configs {
+                verbose_log!("Rendering graphic: type={:?}, value={}", draw_config.graphic_type, draw_config.value);
 
-            // Evaluate dynamic parameters in value
-            let mut value_str = draw_config.value.clone();
-            if value_str.contains("${") {
-                let params = evaluate_dynamic_params(&value_str, &self.services_config, &self.services_state, &self.services_active);
-                for (pattern, value) in params {
-                    let full_pattern = format!("${{{}}}", pattern);
-                    value_str = value_str.replace(&full_pattern, &value);
-                }
-            }
-
-            // Calculate position with padding or use explicit position
-            let (x, y) = if let Some(pos) = draw_config.position {
-                (pos[0] as i64, pos[1] as i64)
-            } else {
-                let padding = draw_config.padding.unwrap_or(5) as i64;
-                (padding, padding)
-            };
-
-            // Calculate dimensions
-            let padding = draw_config.padding.unwrap_or(5);
-            let draw_width = draw_config.width.unwrap_or(width.saturating_sub(2 * padding));
-            let draw_height = draw_config.height.unwrap_or(height.saturating_sub(2 * padding));
-
-            // Parse color
-            let base_color = if let Some(ref color_str) = draw_config.color {
-                match graphics_renderer::parse_hex_color(color_str) {
-                    Ok(rgb) => rgb,
-                    Err(e) => {
-                        error_log!("Error parsing draw color: {}", e);
-                        (255, 255, 255)
+                // Evaluate dynamic parameters in value
+                let mut value_str = draw_config.value.clone();
+                if value_str.contains("${") {
+                    let params = evaluate_dynamic_params(&value_str, &self.services_config, &self.services_state, &self.services_active);
+                    for (pattern, value) in params {
+                        let full_pattern = format!("${{{}}}", pattern);
+                        value_str = value_str.replace(&full_pattern, &value);
                     }
                 }
-            } else {
-                (255, 255, 255)
-            };
 
-            let range = (draw_config.range[0], draw_config.range[1]);
+                // Calculate position with padding or use explicit position
+                let (x, y) = if let Some(pos) = draw_config.position {
+                    (pos[0] as i64, pos[1] as i64)
+                } else {
+                    let padding = draw_config.padding.unwrap_or(5) as i64;
+                    (padding, padding)
+                };
 
-            // Render based on graphic type
-            match &draw_config.graphic_type {
-                GraphicType::Bar => {
-                    if let Ok(value) = value_str.trim().parse::<f32>() {
-                        let color = self.get_color_for_value(draw_config, value, range, base_color);
+                // Calculate dimensions
+                let padding = draw_config.padding.unwrap_or(5);
+                let draw_width = draw_config.width.unwrap_or(width.saturating_sub(2 * padding));
+                let draw_height = draw_config.height.unwrap_or(height.saturating_sub(2 * padding));
 
-                        // Determine direction from optional direction field
-                        let direction = match draw_config.direction.as_ref() {
-                            Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
-                            Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
-                            Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
-                            Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
-                            None => graphics_renderer::BarDirection::BottomToTop, // Default: bottom to top
-                        };
-
-                        graphics_renderer::render_bar(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments, direction);
+                // Parse color
+                let base_color = if let Some(ref color_str) = draw_config.color {
+                    match graphics_renderer::parse_hex_color(color_str) {
+                        Ok(rgb) => rgb,
+                        Err(e) => {
+                            error_log!("Error parsing draw color: {}", e);
+                            (255, 255, 255)
+                        }
                     }
-                }
-                GraphicType::Gauge => {
-                    if let Ok(value) = value_str.trim().parse::<f32>() {
-                        let color = self.get_color_for_value(draw_config, value, range, base_color);
-                        graphics_renderer::render_gauge(&mut canvas, x, y, value, range, draw_width, draw_height, color);
-                    }
-                }
-                GraphicType::MultiBar => {
-                    let values: Vec<f32> = value_str.split_whitespace()
-                        .filter_map(|s| s.parse::<f32>().ok())
-                        .collect();
-                    if !values.is_empty() {
-                        let bar_spacing = draw_config.bar_spacing.unwrap_or(2);
+                } else {
+                    (255, 255, 255)
+                };
 
-                        // Calculate color for each bar based on its value
-                        let colors: Vec<(u8, u8, u8)> = values.iter()
-                            .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
+                let range = (draw_config.range[0], draw_config.range[1]);
+
+                // Render based on graphic type
+                match &draw_config.graphic_type {
+                    GraphicType::Bar => {
+                        if let Ok(value) = value_str.trim().parse::<f32>() {
+                            let color = self.get_color_for_value(draw_config, value, range, base_color);
+
+                            // Determine direction from optional direction field
+                            let direction = match draw_config.direction.as_ref() {
+                                Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
+                                Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
+                                Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
+                                Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
+                                None => graphics_renderer::BarDirection::BottomToTop, // Default: bottom to top
+                            };
+
+                            graphics_renderer::render_bar(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments, direction);
+                        }
+                    }
+                    GraphicType::Gauge => {
+                        if let Ok(value) = value_str.trim().parse::<f32>() {
+                            let color = self.get_color_for_value(draw_config, value, range, base_color);
+                            graphics_renderer::render_gauge(&mut canvas, x, y, value, range, draw_width, draw_height, color);
+                        }
+                    }
+                    GraphicType::MultiBar => {
+                        let values: Vec<f32> = value_str.split_whitespace()
+                            .filter_map(|s| s.parse::<f32>().ok())
                             .collect();
+                        if !values.is_empty() {
+                            let bar_spacing = draw_config.bar_spacing.unwrap_or(2);
 
-                        // Determine direction
-                        let direction = match draw_config.direction.as_ref() {
-                            Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
-                            Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
-                            Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
-                            Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
-                            None => graphics_renderer::BarDirection::BottomToTop, // Default: vertical bars side-by-side
-                        };
+                            // Calculate color for each bar based on its value
+                            let colors: Vec<(u8, u8, u8)> = values.iter()
+                                .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
+                                .collect();
 
-                        graphics_renderer::render_multi_bar(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments, direction);
+                            // Determine direction
+                            let direction = match draw_config.direction.as_ref() {
+                                Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
+                                Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
+                                Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
+                                Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
+                                None => graphics_renderer::BarDirection::BottomToTop, // Default: vertical bars side-by-side
+                            };
+
+                            graphics_renderer::render_multi_bar(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments, direction);
+                        }
                     }
                 }
             }

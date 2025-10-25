@@ -16,30 +16,38 @@
   const BUTTON_INDEX = 0;
 
   // Create a virtual config that maps button definition to a template structure
-  let virtualConfig = $derived.by(() => {
-    // Use untrack to read config without triggering reactive dependencies
-    // This prevents navigation from marking config as "changed"
-    return untrack(() => {
-      const buttonDef = config.buttons?.[buttonDefName] || {};
+  // Use $state so it's mutable - ButtonEditor needs to update it
+  let virtualConfig = $state<any>({});
 
-      return {
-        ...config,
-        templates: {
-          ...config.templates,
-          [VIRTUAL_PAGE]: {
-            [`button${BUTTON_INDEX}`]: buttonDef
-          }
+  // Initialize/update virtualConfig when buttonDefName or the button def changes
+  $effect(() => {
+    const buttonDef = config.buttons?.[buttonDefName] || {};
+
+    virtualConfig = {
+      ...config,
+      templates: {
+        ...config.templates,
+        [VIRTUAL_PAGE]: {
+          [`button${BUTTON_INDEX}`]: buttonDef
         }
-      };
-    });
+      }
+    };
   });
 
   // Sync changes back from virtual template to button definition
-  // Only sync when virtualButton changes (user edits), not on initial load
+  // Track the current button def name to detect when we switch between definitions
+  let previousButtonDefName = $state<string>(buttonDefName);
   let previousVirtualButton = $state<any>(undefined);
 
   $effect(() => {
     const virtualButton = virtualConfig.templates?.[VIRTUAL_PAGE]?.[`button${BUTTON_INDEX}`];
+
+    // If we switched to a different button definition, reset tracking
+    if (buttonDefName !== previousButtonDefName) {
+      previousButtonDefName = buttonDefName;
+      previousVirtualButton = virtualButton;
+      return;
+    }
 
     // Skip initial sync - only sync on actual changes after first load
     if (previousVirtualButton === undefined) {
@@ -70,5 +78,6 @@
   buttonIndex={BUTTON_INDEX}
   deviceSerial={VIRTUAL_SERIAL}
   isTemplate={true}
+  isButtonDef={true}
   customTitle={buttonDefName}
 />

@@ -1,13 +1,25 @@
 <script lang="ts">
   import ColorPicker from './ColorPicker.svelte';
+  import ColorField from './ColorField.svelte';
 
   interface Props {
     drawConfig: any;
     onUpdate: (drawConfig: any) => void;
+    onRemove?: () => void;
     disabled?: boolean;
+    isReference?: boolean;
+    isInherited?: boolean;
+    initiallyOpen?: boolean;
   }
 
-  let { drawConfig, onUpdate, disabled = false }: Props = $props();
+  let { drawConfig, onUpdate, onRemove, disabled = false, isReference = false, isInherited = false, initiallyOpen = false }: Props = $props();
+
+  let isExpanded = $state(initiallyOpen);
+
+  // Update isExpanded when initiallyOpen changes
+  $effect(() => {
+    isExpanded = initiallyOpen;
+  });
 
   function updateDraw(updates: any) {
     onUpdate({ ...drawConfig, ...updates });
@@ -17,12 +29,32 @@
     const { [fieldName]: _, ...rest } = drawConfig;
     onUpdate(rest);
   }
+
+  // Generate summary for collapsed view
+  let summary = $derived.by(() => {
+    const type = drawConfig.type || 'gauge';
+    const typeName = type === 'gauge' ? 'Gauge' : type === 'bar' ? 'Bar' : 'Multi-Bar';
+    const value = drawConfig.value || '';
+    return `${typeName}: ${value || '(no value)'}`;
+  });
 </script>
 
-<div class="draw-config-editor">
-  <!-- Graphic Type -->
-  <div class="form-row">
-    <label>Type</label>
+<div class="draw-config-editor" class:readonly={disabled} class:reference={isReference} class:inherited={isInherited}>
+  <div class="graphics-header" onclick={() => isExpanded = !isExpanded}>
+    <span class="graphics-summary">{summary}</span>
+    <div class="graphics-controls">
+      {#if onRemove && !disabled}
+        <button class="btn-delete" onclick={(e) => { e.stopPropagation(); onRemove(); }} title="Remove">×</button>
+      {/if}
+      <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+    </div>
+  </div>
+
+  {#if isExpanded}
+    <div class="graphics-body">
+      <!-- Graphic Type -->
+      <div class="form-row">
+        <label>Type</label>
     <select
       value={drawConfig.type || 'gauge'}
       onchange={(e) => updateDraw({ type: e.currentTarget.value })}
@@ -101,7 +133,19 @@
   {#if drawConfig.color_map}
     <!-- Color Map Editor -->
     <div class="form-row">
-      <label>Color Gradient Map</label>
+      <div class="color-map-header">
+        <label>Color Gradient Map</label>
+        {#if !disabled}
+          <button
+            class="add-btn"
+            onclick={() => {
+              const colorMap = [...(drawConfig.color_map || [])];
+              colorMap.push([0, '#ffffff']);
+              updateDraw({ color_map: colorMap });
+            }}
+          >+</button>
+        {/if}
+      </div>
       <div class="color-map-list">
         {#each drawConfig.color_map as entry, i}
           <div class="color-map-entry">
@@ -113,16 +157,24 @@
                 const colorMap = [...(drawConfig.color_map || [])];
                 const currentEntry = colorMap[i];
                 const color = Array.isArray(currentEntry) ? currentEntry[1] : '#000000';
-                colorMap[i] = [parseFloat(e.currentTarget.value), color];
+                let value = parseFloat(e.currentTarget.value);
+                // Clamp value between 0 and 100
+                if (!isNaN(value)) {
+                  value = Math.max(0, Math.min(100, value));
+                  e.currentTarget.value = value.toString();
+                }
+                colorMap[i] = [value || 0, color];
                 updateDraw({ color_map: colorMap });
               }}
               placeholder="Threshold"
+              min="0"
+              max="100"
               step="any"
               disabled={disabled}
             />
             <ColorPicker
-              color={Array.isArray(entry) ? entry[1] : '#000000'}
-              onColorChange={(newColor) => {
+              value={Array.isArray(entry) ? entry[1] : '#000000'}
+              onUpdate={(newColor) => {
                 const colorMap = [...(drawConfig.color_map || [])];
                 const currentEntry = colorMap[i];
                 const threshold = Array.isArray(currentEntry) ? currentEntry[0] : 0;
@@ -144,16 +196,6 @@
             {/if}
           </div>
         {/each}
-        {#if !disabled}
-          <button
-            class="btn-add-color-map"
-            onclick={() => {
-              const colorMap = [...(drawConfig.color_map || [])];
-              colorMap.push([0, '#ffffff']);
-              updateDraw({ color_map: colorMap });
-            }}
-          >+ Add Color Stop</button>
-        {/if}
       </div>
       <p class="field-help">Format: [[threshold, color], ...]. Values are smoothly interpolated.</p>
     </div>
@@ -161,9 +203,9 @@
     <!-- Single Color -->
     <div class="form-row">
       <label>Color</label>
-      <ColorPicker
-        color={drawConfig.color || '#00ff00'}
-        onColorChange={(newColor) => updateDraw({ color: newColor })}
+      <ColorField
+        value={drawConfig.color || '#00ff00'}
+        onUpdate={(newColor) => updateDraw({ color: newColor })}
         disabled={disabled}
       />
     </div>
@@ -337,13 +379,100 @@
       />
     </div>
   {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
   .draw-config-editor {
+    background-color: #3c3c3c;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+
+  .draw-config-editor.readonly.reference {
+    background-color: #3e3a4a;
+  }
+
+  .draw-config-editor.readonly.inherited {
+    background-color: #4a4238;
+  }
+
+  .graphics-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .graphics-header:hover {
+    background-color: #444;
+  }
+
+  .draw-config-editor.readonly.reference .graphics-header:hover {
+    background-color: #46425a;
+  }
+
+  .draw-config-editor.readonly.inherited .graphics-header:hover {
+    background-color: #564a3e;
+  }
+
+  .graphics-summary {
+    font-size: 13px;
+    color: #ccc;
+    flex: 1;
+  }
+
+  .graphics-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-delete {
+    background: none;
+    border: none;
+    color: #f48771;
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0;
+    line-height: 1;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-delete:hover {
+    color: #ff6b6b;
+  }
+
+  .expand-icon {
+    font-size: 10px;
+    color: #888;
+  }
+
+  .graphics-body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding: 12px;
+    border-top: 1px solid #555;
+    background-color: #333;
+  }
+
+  .draw-config-editor.readonly.reference .graphics-body {
+    background-color: #2f2b42;
+    border-top-color: #4f4565;
+  }
+
+  .draw-config-editor.readonly.inherited .graphics-body {
+    background-color: #3d3428;
+    border-top-color: #5f5545;
   }
 
   .form-row {
@@ -433,6 +562,32 @@
     flex-shrink: 0;
   }
 
+  .color-map-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .add-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .add-btn:hover {
+    background-color: #1177bb;
+  }
+
   .color-map-list {
     display: flex;
     flex-direction: column;
@@ -442,7 +597,7 @@
   .color-map-entry {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     padding: 8px;
     background-color: #333;
     border: 1px solid #555;
@@ -451,7 +606,12 @@
 
   .threshold-input {
     flex: 1;
-    min-width: 80px;
+    min-width: 0;
+  }
+
+  .color-map-entry :global(.color-value-container) {
+    flex: 4;
+    min-width: 0;
   }
 
   .btn-remove-color-map {
@@ -460,26 +620,11 @@
     color: #f48771;
     cursor: pointer;
     font-size: 18px;
-    padding: 0 4px;
+    padding: 0;
     line-height: 1;
   }
 
   .btn-remove-color-map:hover {
     color: #ff6b6b;
-  }
-
-  .btn-add-color-map {
-    padding: 6px 12px;
-    background-color: #0e639c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .btn-add-color-map:hover {
-    background-color: #1177bb;
   }
 </style>

@@ -197,9 +197,10 @@ pub struct Button {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
 
-    /// Graphics drawing configuration for the button.
+    /// Graphics drawing configuration for the button. An array of graphics that will be drawn
+    /// in order (first item drawn first, last item on top).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub draw: Option<DrawConfig>,
+    pub draw: Option<Vec<DrawConfig>>,
 
     /// Text configuration for the button label or caption.
     #[serde(skip_serializing_if = "Option::is_none")]

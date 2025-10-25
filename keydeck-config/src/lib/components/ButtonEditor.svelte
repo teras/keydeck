@@ -1,6 +1,6 @@
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
-  import ColorPicker from './ColorPicker.svelte';
+  import ColorField from './ColorField.svelte';
   import TriStateCheckbox from './TriStateCheckbox.svelte';
   import DrawConfigEditor from './DrawConfigEditor.svelte';
   import { invoke } from '@tauri-apps/api/core';
@@ -16,11 +16,12 @@
     deviceSerial: string;
     isTemplate?: boolean;
     customTitle?: string;
+    isButtonDef?: boolean;
     onNavigateToTemplate?: (templateName: string, keepButtonSelection?: boolean) => void;
     onNavigateToButtonDef?: (buttonDefName: string, keepButtonSelection?: boolean) => void;
   }
 
-  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, onNavigateToTemplate, onNavigateToButtonDef }: Props = $props();
+  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, isButtonDef = false, onNavigateToTemplate, onNavigateToButtonDef }: Props = $props();
 
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
@@ -471,16 +472,39 @@
     updateButton({ dynamic: newValue });
   }
 
-  function updateDraw(drawConfig: any) {
+  function updateDraw(index: number, drawConfig: any) {
+    const detailed = getDetailedConfig();
+    const currentDraw = detailed.draw || [];
+
     if (drawConfig === null || drawConfig === undefined) {
-      // Remove draw config
-      const detailed = getDetailedConfig();
-      const { draw, ...rest } = detailed;
-      updateButton(rest);
+      // Remove draw config at index
+      const newDraw = currentDraw.filter((_: any, i: number) => i !== index);
+      if (newDraw.length === 0) {
+        // Remove draw field entirely if empty
+        const { draw, ...rest } = detailed;
+        updateButton(rest);
+      } else {
+        updateButton({ draw: newDraw });
+      }
     } else {
-      // Update draw config
-      updateButton({ draw: drawConfig });
+      // Update draw config at index
+      const newDraw = [...currentDraw];
+      newDraw[index] = drawConfig;
+      updateButton({ draw: newDraw });
     }
+  }
+
+  function addGraphic() {
+    ensureButtonConfig();
+    const detailed = getDetailedConfig();
+    const currentDraw = detailed.draw || [];
+    const newDraw = [...currentDraw, {
+      type: 'gauge',
+      value: '',
+      range: [0, 100],
+      color: '#00ff00'
+    }];
+    updateButton({ draw: newDraw });
   }
 
   function addAction() {
@@ -634,7 +658,7 @@
         </button>
       {/if}
     </div>
-    {#if hasLocalConfig}
+    {#if hasLocalConfig && !isButtonDef}
       <button class="header-clear-button" onclick={clearButton} title="Remove Configuration">
         ✕
       </button>
@@ -827,44 +851,38 @@
 
   <div class="form-group">
     <label>Text Color</label>
-    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <div class="color-info">
-        <ColorPicker
-          value={getDetailedConfig()?.text_color || ""}
-          placeholder="0xRRGGBB"
-          onUpdate={updateTextColor}
-          disabled={isReadOnly}
-        />
-      </div>
-    </div>
+    <ColorField
+      value={getDetailedConfig()?.text_color || ""}
+      placeholder="0xRRGGBB"
+      onUpdate={updateTextColor}
+      readonly={isReadOnly}
+      reference={buttonDefReference !== null}
+      inherited={inheritedSource !== null}
+    />
   </div>
 
   <div class="form-group">
     <label>Background</label>
-    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <div class="color-info">
-        <ColorPicker
-          value={getDetailedConfig()?.background || ""}
-          placeholder="0xRRGGBB"
-          onUpdate={updateBackground}
-          disabled={isReadOnly}
-        />
-      </div>
-    </div>
+    <ColorField
+      value={getDetailedConfig()?.background || ""}
+      placeholder="0xRRGGBB"
+      onUpdate={updateBackground}
+      readonly={isReadOnly}
+      reference={buttonDefReference !== null}
+      inherited={inheritedSource !== null}
+    />
   </div>
 
   <div class="form-group">
     <label>Outline</label>
-    <div class="color-item" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <div class="color-info">
-        <ColorPicker
-          value={getDetailedConfig()?.outline || ""}
-          placeholder="0xRRGGBB"
-          onUpdate={updateOutline}
-          disabled={isReadOnly}
-        />
-      </div>
-    </div>
+    <ColorField
+      value={getDetailedConfig()?.outline || ""}
+      placeholder="0xRRGGBB"
+      onUpdate={updateOutline}
+      readonly={isReadOnly}
+      reference={buttonDefReference !== null}
+      inherited={inheritedSource !== null}
+    />
   </div>
 
   <div class="form-group">
@@ -948,33 +966,27 @@
 
   <!-- Graphics Rendering (DrawConfig) -->
   <div class="form-group">
-    <label>Graphics Rendering</label>
-    <div class="draw-config-section">
-      {#if getDetailedConfig()?.draw}
-        <DrawConfigEditor
-          drawConfig={getDetailedConfig().draw}
-          onUpdate={(newDrawConfig) => updateDraw(newDrawConfig)}
-          disabled={isReadOnly}
-        />
-        {#if !isReadOnly}
-          <button
-            class="btn-remove-draw"
-            onclick={() => updateDraw(null)}
-          >Remove Graphics Rendering</button>
-        {/if}
+    <div class="actions-header">
+      <label>Graphics Rendering</label>
+      {#if !isReadOnly}
+        <button class="add-btn" onclick={addGraphic}>+</button>
+      {/if}
+    </div>
+    <div class="actions-list">
+      {#if getDetailedConfig()?.draw && getDetailedConfig().draw.length > 0}
+        {#each getDetailedConfig().draw as drawConfig, index}
+          <DrawConfigEditor
+            drawConfig={drawConfig}
+            onUpdate={(newDrawConfig) => updateDraw(index, newDrawConfig)}
+            onRemove={() => updateDraw(index, null)}
+            disabled={isReadOnly}
+            isReference={buttonDefReference !== null}
+            isInherited={inheritedSource !== null}
+            initiallyOpen={index === 0}
+          />
+        {/each}
       {:else}
-        <p class="no-draw">No graphics rendering configured.</p>
-        {#if !isReadOnly}
-          <button
-            class="btn-add-draw"
-            onclick={() => updateDraw({
-              type: 'gauge',
-              value: '',
-              range: [0, 100],
-              color: '#00ff00'
-            })}
-          >+ Add Graphics Rendering</button>
-        {/if}
+        <p class="empty">No graphics configured</p>
       {/if}
     </div>
   </div>
@@ -1292,28 +1304,6 @@
     font-style: italic;
   }
 
-  .color-item {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    padding: 8px;
-    background-color: #3c3c3c;
-    border: 1px solid #555;
-    border-radius: 4px;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .color-item.readonly.reference {
-    background-color: #3e3a4a;
-    border-color: #4f4565;
-  }
-
-  .color-item.readonly.inherited {
-    background-color: #4a4238;
-    border-color: #5f5545;
-  }
-
   .input-container {
     padding: 8px;
     background-color: #3c3c3c;
@@ -1345,14 +1335,6 @@
 
   .input-container .icon-dropdown-container {
     margin: -8px;
-  }
-
-  .color-info {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
   }
 
   .actions-container {
@@ -1517,51 +1499,5 @@
 
   .reference-button:hover {
     background-color: #5a5a7a;
-  }
-
-  /* DrawConfig styles */
-  .draw-config-section {
-    background-color: #2a2a2a;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 12px;
-  }
-
-  .btn-remove-draw {
-    padding: 8px 12px;
-    background-color: #c24038;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-    margin-top: 8px;
-  }
-
-  .btn-remove-draw:hover {
-    background-color: #d85048;
-  }
-
-  .no-draw {
-    color: #888;
-    font-size: 12px;
-    font-style: italic;
-    margin: 0 0 8px 0;
-  }
-
-  .btn-add-draw {
-    padding: 8px 12px;
-    background-color: #0e639c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .btn-add-draw:hover {
-    background-color: #1177bb;
   }
 </style>

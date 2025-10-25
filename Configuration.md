@@ -309,7 +309,7 @@ When it is based on a template, the name of the button template is used as a par
 
 - **icon**: *(optional)* Specifies the path to an image file for the button. This icon will be displayed on the button. If `image_dir` is specified in the global configuration, icons are looked up relative to this directory.
 - **background**: *(optional)* Background color for the button, in hexadecimal format or referencing a named color.
-- **draw**: *(optional)* Graphics configuration for rendering dynamic visualizations (single bars, gauges, multiple bars). Drawn after icon/background, before text. See [Graphics Rendering](#graphics-rendering).
+- **draw**: *(optional)* Array of graphics configurations for rendering dynamic visualizations (bars, gauges, multiple bars). Graphics are drawn in array order (first item first, last on top) after icon/background, before text. See [Graphics Rendering](#graphics-rendering).
 - **text**: *(optional)* Text to display on the button. Supports dynamic parameters (see [Dynamic Parameters](#dynamic-parameters)).
 - **dynamic**: *(optional)* Boolean flag to override automatic dynamic detection. When `true`, the button is always included in `refresh:` actions. When `false`, the button is excluded even if it contains dynamic parameters. When omitted (recommended), automatic detection is used based on the presence of `${provider:arg}` patterns in the button's properties. See [Automatic Dynamic Detection](#automatic-dynamic-detection) for details.
 - **actions**: *(optional)* List of actions to execute when the button is pressed. Actions execute in sequence.
@@ -1359,20 +1359,37 @@ The `draw` configuration enables dynamic graphical visualizations on buttons, su
 **Rendering Pipeline**: Graphics are composited in this order:
 1. Background color
 2. Icon image
-3. **Graphics** (from `draw` config)
-4. Text overlay
+3. **Graphics** (from `draw` array - drawn in order, first item first, last item on top)
+4. Text overlay (always on top)
 
 ### Basic Syntax
 
 ```yaml
 button1:
   background: "#000000"    # Optional: button background
-  draw:                    # Graphics layer
-    type: gauge            # Required: graphic type
+  draw:                    # Graphics layer (array of graphics)
+  - type: gauge            # Required: graphic type
     value: ${service:cpu}  # Required: data source
     range: [0, 100]        # Required: [min, max] values
     color: "#00ff00"       # Optional: solid color
   text: "CPU"              # Optional: text overlay
+```
+
+**Multiple Graphics Layers**:
+You can stack multiple graphics on a single button. They are drawn in array order (first item drawn first, last item painted on top):
+
+```yaml
+button1:
+  draw:
+  - type: bar              # Background bar (drawn first)
+    value: ${service:memory}
+    range: [0, 100]
+    color: "#0088ff"
+  - type: gauge            # Gauge overlay (drawn on top)
+    value: ${service:cpu}
+    range: [0, 100]
+    color: "#ff6600"
+  text: "System"           # Text always rendered last
 ```
 
 ### Graphic Types
@@ -1386,7 +1403,7 @@ Circular arc gauge (speedometer style), sweeping from bottom-left to bottom-righ
 ```yaml
 button1:
   draw:
-    type: gauge
+  - type: gauge
     value: ${service:disk_usage}
     range: [0, 100]
     color: "#00ffff"
@@ -1408,7 +1425,7 @@ Unified progress bar supporting all 4 directions (horizontal and vertical).
 button2:
   background: "#1a1a1a"
   draw:
-    type: bar
+  - type: bar
     value: ${service:cpu_usage}
     range: [0, 100]
     color: "#ff6600"
@@ -1420,7 +1437,7 @@ button2:
 button3:
   background: "#1a1a1a"
   draw:
-    type: bar
+  - type: bar
     value: ${service:network_speed}
     range: [0, 100]
     direction: left_to_right
@@ -1446,7 +1463,7 @@ services:
 
 button3:
   draw:
-    type: multi_bar
+  - type: multi_bar
     value: ${service:cpu_cores}
     range: [0, 100]
     color: "#ff00ff"
@@ -1458,7 +1475,7 @@ button3:
 ```yaml
 button4:
   draw:
-    type: multi_bar
+  - type: multi_bar
     value: ${service:network_interfaces}
     range: [0, 100]
     direction: left_to_right
@@ -1496,7 +1513,7 @@ Use `color_map` instead of `color` for smooth color transitions based on value p
 ```yaml
 button1:
   draw:
-    type: bar
+  - type: bar
     value: ${service:cpu}
     range: [0, 100]
     color_map:
@@ -1514,7 +1531,7 @@ The `segments` parameter divides graphics into discrete LED-style blocks instead
 **Without segments** (continuous):
 ```yaml
 draw:
-  type: bar
+- type: bar
   value: ${service:volume}
   range: [0, 100]
   direction: left_to_right
@@ -1524,7 +1541,7 @@ draw:
 **With segments** (discrete blocks):
 ```yaml
 draw:
-  type: bar
+- type: bar
   value: ${service:volume}
   range: [0, 100]
   direction: left_to_right
@@ -1536,7 +1553,7 @@ draw:
 ```yaml
 button_audio:
   draw:
-    type: bar
+  - type: bar
     value: ${service:audio_level}
     range: [0, 100]
     direction: bottom_to_top
@@ -1567,7 +1584,7 @@ pages:
       dynamic: true
       background: "#1a1a1a"
       draw:
-        type: bar
+      - type: bar
         value: ${service:cpu}
         range: [0, 100]
         color_map:
@@ -1580,7 +1597,7 @@ pages:
       dynamic: true
       background: "#1a1a1a"
       draw:
-        type: bar
+      - type: bar
         value: ${service:memory}
         range: [0, 100]
         color: "#00ffff"
@@ -1590,7 +1607,7 @@ pages:
       dynamic: true
       background: "#1a1a1a"
       draw:
-        type: gauge
+      - type: gauge
         value: ${service:disk}
         range: [0, 100]
         color_map:
@@ -1618,7 +1635,7 @@ pages:
       dynamic: true
       background: "#000000"
       draw:
-        type: multi_bar
+      - type: multi_bar
         value: ${service:cpu_cores}
         range: [0, 100]
         color_map:
@@ -1642,7 +1659,7 @@ pages:
     button1:
       dynamic: true
       draw:
-        type: bar
+      - type: bar
         value: ${service:audio_left}
         range: [0, 100]
         direction: bottom_to_top
@@ -1656,7 +1673,7 @@ pages:
     button2:
       dynamic: true
       draw:
-        type: bar
+      - type: bar
         value: ${service:audio_right}
         range: [0, 100]
         direction: bottom_to_top

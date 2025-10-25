@@ -36,10 +36,10 @@ fn has_dynamic_in_text(text_config: &Option<TextConfig>) -> bool {
     }
 }
 
-/// Scans a DrawConfig for dynamic patterns
-fn has_dynamic_in_draw(draw_config: &Option<DrawConfig>) -> bool {
-    match draw_config {
-        Some(draw) => has_dynamic_pattern(&draw.value),
+/// Scans DrawConfig array for dynamic patterns
+fn has_dynamic_in_draw(draw_configs: &Option<Vec<DrawConfig>>) -> bool {
+    match draw_configs {
+        Some(configs) => configs.iter().any(|draw| has_dynamic_pattern(&draw.value)),
         None => false,
     }
 }
