@@ -76,7 +76,7 @@ impl PagedDevice {
         device.set_brightness(50).unwrap_or_else(|e| { error_log!("Error while setting brightness: {}", e) });
 
         // Determine which page to display initially
-        // Priority: initial_page (if exists) > main_page > first page
+        // Priority: initial_page (if exists) > main_page (if exists) > first page
         let start_page_name = if let Some(page_name) = initial_page {
             // Check if the requested initial page exists in the new configuration
             if pages.pages.contains_key(&page_name) {
@@ -85,15 +85,15 @@ impl PagedDevice {
                 // Requested page doesn't exist anymore, fall back to main page
                 verbose_log!("Requested initial page '{}' not found, falling back to main page", page_name);
                 match &pages.main_page {
-                    Some(name) => name.clone(),
-                    None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+                    Some(name) if pages.pages.contains_key(name) => name.clone(),
+                    _ => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
                 }
             }
         } else {
-            // No initial page requested, use main page
+            // No initial page requested, use main page if it exists, otherwise first page
             match &pages.main_page {
-                Some(name) => name.clone(),
-                None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+                Some(name) if pages.pages.contains_key(name) => name.clone(),
+                _ => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
             }
         };
 
@@ -122,7 +122,13 @@ impl PagedDevice {
 
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
         if !start_page_name.is_empty() {
-            let _ = paged_device.set_page(&start_page_name, false);
+            if let Err(e) = paged_device.set_page(&start_page_name, false) {
+                error_log!("Failed to set initial page '{}': {}. Device will remain uninitialized.", start_page_name, e);
+                error_log!("Available pages: {:?}", paged_device.pages.pages.keys().collect::<Vec<_>>());
+            }
+        } else {
+            error_log!("No valid page found for device initialization. Device will remain uninitialized.");
+            error_log!("Available pages: {:?}", paged_device.pages.pages.keys().collect::<Vec<_>>());
         }
 
         paged_device

@@ -176,6 +176,9 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
         info_log!("  Tick time: {}s", conf.tick_time);
     }
 
+    // Validate page references (main_page, jump targets, etc.)
+    validate_page_references(&conf, &mut result, json_output);
+
     // Validate macro syntax (parameter substitution patterns)
     validate_macro_syntax(&conf, &mut result);
 
@@ -519,6 +522,114 @@ fn validate_icon_files(conf: &KeyDeckConf, result: &mut ValidationResult, json_o
                     verbose_log!("  {} # icon not referenced in configuration", icon);
                 }
             }
+        }
+    }
+}
+
+/// Validates page references (main_page, restore_mode, jump targets)
+fn validate_page_references(conf: &KeyDeckConf, result: &mut ValidationResult, json_output: bool) {
+    verbose_log!("Validating page references...");
+
+    for (group_name, page_group) in &conf.page_groups {
+        // Validate main_page reference
+        if let Some(main_page_name) = &page_group.main_page {
+            if !page_group.pages.contains_key(main_page_name) {
+                let msg = format!(
+                    "Page group '{}' has main_page '{}' but this page does not exist. Available pages: {:?}",
+                    group_name,
+                    main_page_name,
+                    page_group.pages.keys().collect::<Vec<_>>()
+                );
+                if !json_output {
+                    eprintln!("Error: {}", msg);
+                }
+                result.errors.push(ValidationError {
+                    category: "page_reference".to_string(),
+                    message: msg,
+                });
+            }
+        }
+
+        // Validate jump action targets in each page
+        for (page_name, page) in &page_group.pages {
+            // Check button actions for jump targets
+            for (button_key, button_config) in &page.buttons {
+                if let crate::pages::ButtonConfig::Detailed(button) = button_config {
+                    if let Some(actions) = &button.actions {
+                        validate_actions_page_refs(
+                            actions,
+                            group_name,
+                            page_name,
+                            button_key,
+                            &page_group.pages,
+                            result,
+                            json_output
+                        );
+                    }
+                }
+            }
+
+            // Check on_tick actions for jump targets
+            if let Some(on_tick_actions) = &page.on_tick {
+                validate_actions_page_refs(
+                    on_tick_actions,
+                    group_name,
+                    page_name,
+                    "on_tick",
+                    &page_group.pages,
+                    result,
+                    json_output
+                );
+            }
+        }
+    }
+
+    // Note: Macro validation for page references is complex because:
+    // 1. Macros use raw serde_yaml_ng::Value for actions (not parsed Action enum)
+    // 2. Macros can be called from any page group context
+    // 3. Jump targets in macros are validated at runtime when the macro is executed
+    // So we skip detailed macro jump validation here.
+}
+
+/// Helper to validate action references to pages
+fn validate_actions_page_refs(
+    actions: &[crate::pages::Action],
+    group_name: &str,
+    page_name: &str,
+    location: &str,
+    available_pages: &indexmap::IndexMap<String, crate::pages::Page>,
+    result: &mut ValidationResult,
+    json_output: bool
+) {
+    for action in actions {
+        match action {
+            crate::pages::Action::Jump { jump: target_page } => {
+                if !available_pages.contains_key(target_page) {
+                    let msg = format!(
+                        "Page group '{}', page '{}', {}: jump action references non-existent page '{}'. Available pages: {:?}",
+                        group_name,
+                        page_name,
+                        location,
+                        target_page,
+                        available_pages.keys().collect::<Vec<_>>()
+                    );
+                    if !json_output {
+                        eprintln!("Error: {}", msg);
+                    }
+                    result.errors.push(ValidationError {
+                        category: "page_reference".to_string(),
+                        message: msg,
+                    });
+                }
+            }
+            crate::pages::Action::Try { try_actions, else_actions } => {
+                // Recursively validate try and else blocks
+                validate_actions_page_refs(try_actions, group_name, page_name, location, available_pages, result, json_output);
+                if let Some(else_acts) = else_actions {
+                    validate_actions_page_refs(else_acts, group_name, page_name, location, available_pages, result, json_output);
+                }
+            }
+            _ => {} // Other actions don't reference pages
         }
     }
 }
