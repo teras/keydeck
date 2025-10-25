@@ -59,6 +59,8 @@ pub fn start_server() {
     listener_tick(&tx, &still_active.clone(), conf.tick_time);
 
     let mut devices: HashMap<String, PagedDevice> = HashMap::new();
+    // Track saved page states across reload events
+    let mut saved_pages: HashMap<String, String> = HashMap::new();
     for message in rx {
         match message {
             DeviceEvent::ButtonDown { sn, button_id } => {
@@ -145,7 +147,13 @@ pub fn start_server() {
                             None
                         };
                         if let Some(pages) = pages_arc {
-                            let new_device = PagedDevice::new(pages, conf_image_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone());
+                            // Check if we have a saved page for this device (from reload)
+                            let initial_page = saved_pages.remove(sn).clone();
+                            if initial_page.is_some() {
+                                verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
+                            }
+
+                            let new_device = PagedDevice::new(pages, conf_image_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone(), initial_page);
                             new_device.focus_changed(&current_class, &current_title, false);
                             info_log!("Adding device {}", sn);
                             devices.insert(sn.clone(), new_device);
@@ -165,6 +173,15 @@ pub fn start_server() {
             DeviceEvent::Reload => {
                 info_log!("Reloading Configuration (SIGHUP received)");
                 info_log!("Stopping services and clearing devices...");
+
+                // Save current page state for each device before terminating
+                saved_pages.clear();
+                for (sn, device) in devices.iter() {
+                    if let Some(page_name) = device.get_current_page_name() {
+                        verbose_log!("Saving current page '{}' for device {}", page_name, sn);
+                        saved_pages.insert(sn.clone(), page_name);
+                    }
+                }
 
                 // Terminate all devices
                 for device in devices.values() {
@@ -190,6 +207,7 @@ pub fn start_server() {
                 services_active = Arc::new(AtomicBool::new(true));
 
                 // Reset device listener so it rediscovers all connected devices
+                // Pass saved page states to be used when devices reconnect
                 should_reset_devices.store(true, std::sync::atomic::Ordering::Relaxed);
 
                 info_log!("Configuration reloaded - devices will reconnect with new config");

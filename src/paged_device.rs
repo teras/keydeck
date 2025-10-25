@@ -66,17 +66,35 @@ impl PagedDevice {
                services_active: Arc<AtomicBool>,
                device: KeyDeckDevice,
                tx: &Sender<DeviceEvent>,
-               time_manager: Arc<TimeManager>) -> Self {
+               time_manager: Arc<TimeManager>,
+               initial_page: Option<String>) -> Self {
         let button_count = { device.get_button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&device.serial, tx, &active_events);
         device.reset().unwrap_or_else(|e| { error_log!("Error while resetting device: {}", e) });
         device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
         device.set_brightness(50).unwrap_or_else(|e| { error_log!("Error while setting brightness: {}", e) });
-        // Determine main page name before moving pages into struct
-        let main_page_name = match &pages.main_page {
-            Some(name) => name.clone(),
-            None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+
+        // Determine which page to display initially
+        // Priority: initial_page (if exists) > main_page > first page
+        let start_page_name = if let Some(page_name) = initial_page {
+            // Check if the requested initial page exists in the new configuration
+            if pages.pages.contains_key(&page_name) {
+                page_name
+            } else {
+                // Requested page doesn't exist anymore, fall back to main page
+                verbose_log!("Requested initial page '{}' not found, falling back to main page", page_name);
+                match &pages.main_page {
+                    Some(name) => name.clone(),
+                    None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+                }
+            }
+        } else {
+            // No initial page requested, use main page
+            match &pages.main_page {
+                Some(name) => name.clone(),
+                None => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+            }
         };
 
         let paged_device = PagedDevice {
@@ -103,8 +121,8 @@ impl PagedDevice {
         };
 
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
-        if !main_page_name.is_empty() {
-            let _ = paged_device.set_page(&main_page_name, false);
+        if !start_page_name.is_empty() {
+            let _ = paged_device.set_page(&start_page_name, false);
         }
 
         paged_device
@@ -112,6 +130,16 @@ impl PagedDevice {
 
     pub fn keep_alive(&self) {
         self.device.keep_alive();
+    }
+
+    /// Returns the name of the currently displayed page, or None if no page is set
+    pub fn get_current_page_name(&self) -> Option<String> {
+        let current_page_idx = { self.current_page_ref.borrow().clone() };
+        if current_page_idx == usize::MAX {
+            None
+        } else {
+            self.pages.pages.get_index(current_page_idx).map(|(name, _)| name.clone())
+        }
     }
 
     pub fn handle_tick(&self) {

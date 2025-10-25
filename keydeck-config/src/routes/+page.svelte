@@ -270,7 +270,11 @@
   }
 
   // Helper function to process loaded config (shared between reload and import)
-  function processLoadedConfig(loadedConfig: any) {
+  function processLoadedConfig(loadedConfig: any, preserveSelection: boolean = false) {
+    // Save current selection state before reloading
+    const savedTemplate = preserveSelection ? currentTemplate : null;
+    const savedPage = preserveSelection ? currentPage : null;
+
     // Backend uses #[serde(flatten)] on page_groups, which means when serializing to JSON,
     // page groups are at the root level. We need to extract them into a separate property
     // for easier frontend access while keeping the flattened structure for saving.
@@ -290,8 +294,40 @@
     hasUnsavedChanges = false;
     lastConfigSnapshot = JSON.stringify(config);
 
-    // Auto-select initial page after loading
-    selectInitialPage();
+    // Restore previous selection if requested, otherwise auto-select initial page
+    if (preserveSelection) {
+      if (savedTemplate !== null) {
+        // Was viewing a template
+        if (config.templates && config.templates[savedTemplate]) {
+          // Template still exists in new config
+          currentTemplate = savedTemplate;
+          currentPage = ""; // Clear page selection
+        } else {
+          // Template no longer exists, fall back to pages and select main page
+          currentTemplate = null;
+          selectInitialPage();
+        }
+      } else if (savedPage) {
+        // Was viewing a page
+        const pageGroup = selectedDevice
+          ? (config.page_groups[selectedDevice.serial] || config.page_groups.default)
+          : config.page_groups.default;
+
+        if (pageGroup && pageGroup[savedPage]) {
+          // Page still exists in new config
+          currentPage = savedPage;
+        } else {
+          // Page no longer exists, fall back to main page
+          selectInitialPage();
+        }
+      } else {
+        // No previous selection, use default
+        selectInitialPage();
+      }
+    } else {
+      // Auto-select initial page after loading
+      selectInitialPage();
+    }
   }
 
   async function reloadConfig() {
@@ -314,7 +350,7 @@
     isSaving = true;
     try {
       const loadedConfig = await invoke("load_config", { path: null });
-      processLoadedConfig(loadedConfig);
+      processLoadedConfig(loadedConfig, true); // Preserve current selection
       // Only dismiss error after successful reload
       dismissError();
     } catch (e) {
