@@ -48,14 +48,16 @@
   });
 
   async function refreshDevices() {
-    loading = true;
     error = "";
     try {
       // Call the parent's refresh callback to reload config
+      // This might show a confirm dialog, so don't set loading=true yet
       if (onRefresh) {
         await onRefresh();
       }
 
+      // Only set loading after dialog is dismissed and reload completes
+      loading = true;
       devices = await invoke("list_devices");
       // Auto-select first device if available (or re-select if already selected)
       if (devices.length > 0) {

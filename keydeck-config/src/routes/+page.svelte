@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { save, open } from '@tauri-apps/plugin-dialog';
+  import { save, open, ask } from '@tauri-apps/plugin-dialog';
   import TitleBar from "../lib/components/TitleBar.svelte";
   import DeviceSelector from "../lib/components/DeviceSelector.svelte";
   import Sidebar from "../lib/components/Sidebar.svelte";
@@ -295,13 +295,24 @@
   }
 
   async function reloadConfig() {
+    // Check confirmation FIRST, before doing anything
     if (hasUnsavedChanges) {
-      if (!confirm("You have unsaved changes. Reload and discard them?")) {
+      const confirmed = await ask(
+        "You have unsaved changes. Reload and discard them?",
+        {
+          title: "Confirm Reload",
+          kind: "warning"
+        }
+      );
+      if (!confirmed) {
+        // User cancelled - do nothing
         return;
       }
     }
+
+    // Only proceed with reload after user confirms
+    isSaving = true;
     try {
-      isSaving = true;
       const loadedConfig = await invoke("load_config", { path: null });
       processLoadedConfig(loadedConfig);
       // Only dismiss error after successful reload
