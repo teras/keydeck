@@ -90,22 +90,88 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
         .map_err(|e| format!("Failed to parse config: {}", e))
 }
 
-/// Save keydeck configuration to ~/.config/keydeck.yaml
+/// Save keydeck configuration to ~/.config/keydeck/config.yaml atomically with timestamped backup
 #[tauri::command]
 fn save_config(config: KeyDeckConf) -> Result<(), String> {
+    use std::fs;
+    use std::time::SystemTime;
+
+    let config_dir = get_config_dir();
     let config_path = get_config_path();
 
     // Ensure the directory exists
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create config directory: {}", e))?;
-    }
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
 
+    // Serialize config to YAML
     let yaml = serde_yaml_ng::to_string(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    std::fs::write(&config_path, yaml)
-        .map_err(|e| format!("Failed to write config file: {}", e))?;
+    // Step 1: Write to temporary file
+    let temp_path = config_dir.join("config.tmp.yaml");
+    fs::write(&temp_path, &yaml)
+        .map_err(|e| format!("Failed to write temp config file: {}", e))?;
+
+    // Step 2: If current config exists, create timestamped backup
+    if config_path.exists() {
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let backup_name = format!("config.{}.yaml",
+            chrono::DateTime::from_timestamp(timestamp as i64, 0)
+                .unwrap()
+                .format("%Y%m%d_%H%M%S"));
+        let backup_path = config_dir.join(&backup_name);
+
+        fs::copy(&config_path, &backup_path)
+            .map_err(|e| format!("Failed to create backup: {}", e))?;
+    }
+
+    // Step 3: Atomically replace config file (rename is atomic on Unix)
+    fs::rename(&temp_path, &config_path)
+        .map_err(|e| format!("Failed to save config file: {}", e))?;
+
+    // Step 4: Cleanup old backups (keep only 10 most recent)
+    cleanup_old_backups(&config_dir)?;
+
+    Ok(())
+}
+
+/// Remove old backup files, keeping only the 10 most recent
+fn cleanup_old_backups(config_dir: &PathBuf) -> Result<(), String> {
+    use std::fs;
+
+    // Read all backup files
+    let entries = fs::read_dir(config_dir)
+        .map_err(|e| format!("Failed to read config directory: {}", e))?;
+
+    let mut backups: Vec<_> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry.file_name()
+                .to_string_lossy()
+                .starts_with("config.") &&
+            entry.file_name()
+                .to_string_lossy()
+                .ends_with(".yaml") &&
+            entry.file_name() != "config.yaml" &&
+            entry.file_name() != "config.tmp.yaml"
+        })
+        .collect();
+
+    // Sort by modification time (newest first)
+    backups.sort_by_key(|entry| {
+        entry.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+    });
+    backups.reverse();
+
+    // Remove all but the 10 most recent
+    for backup in backups.iter().skip(10) {
+        let _ = fs::remove_file(backup.path());
+    }
 
     Ok(())
 }
@@ -116,7 +182,7 @@ fn reload_keydeck() -> Result<(), String> {
     use std::fs;
 
     // Read PID from lock file
-    let lock_path = PathBuf::from("/tmp/keydeck.lock");
+    let lock_path = PathBuf::from("/tmp/.keydeck.lock");
 
     if !lock_path.exists() {
         return Err("keydeck server is not running (no lock file found)".to_string());
@@ -248,7 +314,13 @@ fn find_keydeck_binary() -> Result<PathBuf, String> {
 
 fn get_config_path() -> PathBuf {
     let mut path = PathBuf::from(std::env::var("HOME").expect("HOME not set"));
-    path.push(".config/keydeck.yaml");
+    path.push(".config/keydeck/config.yaml");
+    path
+}
+
+fn get_config_dir() -> PathBuf {
+    let mut path = PathBuf::from(std::env::var("HOME").expect("HOME not set"));
+    path.push(".config/keydeck");
     path
 }
 

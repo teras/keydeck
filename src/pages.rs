@@ -534,12 +534,12 @@ impl KeyDeckConf {
 
     pub fn new() -> Self {
         let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
-        path.push(".config/keydeck.yaml");
+        path.push(".config/keydeck/config.yaml");
 
         let data = fs::read_to_string(&path).unwrap_or_else(|e| {
             eprintln!("Error: Failed to read config file at {}", path.display());
             eprintln!("Reason: {}", e);
-            eprintln!("\nPlease create a config file at ~/.config/keydeck.yaml");
+            eprintln!("\nPlease create a config file at ~/.config/keydeck/config.yaml");
             eprintln!("See the documentation for configuration format.");
             std::process::exit(1);
         });

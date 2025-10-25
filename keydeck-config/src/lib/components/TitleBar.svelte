@@ -5,13 +5,12 @@
     hasUnsavedChanges?: boolean;
     lastSaveTime?: string;
     isSaving?: boolean;
-    onSave?: () => void;
     onSend?: () => void;
     onImport?: () => void;
     onExport?: () => void;
   }
 
-  let { hasUnsavedChanges = false, lastSaveTime = "", isSaving = false, onSave, onSend, onImport, onExport }: Props = $props();
+  let { hasUnsavedChanges = false, lastSaveTime = "", isSaving = false, onSend, onImport, onExport }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -59,13 +58,8 @@
     {#if lastSaveTime}
       <span class="last-save">Last: {lastSaveTime}</span>
     {/if}
-    {#if onSave}
-      <button class="toolbar-btn" onclick={onSave} disabled={isSaving} title="Save configuration to ~/.config/keydeck.yaml">
-        Save
-      </button>
-    {/if}
     {#if onSend}
-      <button class="toolbar-btn" onclick={onSend} disabled={isSaving} title="Save and send SIGHUP to reload device">
+      <button class="toolbar-btn" onclick={onSend} disabled={isSaving} title="Save configuration and reload device">
         Send
       </button>
     {/if}

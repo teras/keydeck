@@ -360,30 +360,18 @@
     }
   }
 
-  async function saveConfig() {
-    try {
-      isSaving = true;
-      // Remove the frontend-only page_groups property before sending to backend
-      // The page groups are already at root level, which is what backend expects
-      const { page_groups, ...backendConfig } = config;
-      await invoke("save_config", { config: backendConfig });
-      // Only dismiss error after successful save
-      dismissError();
-      hasUnsavedChanges = false;
-      lastConfigSnapshot = JSON.stringify(config);
-      const now = new Date();
-      lastSaveTime = now.toLocaleTimeString();
-      alert("Configuration saved!");
-    } catch (e) {
-      setError(`Failed to save configuration: ${e}`);
-    } finally {
-      isSaving = false;
-    }
-  }
-
   async function sendToDevice() {
     try {
       isSaving = true;
+
+      // Sync page_groups changes back to root level before saving
+      // The UI modifies config.page_groups, but the backend expects them at root level
+      if (config.page_groups) {
+        for (const [groupName, groupData] of Object.entries(config.page_groups)) {
+          config[groupName] = groupData;
+        }
+      }
+
       // Remove the frontend-only page_groups property before sending to backend
       const { page_groups, ...backendConfig } = config;
       await invoke("save_config", { config: backendConfig });
@@ -394,7 +382,6 @@
       lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
       lastSaveTime = now.toLocaleTimeString();
-      alert("Configuration sent to device and reloaded!");
     } catch (e) {
       setError(`Failed to send to device: ${e}`);
     } finally {
@@ -413,10 +400,16 @@
       });
 
       if (filePath) {
+        // Sync page_groups changes back to root level before exporting
+        if (config.page_groups) {
+          for (const [groupName, groupData] of Object.entries(config.page_groups)) {
+            config[groupName] = groupData;
+          }
+        }
+
         // Remove the frontend-only page_groups property before sending to backend
         const { page_groups, ...backendConfig } = config;
         await invoke("export_config", { config: backendConfig, path: filePath });
-        alert("Configuration exported successfully!");
       }
     } catch (e) {
       setError(`Failed to export configuration: ${e}`);
@@ -436,7 +429,6 @@
       if (filePath) {
         const importedConfig = await invoke("load_config", { path: filePath });
         processLoadedConfig(importedConfig);
-        alert("Configuration imported successfully!");
       }
     } catch (e) {
       setError(`Failed to import configuration: ${e}`);
@@ -608,7 +600,6 @@
   hasUnsavedChanges={hasUnsavedChanges}
   lastSaveTime={lastSaveTime}
   isSaving={isSaving}
-  onSave={saveConfig}
   onSend={sendToDevice}
   onImport={importConfiguration}
   onExport={exportConfiguration}
