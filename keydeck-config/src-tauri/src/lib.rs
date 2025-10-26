@@ -70,6 +70,8 @@ fn get_device_info(device_id: String) -> Result<DeviceInfo, String> {
 }
 
 /// Load keydeck configuration from a file path (or default ~/.config/keydeck.yaml if path is None)
+/// If the config file doesn't exist, returns a default empty configuration instead of an error.
+/// This is expected behavior for first-time app launch.
 #[tauri::command]
 fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
     let config_path = if let Some(p) = path {
@@ -79,7 +81,8 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
     };
 
     if !config_path.exists() {
-        return Err(format!("Config file not found at {}", config_path.display()));
+        // Return default empty config for first-time launch
+        return Ok(KeyDeckConf::new());
     }
 
     let content = std::fs::read_to_string(&config_path)

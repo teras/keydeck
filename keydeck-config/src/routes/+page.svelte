@@ -73,7 +73,8 @@
 
   onMount(async () => {
     try {
-      // Try to load existing config from default path
+      // Load config from default path
+      // If no config file exists (first launch), backend returns a default empty config
       const loadedConfig = await invoke("load_config", { path: null });
       processLoadedConfig(loadedConfig);
 
@@ -91,18 +92,16 @@
         // Also add to root level since it's flattened
         config.default = config.page_groups.default;
       }
+
+      // Auto-select the main page on load
+      selectInitialPage();
     } catch (e) {
+      // This should only happen for actual errors (e.g., parse errors, permission issues)
       const errorMsg = String(e);
       console.error("Failed to load configuration:", e);
+      setError(`Failed to load configuration: ${errorMsg}\n\nStarting with a fresh configuration. Please check your config file for errors.`);
 
-      // Check if this is a "file not found" error or a parsing error
-      if (errorMsg.includes("No such file") || errorMsg.includes("not found")) {
-        console.log("No existing config found, starting with a fresh configuration");
-      } else {
-        // This is likely a parsing error or other serious issue
-        setError(`Failed to load configuration: ${errorMsg}\n\nStarting with a fresh configuration. Please check your config file for errors.`);
-      }
-
+      // Initialize with default config
       config = {
         tick_time: 2.0,
         page_groups: {
@@ -160,17 +159,16 @@
   });
 
   // Track config changes by serializing and comparing
-  let lastConfigSnapshot = $state<string>("");
-  let isInitialLoad = $state(true);
+  // undefined = no config loaded yet, so no warning needed
+  let lastConfigSnapshot = $state<string | undefined>(undefined);
 
   $effect(() => {
     if (config) {
       const currentSnapshot = JSON.stringify(config);
 
-      if (isInitialLoad) {
+      if (lastConfigSnapshot === undefined) {
         // First load - just save snapshot, don't mark as changed
         lastConfigSnapshot = currentSnapshot;
-        isInitialLoad = false;
       } else {
         // Check if current state matches the saved state
         hasUnsavedChanges = currentSnapshot !== lastConfigSnapshot;
@@ -301,7 +299,13 @@
       lastConfigSnapshot = newConfigSnapshot;
     } else {
       // Importing: check if different from saved config
-      hasUnsavedChanges = newConfigSnapshot !== lastConfigSnapshot;
+      // If lastConfigSnapshot is undefined, this is initial load - no warning needed
+      if (lastConfigSnapshot === undefined) {
+        hasUnsavedChanges = false;
+        lastConfigSnapshot = newConfigSnapshot;
+      } else {
+        hasUnsavedChanges = newConfigSnapshot !== lastConfigSnapshot;
+      }
     }
 
     // Restore previous selection if requested, otherwise auto-select initial page
