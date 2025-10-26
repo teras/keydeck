@@ -364,6 +364,169 @@ fn select_app_icon(app_name: String, icon_path: String) -> Result<String, String
     windows_icon_finder::copy_app_icon(app_name, icon_path, icon_dir)
 }
 
+/// Result of icon cleanup preview, categorizing icons by usage
+#[derive(Debug, Serialize, Deserialize)]
+struct IconCleanupPreview {
+    /// Icons currently in use by the configuration
+    in_use: Vec<String>,
+    /// Icons protected by glob patterns in protected_icons config
+    protected: Vec<String>,
+    /// Icons not in use and not protected (will be deleted)
+    unused: Vec<String>,
+}
+
+/// Preview which icons will be deleted by the cleanup process
+#[tauri::command]
+fn preview_icon_cleanup(protected_patterns: Vec<String>) -> Result<IconCleanupPreview, String> {
+    let icon_dir = PathBuf::from(get_icon_dir());
+
+    if !icon_dir.exists() {
+        return Ok(IconCleanupPreview {
+            in_use: Vec::new(),
+            protected: Vec::new(),
+            unused: Vec::new(),
+        });
+    }
+
+    // Collect all icons from the icon directory
+    let all_icons: Vec<String> = std::fs::read_dir(&icon_dir)
+        .map_err(|e| format!("Failed to read icon directory: {}", e))?
+        .filter_map(|entry| {
+            entry.ok().and_then(|e| {
+                let path = e.path();
+                if path.is_file() {
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+
+    // Load the actual config from disk to find which icons are in use
+    let config_path = get_config_path();
+    let mut used_icons = std::collections::HashSet::new();
+
+    if config_path.exists() {
+        let config_content = std::fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read config file: {}", e))?;
+        let config: KeyDeckConf = serde_yaml_ng::from_str(&config_content)
+            .map_err(|e| format!("Failed to parse config file: {}", e))?;
+
+        collect_used_icons(&config, &mut used_icons);
+    }
+
+    // Categorize icons
+    let mut in_use = Vec::new();
+    let mut protected = Vec::new();
+    let mut unused = Vec::new();
+
+    for icon in all_icons {
+        if used_icons.contains(&icon) {
+            in_use.push(icon);
+        } else if is_protected(&icon, &protected_patterns) {
+            protected.push(icon);
+        } else {
+            unused.push(icon);
+        }
+    }
+
+    // Sort for consistent display
+    in_use.sort();
+    protected.sort();
+    unused.sort();
+
+    Ok(IconCleanupPreview {
+        in_use,
+        protected,
+        unused,
+    })
+}
+
+/// Execute icon cleanup, deleting unused icons
+#[tauri::command]
+fn execute_icon_cleanup(protected_patterns: Vec<String>) -> Result<usize, String> {
+    let icon_dir = PathBuf::from(get_icon_dir());
+
+    if !icon_dir.exists() {
+        return Ok(0);
+    }
+
+    // Get the preview to know which icons to delete
+    let preview = preview_icon_cleanup(protected_patterns)?;
+
+    let mut deleted_count = 0;
+
+    // Delete unused icons
+    for icon in preview.unused {
+        let icon_path = icon_dir.join(&icon);
+        if let Err(e) = std::fs::remove_file(&icon_path) {
+            eprintln!("Failed to delete icon {}: {}", icon, e);
+        } else {
+            deleted_count += 1;
+        }
+    }
+
+    Ok(deleted_count)
+}
+
+/// Recursively collect all icon filenames referenced in the configuration
+fn collect_used_icons(config: &KeyDeckConf, used_icons: &mut std::collections::HashSet<String>) {
+    // Collect from button definitions
+    if let Some(buttons) = &config.buttons {
+        for button in buttons.values() {
+            if let Some(icon) = &button.icon {
+                used_icons.insert(icon.clone());
+            }
+        }
+    }
+
+    // Collect from templates
+    if let Some(templates) = &config.templates {
+        for page in templates.values() {
+            collect_icons_from_page(page, used_icons);
+        }
+    }
+
+    // Collect from page groups
+    for pages in config.page_groups.values() {
+        // Collect from pages in the group
+        for page in pages.pages.values() {
+            collect_icons_from_page(page, used_icons);
+        }
+    }
+}
+
+fn collect_icons_from_page(page: &keydeck::Page, used_icons: &mut std::collections::HashSet<String>) {
+    for button_config in page.buttons.values() {
+        collect_icons_from_button_config(button_config, used_icons);
+    }
+}
+
+fn collect_icons_from_button_config(button_config: &keydeck::ButtonConfig, used_icons: &mut std::collections::HashSet<String>) {
+    match button_config {
+        keydeck::ButtonConfig::Template(_) => {
+            // Template references are resolved at runtime, can't determine icons here
+        }
+        keydeck::ButtonConfig::Detailed(button) => {
+            if let Some(icon) = &button.icon {
+                used_icons.insert(icon.clone());
+            }
+        }
+    }
+}
+
+/// Check if an icon matches any of the protected patterns
+fn is_protected(icon: &str, patterns: &[String]) -> bool {
+    patterns.iter().any(|pattern| {
+        glob::Pattern::new(pattern)
+            .map(|p| p.matches(icon))
+            .unwrap_or(false)
+    })
+}
+
 /// Extract icon from a Windows PE file (.exe, .dll) and save it to the icon directory
 /// Returns the filename of the saved icon
 #[tauri::command]
@@ -426,6 +589,8 @@ pub fn run() {
             extract_icon_from_exe,
             list_applications,
             select_app_icon,
+            preview_icon_cleanup,
+            execute_icon_cleanup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,8 @@ Each device is identified by its serial number or can use a generic `default` co
 - [Runtime Operations](#runtime-operations)
 - [Detailed Configuration](#detailed-configuration)
   - [Global Fields](#global-fields)
+  - [Services](#services)
+  - [Icon Management](#icon-management)
   - [Device-Specific Configuration](#device-specific-configuration)
   - [Page Configuration](#page-configuration)
   - [Button Structure](#button-structure)
@@ -171,6 +173,8 @@ Global fields are configurations that apply universally across devices. Availabl
 
 - `colors`: A dictionary of named colors, specified in hexadecimal format (`0xRRGGBB` or `0xAARRGGBB`).
 - `tick_time`: *(optional)* Global tick interval in seconds. Controls how often the tick event fires for all devices. Must be between 1 and 60 seconds. Default: 2 seconds.
+- `brightness`: *(optional)* Global device brightness level (0-100). Default: 80.
+- `protected_icons`: *(optional)* List of glob patterns for icons that should be protected from cleanup. Icons matching these patterns won't be deleted even if unused. See [Icon Management](#icon-management) for details.
 - `services`: *(optional)* A dictionary of background services that execute commands periodically and cache their results. Services provide data that can be referenced in button text via `${service:name}` syntax. See [Services](#services) for details.
 
 **Note:** Button icons are stored in `~/.config/keydeck/icons`.
@@ -179,8 +183,14 @@ Global fields are configurations that apply universally across devices. Availabl
 
 ```yaml
 tick_time: 2
+brightness: 80
 colors:
   background: 0x40FFFFFF
+
+protected_icons:
+  - "icon_*"          # Protect all icons starting with "icon_"
+  - "background_*"    # Protect all backgrounds
+  - "state_*.png"     # Protect state-based icons
 
 services:
   cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
@@ -246,6 +256,112 @@ pages:
       dynamic: true
       text: "CPU: ${service:cpu}%"
 ```
+
+### Icon Management
+
+KeyDeck provides icon management features to help keep your icon directory organized and prevent accidental deletion of important icons.
+
+#### Icon Directory
+
+By default, button icons are stored in `~/.config/keydeck/icons`. The configuration UI can help you manage these icons and clean up unused ones.
+
+#### Protected Icons
+
+The `protected_icons` field in the global configuration allows you to protect specific icons from being deleted during cleanup operations. This is useful for:
+
+- **Dynamic content icons**: Icons used by services or state-based displays (e.g., CPU level icons 0-100%)
+- **State-based button icons**: Icons that change based on button state (e.g., on/off states)
+- **Shared icons**: Icons used across multiple configurations or templates
+- **Temporary uploads**: Icons that may not be referenced yet but should be kept
+
+#### Glob Pattern Syntax
+
+Protected icons are specified using glob patterns, which support:
+
+- `*` - Matches any sequence of characters (except `/`)
+- `?` - Matches any single character
+- `[abc]` - Matches any character in the brackets
+- `{a,b}` - Matches either pattern a or pattern b
+
+#### Examples
+
+**Protect icons by prefix**:
+```yaml
+protected_icons:
+  - "icon_*"          # All icons starting with "icon_"
+  - "background_*"    # All backgrounds
+  - "jubler*"         # All icons starting with "jubler"
+```
+
+**Protect icons by suffix or pattern**:
+```yaml
+protected_icons:
+  - "*_on.png"        # All "on" state icons
+  - "*_off.png"       # All "off" state icons
+  - "state_*.png"     # All state-based icons
+```
+
+**Protect specific extensions**:
+```yaml
+protected_icons:
+  - "logo*.{png,jpg}"    # Logo files in PNG or JPG format
+  - "temp_*.svg"         # Temporary SVG files
+```
+
+**Protect by use case**:
+```yaml
+protected_icons:
+  - "cpu_*"           # CPU state icons (0-100%)
+  - "battery_*"       # Battery level icons
+  - "volume_*"        # Volume level icons
+  - "user_*"          # User-uploaded content
+```
+
+#### Icon Cleanup Process
+
+The configuration UI provides an "Icon Cleanup" feature that:
+
+1. **Analyzes** all icons in the icon directory
+2. **Categorizes** them into three groups:
+   - **In Use**: Icons currently referenced in your configuration
+   - **Protected**: Icons matching patterns in `protected_icons`
+   - **Unused**: Icons that will be deleted (neither in use nor protected)
+3. **Shows a preview** of which icons will be deleted before you confirm
+4. **Permanently deletes** unused icons when confirmed
+
+**Important**: Deleted icons cannot be recovered. Always review the preview before confirming cleanup.
+
+#### Configuration Workflow
+
+When using dynamic icons or state-based buttons, add protection patterns before creating the buttons:
+
+```yaml
+# Step 1: Add protection patterns
+protected_icons:
+  - "cpu_*.png"       # Protect all CPU state icons
+
+# Step 2: Create buttons that use those icons
+services:
+  cpu_level: "get-cpu-level.sh"  # Returns 0-100
+
+pages:
+  Main:
+    button1:
+      # This button uses cpu_0.png through cpu_100.png based on service value
+      icon: "cpu_${service:cpu_level}.png"
+      actions:
+        - exec: "open-task-manager"
+```
+
+Even though only one CPU icon may be "in use" at any given time, the `cpu_*.png` pattern ensures all CPU state icons are protected from cleanup.
+
+#### Best Practices
+
+1. **Add protection patterns early**: Define `protected_icons` before creating dynamic content
+2. **Use broad patterns**: Prefer `icon_*` over listing individual files
+3. **Review before cleanup**: Always preview the unused icons list before confirming deletion
+4. **Keep backups**: Consider backing up your icon directory before major cleanups
+5. **Document patterns**: Add comments explaining why icons are protected
 
 ### Device-Specific Configuration
 

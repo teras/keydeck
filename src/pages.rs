@@ -61,6 +61,12 @@ pub struct KeyDeckConf {
     #[serde(default = "default_brightness")]
     pub brightness: u8,
 
+    /// List of glob patterns for icons that should be protected from cleanup.
+    /// Icons matching these patterns won't be deleted even if unused.
+    /// This is useful for icons used by dynamic content or button state switching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protected_icons: Option<Vec<String>>,
+
     /// A collection of pages, each group identified by the device serial number. When a
     /// device is connected, the corresponding page group is loaded.
     /// When no specific page group is found, the "default" page group is used.
@@ -154,6 +160,7 @@ impl Default for KeyDeckConf {
             macros: None,
             tick_time: default_tick_time(),
             brightness: default_brightness(),
+            protected_icons: None,
             page_groups: IndexMap::new(),
         }
     }

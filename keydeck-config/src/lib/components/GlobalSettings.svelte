@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
   import ColorPicker from './ColorPicker.svelte';
+  import CleanUpIcons from './CleanUpIcons.svelte';
 
   interface Props {
     config: any;
@@ -23,6 +24,10 @@
   let renameColorName = $state("");
   let lastAddedColor = $state<string | null>(null);
   let colorNameInput = $state<HTMLInputElement | undefined>();
+
+  // Protected icons management
+  let showAddProtectedIcon = $state(false);
+  let newProtectedIcon = $state("");
 
   function toggleAddColor() {
     showAddColor = !showAddColor;
@@ -155,6 +160,41 @@
     renameColorName = "";
     renamingColor = null;
   }
+
+  function toggleAddProtectedIcon() {
+    showAddProtectedIcon = !showAddProtectedIcon;
+    if (showAddProtectedIcon) {
+      setTimeout(() => {
+        const input = document.querySelector('.protected-icon-input') as HTMLInputElement;
+        input?.focus();
+      }, 50);
+    } else {
+      newProtectedIcon = "";
+    }
+  }
+
+  function addProtectedIcon() {
+    const pattern = newProtectedIcon.trim();
+    if (!pattern) {
+      showAddProtectedIcon = false;
+      return;
+    }
+
+    if (!config.protected_icons) {
+      config.protected_icons = [];
+    }
+
+    config.protected_icons.push(pattern);
+    config.protected_icons = config.protected_icons;
+    newProtectedIcon = "";
+    showAddProtectedIcon = false;
+  }
+
+  function removeProtectedIcon(index: number) {
+    if (config.protected_icons) {
+      config.protected_icons = config.protected_icons.filter((_: any, i: number) => i !== index);
+    }
+  }
 </script>
 
 <div class="global-settings">
@@ -252,6 +292,53 @@
     {:else}
       <p class="empty">No colors defined</p>
     {/if}
+    </div>
+
+    <div class="section">
+      <h4>Icon Management</h4>
+      <div class="icon-cleanup-section">
+        <p class="help">Remove unused icon files from the icons directory to free up space.</p>
+        <CleanUpIcons {config} />
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-header">
+          <span>Protected Icon Patterns</span>
+          <button class="add-btn" onclick={toggleAddProtectedIcon}>+</button>
+        </div>
+        <p class="help">Glob patterns for icons protected from cleanup (e.g., *.dynamic.png)</p>
+
+        {#if showAddProtectedIcon}
+          <div class="add-input-row">
+            <input
+              type="text"
+              class="protected-icon-input"
+              bind:value={newProtectedIcon}
+              placeholder="e.g., *.dynamic.png"
+              onkeydown={(e) => e.key === 'Enter' && addProtectedIcon()}
+            />
+            <button onclick={addProtectedIcon} title="Add">✓</button>
+            <button onclick={() => showAddProtectedIcon = false} title="Cancel">✕</button>
+          </div>
+        {/if}
+
+        {#if config.protected_icons && config.protected_icons.length > 0}
+          <div class="pattern-list">
+            {#each config.protected_icons as pattern, i}
+              <div class="pattern-item">
+                <input
+                  type="text"
+                  bind:value={config.protected_icons[i]}
+                  placeholder="e.g., *.dynamic.png"
+                />
+                <button class="remove-btn" onclick={() => removeProtectedIcon(i)} title="Remove">✕</button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="empty">No protected patterns defined</p>
+        {/if}
+      </div>
     </div>
   </div>
 </div>
@@ -506,5 +593,120 @@
     font-size: 12px;
     font-style: italic;
     margin: 8px 0;
+  }
+
+  .icon-cleanup-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .subsection {
+    margin-top: 8px;
+  }
+
+  .subsection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .subsection-header span {
+    font-size: 13px;
+    color: #aaa;
+    font-weight: 500;
+  }
+
+  .add-input-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .add-input-row input {
+    flex: 1;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+  }
+
+  .add-input-row input:focus {
+    outline: none;
+    border-color: #0e639c;
+  }
+
+  .add-input-row button {
+    padding: 6px 12px;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .add-input-row button:first-of-type {
+    background-color: #2d7d46;
+  }
+
+  .add-input-row button:first-of-type:hover {
+    background-color: #3a9d5a;
+  }
+
+  .add-input-row button:last-child {
+    background-color: #7a2d2d;
+  }
+
+  .add-input-row button:last-child:hover {
+    background-color: #9a3d3d;
+  }
+
+  .pattern-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pattern-item {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .pattern-item input {
+    flex: 1;
+    padding: 6px 8px;
+    background: #2a2a2a;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #ccc;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+  }
+
+  .pattern-item input:focus {
+    outline: none;
+    border-color: #007acc;
+  }
+
+  .pattern-item .remove-btn {
+    padding: 4px 8px;
+    background: #3e3e42;
+    color: #aaa;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+  }
+
+  .pattern-item .remove-btn:hover {
+    background: #dc3545;
+    color: white;
   }
 </style>
