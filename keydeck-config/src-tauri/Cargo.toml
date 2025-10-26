@@ -26,12 +26,15 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10.0"
 keydeck = { path = "../.." }
 nix = { version = "0.29", features = ["signal"] }
-image = "0.25"
+image = { version = "0.25", features = ["png", "jpeg", "gif", "bmp", "webp"] }
+resvg = "0.45"
+rayon = "1.10"
 chrono = "0.4"
 pelite = "0.10"
 ini = "1.3"
 once_cell = "1.19"
 glob = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 lnk = "0.5"

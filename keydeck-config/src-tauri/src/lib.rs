@@ -337,8 +337,13 @@ fn ensure_default_icon_dir() -> Result<String, String> {
 /// List all installed applications (Linux only)
 #[cfg(target_os = "linux")]
 #[tauri::command]
-fn list_applications() -> Result<Vec<linux_icon_finder::AppInfo>, String> {
-    linux_icon_finder::find_applications()
+async fn list_applications() -> Result<Vec<linux_icon_finder::AppInfo>, String> {
+    // Run the blocking operation on a background thread
+    tokio::task::spawn_blocking(|| {
+        linux_icon_finder::find_applications()
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Select and copy an application icon to the keydeck icons directory (Linux only)
@@ -352,8 +357,13 @@ fn select_app_icon(app_name: String, icon_path: String) -> Result<String, String
 /// List all installed applications (Windows only)
 #[cfg(target_os = "windows")]
 #[tauri::command]
-fn list_applications() -> Result<Vec<windows_icon_finder::AppInfo>, String> {
-    windows_icon_finder::find_applications()
+async fn list_applications() -> Result<Vec<windows_icon_finder::AppInfo>, String> {
+    // Run the blocking operation on a background thread
+    tokio::task::spawn_blocking(|| {
+        windows_icon_finder::find_applications()
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Select and copy an application icon to the keydeck icons directory (Windows only)

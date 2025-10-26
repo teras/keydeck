@@ -176,6 +176,21 @@
     }
   });
 
+  // Close app browser when clicking outside
+  $effect(() => {
+    if (showAppBrowser) {
+      const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.app-browser') && !target.closest('.icon-search-btn')) {
+          showAppBrowser = false;
+          appSearchFilter = "";
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  });
+
   let buttonKey = $derived(`button${buttonIndex}`);
   let pageGroup = $derived(config.page_groups?.[deviceSerial] || config.page_groups?.default);
   // Pages are flattened, so currentPage is directly under pageGroup
@@ -574,10 +589,8 @@
   }
 
   async function openIconSearchDialog() {
-    // Toggle the app browser
     showAppBrowser = !showAppBrowser;
 
-    // Load apps if not already loaded and we're showing the browser
     if (showAppBrowser && availableApps.length === 0 && !loadingApps) {
       loadingApps = true;
       try {
@@ -592,7 +605,6 @@
       }
     }
 
-    // Reset search filter when opening
     if (showAppBrowser) {
       appSearchFilter = "";
     }
@@ -899,31 +911,37 @@
       {#if showAppBrowser}
         <div class="app-browser">
           <div class="app-browser-header">
-            <input
-              type="text"
-              class="app-search"
-              placeholder="Search applications..."
-              bind:value={appSearchFilter}
-              onclick={(e) => e.stopPropagation()}
-            />
             {#if loadingApps}
-              <span class="loading-text">Loading applications...</span>
+              <div class="loading-inline">
+                <div class="spinner"></div>
+                <span>Loading applications and converting icons...</span>
+              </div>
+            {:else}
+              <input
+                type="text"
+                class="app-search"
+                placeholder="Search applications..."
+                bind:value={appSearchFilter}
+                onclick={(e) => e.stopPropagation()}
+              />
             {/if}
           </div>
           <div class="app-list">
-            {#if filteredApps.length > 0}
-              {#each filteredApps as app}
-                <button
-                  class="app-option"
-                  onclick={() => selectApp(app)}
-                  disabled={isReadOnly}
-                >
-                  <img src={convertFileSrc(app.icon_path)} alt="" class="app-icon-thumb" />
-                  <span>{app.name}</span>
-                </button>
-              {/each}
-            {:else if !loadingApps}
-              <p class="no-apps">No applications found</p>
+            {#if !loadingApps}
+              {#if filteredApps.length > 0}
+                {#each filteredApps as app}
+                  <button
+                    class="app-option"
+                    onclick={() => selectApp(app)}
+                    disabled={isReadOnly}
+                  >
+                    <img src={convertFileSrc(app.icon_path)} alt="" class="app-icon-thumb" />
+                    <span>{app.name}</span>
+                  </button>
+                {/each}
+              {:else}
+                <p class="no-apps">No applications found</p>
+              {/if}
             {/if}
           </div>
         </div>
@@ -1392,8 +1410,33 @@
     padding: 8px;
     border-bottom: 1px solid #555;
     display: flex;
-    gap: 8px;
+  }
+
+  .loading-inline {
+    display: flex;
     align-items: center;
+    gap: 12px;
+    padding: 8px;
+    color: #888;
+  }
+
+  .loading-inline .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #3c3c3c;
+    border-top-color: #0e639c;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .loading-inline span {
+    font-style: italic;
+    font-size: 13px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .app-search {
@@ -1411,16 +1454,12 @@
     border-color: #0e639c;
   }
 
-  .loading-text {
-    color: #888;
-    font-size: 12px;
-    font-style: italic;
-  }
-
   .app-list {
+    flex: 1;
     overflow-y: auto;
-    max-height: 350px;
-    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .app-option {

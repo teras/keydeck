@@ -1,8 +1,10 @@
 use once_cell::sync::Lazy;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppInfo {
@@ -37,14 +39,14 @@ pub fn find_applications() -> Result<Vec<AppInfo>, String> {
 
 /// Scan .desktop file directories and parse them
 fn scan_desktop_files() -> Result<Vec<AppInfo>, String> {
-    let mut apps = Vec::new();
-
     // Desktop file locations
     let desktop_dirs = vec![
         PathBuf::from("/usr/share/applications"),
         PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".local/share/applications"),
     ];
 
+    // Collect all .desktop files first
+    let mut desktop_files = Vec::new();
     for dir in desktop_dirs {
         if !dir.exists() {
             continue;
@@ -54,18 +56,24 @@ fn scan_desktop_files() -> Result<Vec<AppInfo>, String> {
             .map_err(|e| format!("Failed to read directory {}: {}", dir.display(), e))?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
-            let path = entry.path();
-
-            if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
-                if let Some((name, icon_path)) = parse_desktop_file(&path) {
-                    apps.push(AppInfo { name, icon_path });
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("desktop") {
+                    desktop_files.push(path);
                 }
             }
         }
     }
 
+    // Parse desktop files in parallel (this is where icon conversion happens)
+    let apps: Vec<AppInfo> = desktop_files
+        .par_iter()
+        .filter_map(|path| parse_desktop_file(path))
+        .map(|(name, icon_path)| AppInfo { name, icon_path })
+        .collect();
+
     // Sort by name
+    let mut apps = apps;
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(apps)
@@ -127,13 +135,137 @@ fn parse_desktop_file(path: &Path) -> Option<(String, String)> {
     Some((name, icon_path))
 }
 
-/// Resolve icon name/path to actual file path
+/// Get or create temporary directory for converted icons
+fn get_temp_icons_dir() -> Result<PathBuf, String> {
+    let temp_dir = std::env::temp_dir().join("keydeck_converted_icons");
+
+    if !temp_dir.exists() {
+        fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp icons directory: {}", e))?;
+    }
+
+    Ok(temp_dir)
+}
+
+/// Convert unsupported icon formats to PNG using Rust libraries
+/// Only PNG and JPG are natively supported, all others need conversion
+fn convert_icon_to_png(source_path: &Path) -> Result<PathBuf, String> {
+    let ext = source_path.extension()
+        .and_then(|s| s.to_str())
+        .ok_or("No file extension")?
+        .to_lowercase();
+
+    // PNG and JPG/JPEG are already supported, no conversion needed
+    if ext == "png" || ext == "jpg" || ext == "jpeg" {
+        return Err("Already a supported format".to_string());
+    }
+
+    // Create output path in temp directory with deterministic name
+    let temp_dir = get_temp_icons_dir()?;
+
+    // Convert source path to safe filename: /usr/share/icons/audacity.xpm -> _usr_share_icons_audacity.xpm.png
+    let safe_name = source_path.to_string_lossy()
+        .replace('/', "_")
+        .replace('\\', "_");
+    let output_path = temp_dir.join(format!("{}.png", safe_name));
+
+    // Skip if already converted (cache hit)
+    if output_path.exists() {
+        return Ok(output_path);
+    }
+
+    // Try format-specific conversion
+    match ext.as_str() {
+        "svg" => convert_svg_to_png(source_path, &output_path),
+        "gif" | "bmp" | "webp" => convert_with_image_crate(source_path, &output_path),
+        "xpm" => convert_with_imagemagick(source_path, &output_path),
+        _ => Err(format!("Unsupported format: {}", ext)),
+    }
+}
+
+/// Convert SVG to PNG using resvg
+fn convert_svg_to_png(source_path: &Path, output_path: &Path) -> Result<PathBuf, String> {
+    use resvg::usvg;
+
+    // Read SVG file
+    let svg_data = fs::read(source_path)
+        .map_err(|e| format!("Failed to read SVG: {}", e))?;
+
+    // Parse SVG
+    let options = usvg::Options::default();
+    let tree = usvg::Tree::from_data(&svg_data, &options)
+        .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+
+    // Calculate size (limit to 512x512)
+    let size = tree.size();
+    let scale = (512.0 / size.width().max(size.height())).min(1.0);
+    let width = (size.width() * scale) as u32;
+    let height = (size.height() * scale) as u32;
+
+    // Render to pixmap
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+        .ok_or("Failed to create pixmap")?;
+
+    resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+
+    // Save as PNG
+    pixmap.save_png(output_path)
+        .map_err(|e| format!("Failed to save PNG: {}", e))?;
+
+    Ok(output_path.to_path_buf())
+}
+
+/// Convert GIF/BMP/WebP to PNG using the image crate
+fn convert_with_image_crate(source_path: &Path, output_path: &Path) -> Result<PathBuf, String> {
+    // Load image with the image crate
+    let img = image::open(source_path)
+        .map_err(|e| format!("Failed to load image: {}", e))?;
+
+    // Convert to RGBA
+    let rgba = img.to_rgba8();
+
+    // Save as PNG
+    rgba.save(output_path)
+        .map_err(|e| format!("Failed to save PNG: {}", e))?;
+
+    Ok(output_path.to_path_buf())
+}
+
+/// Check if ImageMagick convert command is available
+fn is_imagemagick_available() -> bool {
+    Command::new("convert")
+        .arg("-version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+/// Convert XPM to PNG using ImageMagick as fallback
+fn convert_with_imagemagick(source_path: &Path, output_path: &Path) -> Result<PathBuf, String> {
+    // Check if convert is available first
+    if !is_imagemagick_available() {
+        return Err("ImageMagick 'convert' command not found. Please install ImageMagick to use XPM icons.".to_string());
+    }
+
+    let status = Command::new("convert")
+        .arg(source_path)
+        .arg(output_path)
+        .status();
+
+    match status {
+        Ok(status) if status.success() => Ok(output_path.to_path_buf()),
+        Ok(_) => Err("ImageMagick conversion failed".to_string()),
+        Err(e) => Err(format!("Failed to run convert command: {}", e)),
+    }
+}
+
+/// Resolve icon name/path to actual file path, converting XPM/SVG to PNG if needed
 fn resolve_icon_path(icon_field: &str) -> Option<String> {
     // If it's already an absolute path, use it directly
     if icon_field.starts_with('/') {
         let path = PathBuf::from(icon_field);
         if path.exists() {
-            return Some(icon_field.to_string());
+            return convert_if_needed(&path);
         }
         return None;
     }
@@ -146,7 +278,7 @@ fn resolve_icon_path(icon_field: &str) -> Option<String> {
     for ext in &extensions {
         let pixmap_path = PathBuf::from(format!("/usr/share/pixmaps/{}.{}", icon_name, ext));
         if pixmap_path.exists() {
-            return Some(pixmap_path.to_string_lossy().to_string());
+            return convert_if_needed(&pixmap_path);
         }
     }
 
@@ -162,13 +294,42 @@ fn resolve_icon_path(icon_field: &str) -> Option<String> {
             for ext in &extensions {
                 let icon_path = theme_dir.join(size).join("apps").join(format!("{}.{}", icon_name, ext));
                 if icon_path.exists() {
-                    return Some(icon_path.to_string_lossy().to_string());
+                    return convert_if_needed(&icon_path);
                 }
             }
         }
     }
 
     None
+}
+
+/// Convert icon to PNG if it's not PNG or JPG, otherwise return original path
+fn convert_if_needed(path: &Path) -> Option<String> {
+    let ext = path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase());
+
+    match ext.as_deref() {
+        Some("png") | Some("jpg") | Some("jpeg") => {
+            // Already supported format, return as-is
+            Some(path.to_string_lossy().to_string())
+        }
+        Some(_) => {
+            // Unsupported format (XPM, SVG, GIF, BMP, etc.) - try to convert
+            match convert_icon_to_png(path) {
+                Ok(converted_path) => Some(converted_path.to_string_lossy().to_string()),
+                Err(_) => {
+                    // Conversion failed (e.g., XPM without ImageMagick)
+                    // Return None to skip this icon rather than showing broken icon
+                    None
+                }
+            }
+        }
+        None => {
+            // No extension, return as-is
+            Some(path.to_string_lossy().to_string())
+        }
+    }
 }
 
 /// Copy app icon to keydeck icons directory
