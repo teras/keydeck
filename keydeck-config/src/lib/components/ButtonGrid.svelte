@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { convertFileSrc, invoke } from '@tauri-apps/api/core';
   import DeviceSelector from './DeviceSelector.svelte';
   import { processEscapeSequences } from '$lib/utils/escapeChars';
 
@@ -40,6 +40,24 @@
   }
 
   let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked, onDeviceSelected, onRefresh }: Props = $props();
+
+  // Get icon directory from backend
+  let iconDir = $state<string>('');
+
+  async function getIconPath(): Promise<string> {
+    try {
+      const dir = await invoke<string>('ensure_default_icon_dir');
+      return dir;
+    } catch (e) {
+      console.error('Failed to get icon directory:', e);
+      return '';
+    }
+  }
+
+  // Load icon directory on mount
+  $effect(() => {
+    getIconPath().then(dir => iconDir = dir);
+  });
 
   // Get button configuration from template inheritance chain
   function getButtonFromTemplate(templateName: string, buttonKey: string, visited = new Set<string>()): any {
@@ -291,12 +309,11 @@
 
     if (!buttonConfig.icon) return null;
 
-    // Get image directory from config
-    const imageDir = config.image_dir || null;
-    if (!imageDir) return null;
+    // Use hard-coded icon directory
+    if (!iconDir) return null;
 
     // Build full path and convert to Tauri asset URL
-    const fullPath = `${imageDir}/${buttonConfig.icon}`;
+    const fullPath = `${iconDir}/${buttonConfig.icon}`;
     return convertFileSrc(fullPath);
   }
 

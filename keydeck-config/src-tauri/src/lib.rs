@@ -3,6 +3,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
 
+mod icon_extractor;
+
+#[cfg(target_os = "linux")]
+mod linux_icon_finder;
+
 // Re-export keydeck types and functions for frontend
 pub use keydeck::{DeviceInfo, KeyDeckConf, get_icon_dir, DEFAULT_ICON_DIR_REL};
 
@@ -326,6 +331,29 @@ fn ensure_default_icon_dir() -> Result<String, String> {
         .map(|s| s.to_string())
 }
 
+/// List all installed applications (Linux only)
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn list_applications() -> Result<Vec<linux_icon_finder::AppInfo>, String> {
+    linux_icon_finder::find_applications()
+}
+
+/// Select and copy an application icon to the keydeck icons directory (Linux only)
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn select_app_icon(app_name: String, icon_path: String) -> Result<String, String> {
+    let icon_dir = get_icon_dir();
+    linux_icon_finder::copy_app_icon(app_name, icon_path, icon_dir)
+}
+
+/// Extract icon from a Windows PE file (.exe, .dll) and save it to the icon directory
+/// Returns the filename of the saved icon
+#[tauri::command]
+fn extract_icon_from_exe(file_path: String) -> Result<String, String> {
+    let icon_dir = get_icon_dir();
+    icon_extractor::extract_icon_from_exe(file_path, icon_dir)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -377,6 +405,11 @@ pub fn run() {
             check_directory_exists,
             list_icons,
             ensure_default_icon_dir,
+            extract_icon_from_exe,
+            #[cfg(target_os = "linux")]
+            list_applications,
+            #[cfg(target_os = "linux")]
+            select_app_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

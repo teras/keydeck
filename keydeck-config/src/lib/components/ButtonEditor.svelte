@@ -35,6 +35,12 @@
   let showButtonDefDropdown = $state(false);
   let buttonDefSearchFilter = $state("");
 
+  // Application browser state
+  let showAppBrowser = $state(false);
+  let availableApps = $state<{name: string; icon_path: string}[]>([]);
+  let appSearchFilter = $state("");
+  let loadingApps = $state(false);
+
   // Load available icons from hard-coded image directory
   async function loadIcons() {
     try {
@@ -567,6 +573,60 @@
     return detailed.text.font_size;
   }
 
+  async function openIconSearchDialog() {
+    // Toggle the app browser
+    showAppBrowser = !showAppBrowser;
+
+    // Load apps if not already loaded and we're showing the browser
+    if (showAppBrowser && availableApps.length === 0 && !loadingApps) {
+      loadingApps = true;
+      try {
+        const apps = await invoke<{name: string; icon_path: string}[]>('list_applications');
+        availableApps = apps || [];
+      } catch (e) {
+        console.error('Failed to load applications:', e);
+        await message('Failed to load applications. This feature is Linux-only.', { title: 'Error', kind: 'error' });
+        showAppBrowser = false;
+      } finally {
+        loadingApps = false;
+      }
+    }
+
+    // Reset search filter when opening
+    if (showAppBrowser) {
+      appSearchFilter = "";
+    }
+  }
+
+  async function selectApp(app: {name: string; icon_path: string}) {
+    try {
+      // Copy the icon and get the filename
+      const iconFilename = await invoke<string>('select_app_icon', {
+        appName: app.name,
+        iconPath: app.icon_path
+      });
+
+      // Select this icon
+      updateIcon(iconFilename);
+
+      // Close the app browser
+      showAppBrowser = false;
+      appSearchFilter = "";
+
+      // Reload icon list to include the new icon
+      await loadIcons();
+    } catch (e) {
+      console.error('Failed to select app icon:', e);
+      await message(`Failed to copy icon: ${e}`, { title: 'Error', kind: 'error' });
+    }
+  }
+
+  let filteredApps = $derived(
+    availableApps.filter(app =>
+      app.name.toLowerCase().includes(appSearchFilter.toLowerCase())
+    )
+  );
+
   async function clearButton() {
     const confirmed = await ask(
       `Clear all properties for ${buttonDisplayName}?\n\nThis will delete the button configuration from this ${isTemplate ? 'template' : 'page'}.`,
@@ -775,58 +835,99 @@
 
   <div class="form-group">
     <label>Icon</label>
-    <p class="help" style="margin-top: 0; margin-bottom: 8px;">Icons are stored in: {iconDir || '~/.config/keydeck/icons'}</p>
     {#if availableIcons.length > 0}
-      <div class="icon-dropdown-container">
-        <button
-          class="icon-dropdown-trigger"
-          class:reference={buttonDefReference !== null}
-          class:inherited={inheritedSource !== null}
-          onclick={() => showIconDropdown = !showIconDropdown}
-          disabled={isReadOnly}
-        >
-          <div class="selected-icon">
-            {#if getDetailedConfig()?.icon}
-              <img src={getIconUrl(getDetailedConfig().icon)} alt="" class="icon-thumb" />
-              <span>{getDetailedConfig().icon}</span>
-            {:else}
-              <span class="no-icon-text">No icon</span>
-            {/if}
-          </div>
-          <span class="dropdown-arrow">▼</span>
-        </button>
-
-        {#if showIconDropdown}
-          <div class="icon-dropdown-menu">
-            <input
-              type="text"
-              class="icon-search"
-              placeholder="Search icons..."
-              bind:value={iconSearchFilter}
-              onclick={(e) => e.stopPropagation()}
-            />
-            <div class="icon-options">
-              <button
-                class="icon-option"
-                class:selected={!getDetailedConfig()?.icon}
-                onclick={() => selectIcon("")}
-              >
+      <div class="icon-selector-row">
+        <div class="icon-dropdown-container">
+          <button
+            class="icon-dropdown-trigger"
+            class:reference={buttonDefReference !== null}
+            class:inherited={inheritedSource !== null}
+            onclick={() => showIconDropdown = !showIconDropdown}
+            disabled={isReadOnly}
+          >
+            <div class="selected-icon">
+              {#if getDetailedConfig()?.icon}
+                <img src={getIconUrl(getDetailedConfig().icon)} alt="" class="icon-thumb" />
+                <span>{getDetailedConfig().icon}</span>
+              {:else}
                 <span class="no-icon-text">No icon</span>
-              </button>
-              {#each filteredIcons as iconFile}
+              {/if}
+            </div>
+            <span class="dropdown-arrow">▼</span>
+          </button>
+
+          {#if showIconDropdown}
+            <div class="icon-dropdown-menu">
+              <input
+                type="text"
+                class="icon-search"
+                placeholder="Search icons..."
+                bind:value={iconSearchFilter}
+                onclick={(e) => e.stopPropagation()}
+              />
+              <div class="icon-options">
                 <button
                   class="icon-option"
-                  class:selected={getDetailedConfig()?.icon === iconFile}
-                  onclick={() => selectIcon(iconFile)}
+                  class:selected={!getDetailedConfig()?.icon}
+                  onclick={() => selectIcon("")}
                 >
-                  <img src={getIconUrl(iconFile)} alt="" class="icon-thumb" />
-                  <span>{iconFile}</span>
+                  <span class="no-icon-text">No icon</span>
+                </button>
+                {#each filteredIcons as iconFile}
+                  <button
+                    class="icon-option"
+                    class:selected={getDetailedConfig()?.icon === iconFile}
+                    onclick={() => selectIcon(iconFile)}
+                  >
+                    <img src={getIconUrl(iconFile)} alt="" class="icon-thumb" />
+                    <span>{iconFile}</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+        <button class="icon-search-btn" onclick={openIconSearchDialog} title="Search for application icons">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Application Browser -->
+      {#if showAppBrowser}
+        <div class="app-browser">
+          <div class="app-browser-header">
+            <input
+              type="text"
+              class="app-search"
+              placeholder="Search applications..."
+              bind:value={appSearchFilter}
+              onclick={(e) => e.stopPropagation()}
+            />
+            {#if loadingApps}
+              <span class="loading-text">Loading applications...</span>
+            {/if}
+          </div>
+          <div class="app-list">
+            {#if filteredApps.length > 0}
+              {#each filteredApps as app}
+                <button
+                  class="app-option"
+                  onclick={() => selectApp(app)}
+                  disabled={isReadOnly}
+                >
+                  <img src={convertFileSrc(app.icon_path)} alt="" class="app-icon-thumb" />
+                  <span>{app.name}</span>
                 </button>
               {/each}
-            </div>
+            {:else if !loadingApps}
+              <p class="no-apps">No applications found</p>
+            {/if}
           </div>
-        {/if}
-      </div>
+        </div>
+      {/if}
     {:else}
       <input
         type="text"
@@ -836,6 +937,7 @@
         disabled={isReadOnly}
       />
     {/if}
+    <p class="help">Icons are stored in: {iconDir || '~/.config/keydeck/icons'}</p>
   </div>
 
   <div class="form-group">
@@ -1071,6 +1173,32 @@
     background-color: #c598e6;
   }
 
+  .icon-selector-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .icon-search-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+    flex-shrink: 0;
+  }
+
+  .icon-search-btn:hover {
+    background-color: #1177b8;
+  }
+
   .form-group {
     display: flex;
     flex-direction: column;
@@ -1125,6 +1253,7 @@
 
   .icon-dropdown-container {
     position: relative;
+    flex: 1;
   }
 
   .icon-dropdown-trigger {
@@ -1246,6 +1375,88 @@
 
   .icon-option.selected {
     background-color: #0e639c;
+  }
+
+  /* Application Browser Styles */
+  .app-browser {
+    margin-top: 8px;
+    background-color: #2d2d30;
+    border: 1px solid #555;
+    border-radius: 4px;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-browser-header {
+    padding: 8px;
+    border-bottom: 1px solid #555;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .app-search {
+    flex: 1;
+    padding: 6px 8px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  .app-search:focus {
+    outline: none;
+    border-color: #0e639c;
+  }
+
+  .loading-text {
+    color: #888;
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  .app-list {
+    overflow-y: auto;
+    max-height: 350px;
+    padding: 4px;
+  }
+
+  .app-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    background-color: transparent;
+    color: #cccccc;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.2s;
+  }
+
+  .app-option:hover {
+    background-color: #3c3c3c;
+  }
+
+  .app-icon-thumb {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    background-color: #2a2a2a;
+    border-radius: 4px;
+    padding: 4px;
+    flex-shrink: 0;
+  }
+
+  .no-apps {
+    text-align: center;
+    color: #888;
+    padding: 20px;
+    font-style: italic;
   }
 
   /* Button Definition Dropdown Styles */
