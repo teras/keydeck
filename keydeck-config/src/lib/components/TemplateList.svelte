@@ -16,7 +16,7 @@
   let newTemplateName = $state("");
   let renameTemplateName = $state("");
   let renamingTemplate = $state<string | null>(null);
-  let templateNameInput: HTMLInputElement | undefined;
+  let templateNameInput = $state<HTMLInputElement | undefined>();
 
   function toggleAddTemplate() {
     showAddTemplate = !showAddTemplate;

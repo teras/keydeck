@@ -1286,15 +1286,6 @@
     background-color: #3c3c3c;
   }
 
-  .buttondef-option.new-option {
-    color: #4ec9b0;
-    font-style: italic;
-  }
-
-  .buttondef-option.new-option:hover {
-    background-color: #2a3a2a;
-  }
-
   .no-options {
     padding: 20px;
     text-align: center;
@@ -1330,22 +1321,6 @@
 
   .input-container input:focus {
     outline: none;
-  }
-
-  .input-container .icon-dropdown-container {
-    margin: -8px;
-  }
-
-  .actions-container {
-    padding: 8px;
-    background-color: #3c3c3c;
-    border: 1px solid #555;
-    border-radius: 4px;
-  }
-
-  .actions-container.readonly {
-    background-color: #38344a;
-    border-color: #4a4565;
   }
 
   .actions-list {

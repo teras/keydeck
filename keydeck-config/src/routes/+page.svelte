@@ -60,7 +60,7 @@
   let renamingParam = $state<string | null>(null);
   let renameParamName = $state<string>("");
   let lastAddedParam = $state<string | null>(null);
-  let paramNameInput: HTMLInputElement | undefined;
+  let paramNameInput = $state<HTMLInputElement | undefined>();
 
   function setError(message: string) {
     error = message;

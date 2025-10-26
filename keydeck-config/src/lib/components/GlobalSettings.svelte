@@ -64,7 +64,7 @@
   let renamingColor = $state<string | null>(null);
   let renameColorName = $state("");
   let lastAddedColor = $state<string | null>(null);
-  let colorNameInput: HTMLInputElement | undefined;
+  let colorNameInput = $state<HTMLInputElement | undefined>();
 
   function toggleAddColor() {
     showAddColor = !showAddColor;

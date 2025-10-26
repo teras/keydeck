@@ -421,12 +421,6 @@
     padding: 20px 0;
   }
 
-  .device-info h3 {
-    margin: 0;
-    font-size: 16px;
-    color: #cccccc;
-  }
-
   .center-content {
     display: flex;
     flex-direction: column;

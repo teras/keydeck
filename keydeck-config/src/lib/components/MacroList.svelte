@@ -13,7 +13,7 @@
   let showAddMacro = $state(false);
   let newMacroName = $state("");
   let showMacroMenu = $state<string | null>(null);
-  let macroNameInput: HTMLInputElement | undefined;
+  let macroNameInput = $state<HTMLInputElement | undefined>();
   let renameMacroName = $state("");
   let renamingMacro = $state<string | null>(null);
 

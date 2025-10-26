@@ -106,13 +106,21 @@
           {#each selectedTemplates as template}
             <span class="template-chip">
               {template}
-              <button
+              <span
                 class="remove-chip"
                 onclick={(e) => removeTemplate(template, e)}
                 title="Remove"
+                role="button"
+                tabindex="0"
+                onkeydown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    removeTemplate(template, e);
+                  }
+                }}
               >
                 ✕
-              </button>
+              </span>
             </span>
           {/each}
         </div>

@@ -13,7 +13,7 @@
   let showAddService = $state(false);
   let newServiceName = $state("");
   let showServiceMenu = $state<string | null>(null);
-  let serviceNameInput: HTMLInputElement | undefined;
+  let serviceNameInput = $state<HTMLInputElement | undefined>();
   let renameServiceName = $state("");
   let renamingService = $state<string | null>(null);
 

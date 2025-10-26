@@ -204,20 +204,6 @@
     text-transform: uppercase;
   }
 
-  input {
-    padding: 8px;
-    background-color: #3c3c3c;
-    color: #cccccc;
-    border: 1px solid #555;
-    border-radius: 4px;
-    font-size: 13px;
-  }
-
-  input:focus {
-    outline: none;
-    border-color: #0e639c;
-  }
-
   .help {
     margin: 0;
     font-size: 11px;

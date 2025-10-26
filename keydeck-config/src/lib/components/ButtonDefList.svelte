@@ -13,7 +13,7 @@
   let showAddButton = $state(false);
   let newButtonName = $state("");
   let showButtonMenu = $state<string | null>(null);
-  let buttonNameInput: HTMLInputElement | undefined;
+  let buttonNameInput = $state<HTMLInputElement | undefined>();
   let renameButtonName = $state("");
   let renamingButton = $state<string | null>(null);
 

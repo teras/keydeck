@@ -13,6 +13,13 @@ const config = {
       fallback: "index.html",
     }),
   },
+  // Suppress accessibility warnings for internal desktop application
+  onwarn: (warning, handler) => {
+    // Suppress all a11y warnings
+    if (warning.code.startsWith('a11y')) return;
+    // Let other warnings pass through
+    handler(warning);
+  },
 };
 
 export default config;

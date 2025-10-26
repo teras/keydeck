@@ -27,7 +27,7 @@
   let draggedPage = $state<string | null>(null);
   let dragOverPage = $state<string | null>(null);
   let dropPosition = $state<'before' | 'after' | null>(null);
-  let pageNameInput: HTMLInputElement | undefined;
+  let pageNameInput = $state<HTMLInputElement | undefined>();
   let renamePageName = $state("");
   let renamingPage = $state<string | null>(null);
 
