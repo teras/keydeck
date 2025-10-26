@@ -82,7 +82,7 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
 
     if !config_path.exists() {
         // Return default empty config for first-time launch
-        return Ok(KeyDeckConf::new());
+        return Ok(KeyDeckConf::from_file_or_default());
     }
 
     let content = std::fs::read_to_string(&config_path)

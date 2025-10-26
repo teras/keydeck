@@ -148,6 +148,22 @@ fn default_brightness() -> u8 {
     80 // 80%
 }
 
+impl Default for KeyDeckConf {
+    fn default() -> Self {
+        KeyDeckConf {
+            image_dir: None,
+            templates: None,
+            buttons: None,
+            colors: None,
+            services: None,
+            macros: None,
+            tick_time: default_tick_time(),
+            brightness: default_brightness(),
+            page_groups: IndexMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum FocusChangeRestorePolicy {
@@ -473,6 +489,12 @@ pub enum Action {
     },
 }
 
+fn get_default_config_path() -> PathBuf {
+    let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
+    path.push(".config/keydeck/config.yaml");
+    path
+}
+
 impl KeyDeckConf {
     /// Recursively resolves a template and all its parent templates, with cycle detection.
     /// Returns merged buttons, on_tick actions, and lock value in parent-first order (grandparent -> parent -> child).
@@ -540,9 +562,24 @@ impl KeyDeckConf {
         Ok((merged_buttons, merged_on_tick, merged_lock))
     }
 
+    /// Load configuration from the default path, or return an empty default config if the file doesn't exist.
+    /// This is useful for the configuration UI which should work without an existing config file.
+    ///
+    /// NOTE: This method is only compiled when building the library (for the UI).
+    /// The daemon doesn't need this functionality as it always requires a valid config file.
+    /// DO NOT remove this despite dead_code warnings in daemon builds - the UI depends on it.
+    #[cfg(not(feature = "binary"))]
+    pub fn from_file_or_default() -> Self {
+        let path = get_default_config_path();
+        if path.exists() {
+            Self::new()
+        } else {
+            Self::default()
+        }
+    }
+
     pub fn new() -> Self {
-        let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
-        path.push(".config/keydeck/config.yaml");
+        let path = get_default_config_path();
 
         let data = fs::read_to_string(&path).unwrap_or_else(|e| {
             eprintln!("Error: Failed to read config file at {}", path.display());
