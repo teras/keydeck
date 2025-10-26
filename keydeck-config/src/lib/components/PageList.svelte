@@ -105,16 +105,16 @@
     // Also delete from root level
     delete config[groupKey][pageName];
 
-    // Select first available page or create main if none exist
+    // Select first available page or create Main if none exist
     const remainingPages = Object.keys(config.page_groups[groupKey] || {})
       .filter(key => !knownFields.includes(key));
 
     if (remainingPages.length > 0) {
       onPageSelected(remainingPages[0]);
     } else {
-      config.page_groups[groupKey]['main'] = {};
-      config[groupKey]['main'] = {};
-      onPageSelected('main');
+      config.page_groups[groupKey]['Main'] = {};
+      config[groupKey]['Main'] = {};
+      onPageSelected('Main');
     }
   }
 

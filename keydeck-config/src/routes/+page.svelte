@@ -84,9 +84,7 @@
         config.page_groups = {
           default: {
             restore_mode: "main",
-            main: {
-              buttons: {}
-            }
+            Main: {}
           }
         };
         // Also add to root level since it's flattened
@@ -107,16 +105,12 @@
         page_groups: {
           default: {
             restore_mode: "main",
-            main: {
-              buttons: {}
-            }
+            Main: {}
           }
         },
         default: {
           restore_mode: "main",
-          main: {
-            buttons: {}
-          }
+          Main: {}
         }
       };
 
@@ -129,22 +123,73 @@
   function selectInitialPage() {
     if (!config?.page_groups) return;
 
-    const pageGroup = selectedDevice
+    // Take snapshot BEFORE any auto-creation to preserve user changes
+    const snapshotBeforeAutoCreate = lastConfigSnapshot;
+
+    // Get or create page group for the selected device
+    let pageGroup = selectedDevice
       ? (config.page_groups[selectedDevice.serial] || config.page_groups.default)
       : config.page_groups.default;
 
-    if (!pageGroup) return;
+    // Track if we're creating new structures (to avoid marking as unsaved changes)
+    let createdNewStructures = false;
+
+    // If the device doesn't have its own page group and we're falling back to default,
+    // OR if the page group doesn't exist at all, create a default page group
+    if (!pageGroup || (selectedDevice && !config.page_groups[selectedDevice.serial])) {
+      // Create a new page group for this device with a default 'Main' page
+      const groupKey = selectedDevice?.serial || 'default';
+      config.page_groups[groupKey] = {
+        restore_mode: "main",
+        Main: {}
+      };
+      // Also update root level since it's flattened
+      config[groupKey] = config.page_groups[groupKey];
+      pageGroup = config.page_groups[groupKey];
+      createdNewStructures = true;
+    }
 
     // Try to get main_page from config, otherwise find first available page
     const knownFields = ['main_page', 'restore_mode', 'on_tick'];
-    const mainPageName = pageGroup.main_page || 'main';
+    const mainPageName = pageGroup.main_page || 'Main';
     const availablePages = Object.keys(pageGroup).filter(key => !knownFields.includes(key));
 
-    // Select main_page if it exists, otherwise select first available page
-    if (availablePages.includes(mainPageName)) {
+    // If no pages exist, create a default 'Main' page
+    if (availablePages.length === 0) {
+      const groupKey = selectedDevice?.serial || 'default';
+      config.page_groups[groupKey]['Main'] = {};
+      config[groupKey]['Main'] = {};
+      currentPage = 'Main';
+      createdNewStructures = true;
+    } else if (availablePages.includes(mainPageName)) {
+      // Select main_page if it exists
       currentPage = mainPageName;
-    } else if (availablePages.length > 0) {
+    } else {
+      // Select first available page
       currentPage = availablePages[0];
+    }
+
+    // If we created new structures, check if ONLY the auto-created structures changed
+    // This preserves any legitimate user changes made before this function was called
+    if (createdNewStructures && snapshotBeforeAutoCreate !== undefined) {
+      setTimeout(() => {
+        // Get current state after our auto-creation
+        const currentSnapshot = JSON.stringify(config);
+
+        // If the snapshot hasn't been updated by user changes since we started,
+        // update it to include our auto-created structures
+        if (lastConfigSnapshot === snapshotBeforeAutoCreate) {
+          lastConfigSnapshot = currentSnapshot;
+          hasUnsavedChanges = false;
+        }
+        // Otherwise, user made changes in the meantime, so keep hasUnsavedChanges = true
+      }, 0);
+    } else if (createdNewStructures && snapshotBeforeAutoCreate === undefined) {
+      // First load case - just update the snapshot
+      setTimeout(() => {
+        lastConfigSnapshot = JSON.stringify(config);
+        hasUnsavedChanges = false;
+      }, 0);
     }
   }
 
