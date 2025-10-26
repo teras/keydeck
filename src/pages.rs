@@ -598,6 +598,13 @@ impl KeyDeckConf {
             std::process::exit(1);
         });
 
+        // Set default image_dir if not specified in config
+        if conf.image_dir.is_none() {
+            if let Ok(home) = std::env::var("HOME") {
+                conf.image_dir = Some(format!("{}/.config/keydeck/icons", home));
+            }
+        }
+
         // Validate tick_time is within range (1-60 seconds)
         if conf.tick_time < 1.0 || conf.tick_time > 60.0 {
             eprintln!("Error: tick_time must be between 1 and 60 seconds");

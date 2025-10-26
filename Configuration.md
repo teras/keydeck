@@ -169,7 +169,7 @@ keydeck --info | grep -E 'serial|kind|count'
 
 Global fields are configurations that apply universally across devices. Available options include:
 
-- `image_dir`: *(optional)* A string path to the directory containing button images. If unspecified, KeyDeck uses the current working directory.
+- `image_dir`: *(optional)* A string path to the directory containing button images. If unspecified, defaults to `~/.config/keydeck/icons`.
 - `colors`: A dictionary of named colors, specified in hexadecimal format (`0xRRGGBB` or `0xAARRGGBB`).
 - `tick_time`: *(optional)* Global tick interval in seconds. Controls how often the tick event fires for all devices. Must be between 1 and 60 seconds. Default: 2 seconds.
 - `services`: *(optional)* A dictionary of background services that execute commands periodically and cache their results. Services provide data that can be referenced in button text via `${service:name}` syntax. See [Services](#services) for details.
@@ -177,7 +177,7 @@ Global fields are configurations that apply universally across devices. Availabl
 #### Example
 
 ```yaml
-image_dir: /home/teras/Works/System/Drivers/StreamDeck
+image_dir: ~/.config/keydeck/icons
 tick_time: 2
 colors:
   background: 0x40FFFFFF

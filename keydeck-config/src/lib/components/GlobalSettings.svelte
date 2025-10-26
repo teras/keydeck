@@ -35,10 +35,18 @@
 
   async function browseImageDir() {
     try {
+      // Use current image_dir or default to ~/.config/keydeck/icons
+      let defaultPath = config.image_dir;
+      if (!defaultPath) {
+        // Construct default path
+        const home = await import('@tauri-apps/api/path').then(m => m.homeDir());
+        defaultPath = `${await home}.config/keydeck/icons`;
+      }
+
       const selected = await open({
         directory: true,
         multiple: false,
-        defaultPath: config.image_dir || undefined
+        defaultPath: defaultPath
       });
 
       if (selected && typeof selected === 'string') {
@@ -214,7 +222,7 @@
           type="text"
           value={config.image_dir || ""}
           oninput={(e) => updateImageDir(e.currentTarget.value)}
-          placeholder="/path/to/images"
+          placeholder="~/.config/keydeck/icons"
           class:warning={!imageDirExists}
         />
         <button onclick={browseImageDir} class="browse-button" title="Browse for folder">

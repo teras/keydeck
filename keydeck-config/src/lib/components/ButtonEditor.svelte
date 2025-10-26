@@ -19,9 +19,10 @@
     isButtonDef?: boolean;
     onNavigateToTemplate?: (templateName: string, keepButtonSelection?: boolean) => void;
     onNavigateToButtonDef?: (buttonDefName: string, keepButtonSelection?: boolean) => void;
+    onOpenGlobalSettings?: () => void;
   }
 
-  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, isButtonDef = false, onNavigateToTemplate, onNavigateToButtonDef }: Props = $props();
+  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, isButtonDef = false, onNavigateToTemplate, onNavigateToButtonDef, onOpenGlobalSettings }: Props = $props();
 
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
@@ -755,7 +756,14 @@
   </div>
 
   <div class="form-group">
-    <label>Icon</label>
+    <div class="label-with-link">
+      <label>Icon</label>
+      {#if onOpenGlobalSettings}
+        <button class="settings-link" onclick={onOpenGlobalSettings} title="Configure icon directory in Global Settings">
+          Image Directory →
+        </button>
+      {/if}
+    </div>
     {#if availableIcons.length > 0}
       <div class="icon-dropdown-container">
         <button
@@ -1049,6 +1057,28 @@
 
   .reference-link:hover {
     background-color: #c598e6;
+  }
+
+  .label-with-link {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .settings-link {
+    padding: 4px 8px;
+    background-color: #4a9eff;
+    color: #1e1e1e;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: background-color 0.2s;
+  }
+
+  .settings-link:hover {
+    background-color: #5eb0ff;
   }
 
   .form-group {

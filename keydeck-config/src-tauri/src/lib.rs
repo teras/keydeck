@@ -224,9 +224,9 @@ fn get_image_path(image_dir: Option<String>, filename: String) -> Result<String,
     let base_dir = if let Some(dir) = image_dir {
         PathBuf::from(dir)
     } else {
-        // Default to ~/.config/keydeck_images if no image_dir specified
+        // Default to ~/.config/keydeck/icons if no image_dir specified
         let mut path = PathBuf::from(std::env::var("HOME").expect("HOME not set"));
-        path.push(".config/keydeck_images");
+        path.push(".config/keydeck/icons");
         path
     };
 
@@ -253,9 +253,9 @@ fn list_icons(image_dir: Option<String>) -> Result<Vec<String>, String> {
     let base_dir = if let Some(dir) = image_dir {
         PathBuf::from(dir)
     } else {
-        // Default to ~/.config/keydeck_images if no image_dir specified
+        // Default to ~/.config/keydeck/icons if no image_dir specified
         let mut path = PathBuf::from(std::env::var("HOME").map_err(|e| format!("HOME not set: {}", e))?);
-        path.push(".config/keydeck_images");
+        path.push(".config/keydeck/icons");
         path
     };
 
@@ -326,6 +326,22 @@ fn get_config_dir() -> PathBuf {
     path
 }
 
+/// Create the default icon directory if it doesn't exist
+#[tauri::command]
+fn ensure_default_icon_dir() -> Result<String, String> {
+    let mut path = PathBuf::from(std::env::var("HOME").map_err(|e| format!("HOME not set: {}", e))?);
+    path.push(".config/keydeck/icons");
+
+    if !path.exists() {
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create icon directory: {}", e))?;
+    }
+
+    path.to_str()
+        .ok_or_else(|| "Invalid path encoding".to_string())
+        .map(|s| s.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -376,6 +392,7 @@ pub fn run() {
             get_image_path,
             check_directory_exists,
             list_icons,
+            ensure_default_icon_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

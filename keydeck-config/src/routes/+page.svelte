@@ -73,6 +73,13 @@
 
   onMount(async () => {
     try {
+      // Ensure default icon directory exists
+      try {
+        await invoke("ensure_default_icon_dir");
+      } catch (e) {
+        console.warn("Failed to create default icon directory:", e);
+      }
+
       // Load config from default path
       // If no config file exists (first launch), backend returns a default empty config
       const loadedConfig = await invoke("load_config", { path: null });
@@ -751,6 +758,7 @@
           isTemplate={!!currentTemplate}
           onNavigateToTemplate={handleTemplateSelected}
           onNavigateToButtonDef={handleButtonDefNavigate}
+          onOpenGlobalSettings={() => sidebarToggleTab?.('global')}
         />
       {:else if currentService && config}
         <div class="editor-panel">

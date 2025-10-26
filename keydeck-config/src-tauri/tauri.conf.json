@@ -38,10 +38,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$HOME/.config/**",
-          "$HOME/Works/**"
-        ]
+        "scope": ["/**"]
       }
     }
   },
