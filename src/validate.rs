@@ -1,5 +1,6 @@
 use crate::pages::{ButtonConfig, KeyDeckConf};
 use crate::{error_log, info_log, verbose_log};
+use keydeck::get_icon_dir;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
@@ -172,7 +173,7 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
         info_log!("  Macros: {}", macro_count);
         info_log!("  Services: {}", service_count);
         info_log!("  Colors: {}", color_count);
-        info_log!("  Image directory: {}", conf.image_dir.as_ref().unwrap_or(&"(none)".to_string()));
+        info_log!("  Image directory: {}", get_icon_dir());
         info_log!("  Tick time: {}s", conf.tick_time);
     }
 
@@ -199,7 +200,7 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
         macros: macro_count,
         services: service_count,
         colors: color_count,
-        image_dir: conf.image_dir.as_ref().unwrap_or(&"(none)".to_string()).clone(),
+        image_dir: get_icon_dir(),
         tick_time: conf.tick_time,
     });
 
@@ -446,10 +447,7 @@ fn validate_button_def_references(conf: &KeyDeckConf, result: &mut ValidationRes
 fn validate_icon_files(conf: &KeyDeckConf, result: &mut ValidationResult, json_output: bool) {
     verbose_log!("Validating icon files...");
 
-    let Some(image_dir) = &conf.image_dir else {
-        verbose_log!("  No image directory configured, skipping icon validation");
-        return;
-    };
+    let image_dir = get_icon_dir();
 
     let mut referenced_icons = HashSet::new();
 
@@ -477,7 +475,7 @@ fn validate_icon_files(conf: &KeyDeckConf, result: &mut ValidationResult, json_o
 
     // Check if icon files exist
     for icon_file in &referenced_icons {
-        let icon_path = PathBuf::from(image_dir).join(icon_file);
+        let icon_path = PathBuf::from(&image_dir).join(icon_file);
         if !icon_path.exists() {
             let msg = format!("Icon file '{}' not found at path: {}", icon_file, icon_path.display());
             eprintln!("Error: {}", msg);
@@ -491,7 +489,7 @@ fn validate_icon_files(conf: &KeyDeckConf, result: &mut ValidationResult, json_o
     }
 
     // Collect unreferenced icon files for reporting
-    let image_dir_path = PathBuf::from(image_dir);
+    let image_dir_path = PathBuf::from(&image_dir);
     if let Ok(entries) = fs::read_dir(&image_dir_path) {
         let mut unreferenced_icons = Vec::new();
 

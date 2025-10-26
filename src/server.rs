@@ -11,6 +11,7 @@ use crate::paged_device::PagedDevice;
 use crate::pages::KeyDeckConf;
 use crate::services::new_services_state;
 use crate::{error_log, info_log, verbose_log};
+use keydeck::get_icon_dir;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -36,7 +37,7 @@ pub fn start_server() {
     let mut conf_buttons = Arc::new(conf.buttons.clone());
     let mut conf_macros = Arc::new(conf.macros.clone());
     let mut conf_services = Arc::new(conf.services.clone());
-    let mut conf_image_dir = conf.image_dir.clone();
+    let icon_dir = Some(get_icon_dir());
     let mut conf_brightness = conf.brightness;
 
     // Initialize with empty focus - listener will send current window immediately
@@ -154,7 +155,7 @@ pub fn start_server() {
                                 verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
                             }
 
-                            let new_device = PagedDevice::new(pages, conf_image_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone(), initial_page, conf_brightness);
+                            let new_device = PagedDevice::new(pages, icon_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone(), initial_page, conf_brightness);
                             new_device.focus_changed(&current_class, &current_title, false);
                             info_log!("Adding device {}", sn);
                             devices.insert(sn.clone(), new_device);
@@ -201,7 +202,7 @@ pub fn start_server() {
                 conf_buttons = Arc::new(new_conf.buttons.clone());
                 conf_macros = Arc::new(new_conf.macros.clone());
                 conf_services = Arc::new(new_conf.services.clone());
-                conf_image_dir = new_conf.image_dir.clone();
+                // icon_dir remains hard-coded - no need to update
                 conf_brightness = new_conf.brightness;
 
                 // Create new services state and active flag

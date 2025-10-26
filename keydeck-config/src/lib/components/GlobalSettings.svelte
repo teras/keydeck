@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { open, ask } from '@tauri-apps/plugin-dialog';
-  import { invoke } from '@tauri-apps/api/core';
+  import { ask } from '@tauri-apps/plugin-dialog';
   import ColorPicker from './ColorPicker.svelte';
 
   interface Props {
@@ -8,55 +7,6 @@
   }
 
   let { config }: Props = $props();
-  let imageDirExists = $state<boolean>(true);
-
-  // Check if directory exists whenever image_dir changes
-  $effect(() => {
-    if (config.image_dir) {
-      checkImageDirExists(config.image_dir);
-    } else {
-      imageDirExists = true; // No warning if not set
-    }
-  });
-
-  async function checkImageDirExists(path: string) {
-    try {
-      const exists = await invoke<boolean>("check_directory_exists", { path });
-      imageDirExists = exists;
-    } catch (e) {
-      console.error("Failed to check directory:", e);
-      imageDirExists = false;
-    }
-  }
-
-  function updateImageDir(value: string) {
-    config.image_dir = value || undefined;
-  }
-
-  async function browseImageDir() {
-    try {
-      // Use current image_dir or default to ~/.config/keydeck/icons
-      let defaultPath = config.image_dir;
-      if (!defaultPath) {
-        // Construct default path
-        const home = await import('@tauri-apps/api/path').then(m => m.homeDir());
-        defaultPath = `${await home}.config/keydeck/icons`;
-      }
-
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        defaultPath: defaultPath
-      });
-
-      if (selected && typeof selected === 'string') {
-        config.image_dir = selected;
-        await checkImageDirExists(selected);
-      }
-    } catch (e) {
-      console.error("Failed to open directory picker:", e);
-    }
-  }
 
   function updateTickTime(value: string) {
     const num = parseFloat(value);
@@ -216,26 +166,6 @@
 
   <div class="settings-content">
     <div class="form-group">
-      <label>Image Directory</label>
-      <div class="input-with-button">
-        <input
-          type="text"
-          value={config.image_dir || ""}
-          oninput={(e) => updateImageDir(e.currentTarget.value)}
-          placeholder="~/.config/keydeck/icons"
-          class:warning={!imageDirExists}
-        />
-        <button onclick={browseImageDir} class="browse-button" title="Browse for folder">
-          📁
-        </button>
-        {#if !imageDirExists}
-          <span class="warning-icon" title="Directory does not exist">⚠️</span>
-        {/if}
-      </div>
-      <p class="help">Directory where button icons are stored</p>
-    </div>
-
-    <div class="form-group">
       <label>Tick Time (seconds)</label>
       <input
         type="number"
@@ -385,45 +315,6 @@
   input:focus {
     outline: none;
     border-color: #0e639c;
-  }
-
-  input.warning {
-    border-color: #f48771;
-  }
-
-  .input-with-button {
-    position: relative;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .input-with-button input {
-    flex: 1;
-  }
-
-  .browse-button {
-    padding: 8px 12px;
-    background-color: #0e639c;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
-    min-width: 40px;
-    height: 37px;
-  }
-
-  .browse-button:hover {
-    background-color: #1177bb;
-  }
-
-  .warning-icon {
-    position: absolute;
-    right: 60px;
-    font-size: 14px;
-    pointer-events: none;
   }
 
   .help {

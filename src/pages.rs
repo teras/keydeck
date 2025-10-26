@@ -30,10 +30,6 @@ pub struct MacroCall {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyDeckConf {
-    /// Optional directory for storing images referenced in button configurations. Otherwise, images are expected to be in the current working directory.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image_dir: Option<String>,
-
     /// Map of template layouts, where each template can define a reusable page layout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub templates: Option<IndexMap<String, Page>>,
@@ -151,7 +147,6 @@ fn default_brightness() -> u8 {
 impl Default for KeyDeckConf {
     fn default() -> Self {
         KeyDeckConf {
-            image_dir: None,
             templates: None,
             buttons: None,
             colors: None,
@@ -597,13 +592,6 @@ impl KeyDeckConf {
             eprintln!("{}", e.into_inner());
             std::process::exit(1);
         });
-
-        // Set default image_dir if not specified in config
-        if conf.image_dir.is_none() {
-            if let Ok(home) = std::env::var("HOME") {
-                conf.image_dir = Some(format!("{}/.config/keydeck/icons", home));
-            }
-        }
 
         // Validate tick_time is within range (1-60 seconds)
         if conf.tick_time < 1.0 || conf.tick_time > 60.0 {

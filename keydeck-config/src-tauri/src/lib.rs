@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
 
-// Re-export keydeck types for frontend
-pub use keydeck::{DeviceInfo, KeyDeckConf};
+// Re-export keydeck types and functions for frontend
+pub use keydeck::{DeviceInfo, KeyDeckConf, get_icon_dir, DEFAULT_ICON_DIR_REL};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DeviceListItem {
@@ -218,18 +218,10 @@ fn export_config(config: KeyDeckConf, path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Get the full path to an image file from the image directory
+/// Get the full path to an image file from the hard-coded icon directory
 #[tauri::command]
-fn get_image_path(image_dir: Option<String>, filename: String) -> Result<String, String> {
-    let base_dir = if let Some(dir) = image_dir {
-        PathBuf::from(dir)
-    } else {
-        // Default to ~/.config/keydeck/icons if no image_dir specified
-        let mut path = PathBuf::from(std::env::var("HOME").expect("HOME not set"));
-        path.push(".config/keydeck/icons");
-        path
-    };
-
+fn get_image_path(filename: String) -> Result<String, String> {
+    let base_dir = PathBuf::from(get_icon_dir());
     let image_path = base_dir.join(&filename);
 
     if !image_path.exists() {
@@ -249,15 +241,8 @@ fn check_directory_exists(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn list_icons(image_dir: Option<String>) -> Result<Vec<String>, String> {
-    let base_dir = if let Some(dir) = image_dir {
-        PathBuf::from(dir)
-    } else {
-        // Default to ~/.config/keydeck/icons if no image_dir specified
-        let mut path = PathBuf::from(std::env::var("HOME").map_err(|e| format!("HOME not set: {}", e))?);
-        path.push(".config/keydeck/icons");
-        path
-    };
+fn list_icons() -> Result<Vec<String>, String> {
+    let base_dir = PathBuf::from(get_icon_dir());
 
     if !base_dir.exists() {
         return Ok(Vec::new()); // Return empty list if directory doesn't exist
@@ -329,8 +314,7 @@ fn get_config_dir() -> PathBuf {
 /// Create the default icon directory if it doesn't exist
 #[tauri::command]
 fn ensure_default_icon_dir() -> Result<String, String> {
-    let mut path = PathBuf::from(std::env::var("HOME").map_err(|e| format!("HOME not set: {}", e))?);
-    path.push(".config/keydeck/icons");
+    let path = PathBuf::from(get_icon_dir());
 
     if !path.exists() {
         std::fs::create_dir_all(&path)

@@ -35,10 +35,10 @@
   let showButtonDefDropdown = $state(false);
   let buttonDefSearchFilter = $state("");
 
-  // Load available icons from image directory
+  // Load available icons from hard-coded image directory
   async function loadIcons() {
     try {
-      const icons = await invoke<string[]>('list_icons', { imageDir: config?.image_dir });
+      const icons = await invoke<string[]>('list_icons');
       availableIcons = icons || [];
     } catch (e) {
       console.error('Failed to load icons:', e);
@@ -46,16 +46,34 @@
     }
   }
 
-  // Reload icons when config or image_dir changes
+  // Reload icons when config changes
   $effect(() => {
     if (config) {
       loadIcons();
     }
   });
 
+  // Get icon URL from hard-coded icon directory
+  async function getIconPath(): Promise<string> {
+    try {
+      const iconDir = await invoke<string>('ensure_default_icon_dir');
+      return iconDir;
+    } catch (e) {
+      console.error('Failed to get icon directory:', e);
+      return '';
+    }
+  }
+
+  let iconDir = $state<string>('');
+
+  // Load icon directory on mount
+  $effect(() => {
+    getIconPath().then(dir => iconDir = dir);
+  });
+
   function getIconUrl(filename: string): string {
-    if (!config?.image_dir) return '';
-    const fullPath = `${config.image_dir}/${filename}`;
+    if (!iconDir) return '';
+    const fullPath = `${iconDir}/${filename}`;
     return convertFileSrc(fullPath);
   }
 
@@ -756,14 +774,8 @@
   </div>
 
   <div class="form-group">
-    <div class="label-with-link">
-      <label>Icon</label>
-      {#if onOpenGlobalSettings}
-        <button class="settings-link" onclick={onOpenGlobalSettings} title="Configure icon directory in Global Settings">
-          Image Directory →
-        </button>
-      {/if}
-    </div>
+    <label>Icon</label>
+    <p class="help" style="margin-top: 0; margin-bottom: 8px;">Icons are stored in: {iconDir || '~/.config/keydeck/icons'}</p>
     {#if availableIcons.length > 0}
       <div class="icon-dropdown-container">
         <button
@@ -1057,28 +1069,6 @@
 
   .reference-link:hover {
     background-color: #c598e6;
-  }
-
-  .label-with-link {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .settings-link {
-    padding: 4px 8px;
-    background-color: #4a9eff;
-    color: #1e1e1e;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 600;
-    transition: background-color 0.2s;
-  }
-
-  .settings-link:hover {
-    background-color: #5eb0ff;
   }
 
   .form-group {
