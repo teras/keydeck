@@ -560,10 +560,10 @@ impl KeyDeckConf {
     /// Load configuration from the default path, or return an empty default config if the file doesn't exist.
     /// This is useful for the configuration UI which should work without an existing config file.
     ///
-    /// NOTE: This method is only compiled when building the library (for the UI).
-    /// The daemon doesn't need this functionality as it always requires a valid config file.
+    /// NOTE: This method is used by the UI.
+    /// The daemon doesn't use this functionality as it always requires a valid config file.
     /// DO NOT remove this despite dead_code warnings in daemon builds - the UI depends on it.
-    #[cfg(not(feature = "binary"))]
+    #[allow(dead_code)]
     pub fn from_file_or_default() -> Self {
         let path = get_default_config_path();
         if path.exists() {

@@ -8,6 +8,9 @@ mod icon_extractor;
 #[cfg(target_os = "linux")]
 mod linux_icon_finder;
 
+#[cfg(target_os = "windows")]
+mod windows_icon_finder;
+
 // Re-export keydeck types and functions for frontend
 pub use keydeck::{DeviceInfo, KeyDeckConf, get_icon_dir, DEFAULT_ICON_DIR_REL};
 
@@ -346,6 +349,21 @@ fn select_app_icon(app_name: String, icon_path: String) -> Result<String, String
     linux_icon_finder::copy_app_icon(app_name, icon_path, icon_dir)
 }
 
+/// List all installed applications (Windows only)
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn list_applications() -> Result<Vec<windows_icon_finder::AppInfo>, String> {
+    windows_icon_finder::find_applications()
+}
+
+/// Select and copy an application icon to the keydeck icons directory (Windows only)
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn select_app_icon(app_name: String, icon_path: String) -> Result<String, String> {
+    let icon_dir = get_icon_dir();
+    windows_icon_finder::copy_app_icon(app_name, icon_path, icon_dir)
+}
+
 /// Extract icon from a Windows PE file (.exe, .dll) and save it to the icon directory
 /// Returns the filename of the saved icon
 #[tauri::command]
@@ -406,9 +424,7 @@ pub fn run() {
             list_icons,
             ensure_default_icon_dir,
             extract_icon_from_exe,
-            #[cfg(target_os = "linux")]
             list_applications,
-            #[cfg(target_os = "linux")]
             select_app_icon,
         ])
         .run(tauri::generate_context!())
