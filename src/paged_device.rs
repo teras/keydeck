@@ -181,6 +181,63 @@ impl PagedDevice {
         self.device.shutdown().unwrap_or_else(|e| { error_log!("Error while shutting down device: {}", e) });
     }
 
+    /// Reload configuration without reinitializing the device
+    pub fn reload(&mut self,
+                  pages: Arc<Pages>,
+                  colors: Arc<Option<IndexMap<String, String>>>,
+                  button_templates: Arc<Option<IndexMap<String, Button>>>,
+                  macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
+                  services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
+                  services_state: ServicesState,
+                  services_active: Arc<AtomicBool>,
+                  brightness: u8) {
+        verbose_log!("Reloading configuration for device {}", self.device.serial);
+
+        // Get current page name before updating pages reference
+        let current_page_name = self.get_current_page_name();
+
+        // Update all Arc references
+        self.pages = pages;
+        self.colors = colors;
+        self.button_templates = button_templates;
+        self.macros = macros;
+        self.services_config = services_config;
+        self.services_state = services_state;
+        self.services_active = services_active;
+
+        // Update brightness
+        self.device.set_brightness(brightness).unwrap_or_else(|e| {
+            error_log!("Error setting brightness: {}", e);
+        });
+
+        // Check if current page still exists in new configuration
+        let page_exists = if let Some(ref page_name) = current_page_name {
+            self.pages.pages.contains_key(page_name)
+        } else {
+            false
+        };
+
+        if !page_exists {
+            // Current page doesn't exist anymore, go to default page
+            verbose_log!("Current page no longer exists, switching to default page");
+
+            // Try main page first, then first page (same logic as in new())
+            let default_page_name = match &self.pages.main_page {
+                Some(name) if self.pages.pages.contains_key(name) => Some(name.clone()),
+                _ => self.pages.pages.get_index(0).map(|(name, _)| name.clone()),
+            };
+
+            if let Some(page_name) = default_page_name {
+                if let Some(page_index) = self.pages.pages.get_index_of(&page_name) {
+                    *self.current_page_ref.borrow_mut() = page_index;
+                }
+            }
+        }
+
+        // Re-render the current page with new configuration
+        self.refresh_page();
+    }
+
     /// Check if there are pending actions waiting for a specific event.
     /// If event type matches, resume action execution. Returns true if event was consumed.
     pub fn check_pending_event(&self, event_type: &WaitEventType) -> bool {

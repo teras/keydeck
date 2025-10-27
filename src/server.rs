@@ -174,24 +174,8 @@ pub fn start_server() {
             }
             DeviceEvent::Reload => {
                 info_log!("Reloading Configuration (SIGHUP received)");
-                info_log!("Stopping services and clearing devices...");
 
-                // Save current page state for each device before terminating
-                saved_pages.clear();
-                for (sn, device) in devices.iter() {
-                    if let Some(page_name) = device.get_current_page_name() {
-                        verbose_log!("Saving current page '{}' for device {}", page_name, sn);
-                        saved_pages.insert(sn.clone(), page_name);
-                    }
-                }
-
-                // Terminate all devices
-                for device in devices.values() {
-                    device.terminate();
-                }
-                devices.clear();
-
-                // Stop old services
+                // Stop old services (but keep devices running)
                 services_active.store(false, std::sync::atomic::Ordering::Relaxed);
 
                 // Reload configuration from file
@@ -209,11 +193,34 @@ pub fn start_server() {
                 services_state = new_services_state();
                 services_active = Arc::new(AtomicBool::new(true));
 
-                // Reset device listener so it rediscovers all connected devices
-                // Pass saved page states to be used when devices reconnect
-                should_reset_devices.store(true, std::sync::atomic::Ordering::Relaxed);
+                // Update all connected devices with new configuration (without reinitializing USB)
+                info_log!("Updating {} device(s) with new configuration...", devices.len());
+                for (sn, device) in devices.iter_mut() {
+                    verbose_log!("Reloading device {}", sn);
 
-                info_log!("Configuration reloaded - devices will reconnect with new config");
+                    // Get the Pages configuration for this device (by serial number or default)
+                    let pages_arc = if let Some(page) = conf_pages.get(sn) {
+                        Arc::new(page.clone())
+                    } else if let Some(default_page) = conf_pages.get("default") {
+                        Arc::new(default_page.clone())
+                    } else {
+                        error_log!("Unable to match profile for device with serial number {}, skipping reload", sn);
+                        continue;
+                    };
+
+                    device.reload(
+                        pages_arc,
+                        conf_colors.clone(),
+                        conf_buttons.clone(),
+                        conf_macros.clone(),
+                        conf_services.clone(),
+                        services_state.clone(),
+                        services_active.clone(),
+                        conf_brightness
+                    );
+                }
+
+                info_log!("Configuration reloaded successfully");
             }
             DeviceEvent::Exit => {
                 info_log!("Exiting Application");
