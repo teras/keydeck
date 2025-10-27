@@ -1,8 +1,8 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { hasUnsavedChanges } from '../stores';
 
   interface Props {
-    hasUnsavedChanges?: boolean;
     lastSaveTime?: string;
     isSaving?: boolean;
     onSend?: () => void;
@@ -10,7 +10,7 @@
     onExport?: () => void;
   }
 
-  let { hasUnsavedChanges = false, lastSaveTime = "", isSaving = false, onSend, onImport, onExport }: Props = $props();
+  let { lastSaveTime = "", isSaving = false, onSend, onImport, onExport }: Props = $props();
 
   const appWindow = getCurrentWindow();
 
@@ -52,7 +52,7 @@
   </div>
 
   <div class="titlebar-toolbar">
-    {#if hasUnsavedChanges}
+    {#if $hasUnsavedChanges}
       <span class="unsaved-indicator" title="Unsaved changes">🔴</span>
     {/if}
     {#if lastSaveTime}

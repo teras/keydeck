@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { save, open, ask } from '@tauri-apps/plugin-dialog';
+  import { hasUnsavedChanges, saveConfigCallback } from '../lib/stores';
   import TitleBar from "../lib/components/TitleBar.svelte";
   import DeviceSelector from "../lib/components/DeviceSelector.svelte";
   import Sidebar from "../lib/components/Sidebar.svelte";
@@ -47,7 +48,6 @@
   let errorDismissed = $state<boolean>(false);
   let isSaving = $state<boolean>(false);
   let lastSaveTime = $state<string>("");
-  let hasUnsavedChanges = $state<boolean>(false);
   let isRightPanelOpen = $state<boolean>(true);
   let rightPanelWidth = $state<number>(300);
   let isResizingRightPanel = $state<boolean>(false);
@@ -72,6 +72,9 @@
   }
 
   onMount(async () => {
+    // Set the save callback for the store so other components can trigger save
+    $saveConfigCallback = sendToDevice;
+
     try {
       // Ensure default icon directory exists
       try {
@@ -187,15 +190,15 @@
         // update it to include our auto-created structures
         if (lastConfigSnapshot === snapshotBeforeAutoCreate) {
           lastConfigSnapshot = currentSnapshot;
-          hasUnsavedChanges = false;
+          $hasUnsavedChanges = false;
         }
-        // Otherwise, user made changes in the meantime, so keep hasUnsavedChanges = true
+        // Otherwise, user made changes in the meantime, so keep $hasUnsavedChanges = true
       }, 0);
     } else if (createdNewStructures && snapshotBeforeAutoCreate === undefined) {
       // First load case - just update the snapshot
       setTimeout(() => {
         lastConfigSnapshot = JSON.stringify(config);
-        hasUnsavedChanges = false;
+        $hasUnsavedChanges = false;
       }, 0);
     }
   }
@@ -220,10 +223,31 @@
 
       if (lastConfigSnapshot === undefined) {
         // First load - just save snapshot, don't mark as changed
+        console.log('Initial snapshot set');
         lastConfigSnapshot = currentSnapshot;
       } else {
         // Check if current state matches the saved state
-        hasUnsavedChanges = currentSnapshot !== lastConfigSnapshot;
+        const hasChanges = currentSnapshot !== lastConfigSnapshot;
+
+        if (hasChanges !== $hasUnsavedChanges) {
+          console.log('Unsaved changes state changed:', hasChanges);
+          if (hasChanges) {
+            console.log('Current config:', currentSnapshot.substring(0, 500));
+            console.log('Saved config:', lastConfigSnapshot.substring(0, 500));
+
+            // Find where they differ
+            for (let i = 0; i < Math.min(currentSnapshot.length, lastConfigSnapshot.length); i++) {
+              if (currentSnapshot[i] !== lastConfigSnapshot[i]) {
+                console.log('First difference at position', i);
+                console.log('Context:', currentSnapshot.substring(Math.max(0, i - 50), i + 100));
+                console.log('vs:', lastConfigSnapshot.substring(Math.max(0, i - 50), i + 100));
+                break;
+              }
+            }
+          }
+        }
+
+        $hasUnsavedChanges = hasChanges;
       }
     }
   });
@@ -347,16 +371,16 @@
     // When importing (preserveSelection=false), compare against the snapshot to detect changes
     const newConfigSnapshot = JSON.stringify(config);
     if (preserveSelection) {
-      hasUnsavedChanges = false;
+      $hasUnsavedChanges = false;
       lastConfigSnapshot = newConfigSnapshot;
     } else {
       // Importing: check if different from saved config
       // If lastConfigSnapshot is undefined, this is initial load - no warning needed
       if (lastConfigSnapshot === undefined) {
-        hasUnsavedChanges = false;
+        $hasUnsavedChanges = false;
         lastConfigSnapshot = newConfigSnapshot;
       } else {
-        hasUnsavedChanges = newConfigSnapshot !== lastConfigSnapshot;
+        $hasUnsavedChanges = newConfigSnapshot !== lastConfigSnapshot;
       }
     }
 
@@ -398,7 +422,7 @@
 
   async function reloadConfig() {
     // Check confirmation FIRST, before doing anything
-    if (hasUnsavedChanges) {
+    if ($hasUnsavedChanges) {
       const confirmed = await ask(
         "You have unsaved changes. Reload and discard them?",
         {
@@ -444,7 +468,7 @@
       await invoke("reload_keydeck");
       // Only dismiss error after successful send
       dismissError();
-      hasUnsavedChanges = false;
+      $hasUnsavedChanges = false;
       lastConfigSnapshot = JSON.stringify(config);
       const now = new Date();
       lastSaveTime = now.toLocaleTimeString();
@@ -663,7 +687,6 @@
 </script>
 
 <TitleBar
-  hasUnsavedChanges={hasUnsavedChanges}
   lastSaveTime={lastSaveTime}
   isSaving={isSaving}
   onSend={sendToDevice}
@@ -693,7 +716,7 @@
       currentMacro={currentMacro}
       currentButtonDef={currentButtonDef}
       selectedButton={selectedButton}
-      onPageSelected={handlePageSelected}
+          onPageSelected={handlePageSelected}
       onTemplateSelected={handleTemplateSelected}
       onServiceSelected={handleServiceSelected}
       onMacroSelected={handleMacroSelected}

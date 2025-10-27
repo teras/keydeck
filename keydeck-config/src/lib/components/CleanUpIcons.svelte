@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { hasUnsavedChanges, saveConfigCallback } from '../stores';
 
   interface Props {
     config: any;
@@ -22,16 +23,37 @@
   let activeTab = $state<'unused' | 'in_use' | 'protected'>('unused');
 
   async function openPreview() {
+    // If there are unsaved changes, ask user to save first
+    if ($hasUnsavedChanges) {
+      const confirmed = await ask(
+        'You have unsaved changes. To ensure accurate cleanup, your configuration will be saved first. Continue?',
+        { title: 'Save Before Cleanup', kind: 'info' }
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        if ($saveConfigCallback) {
+          await $saveConfigCallback();
+        } else {
+          error = 'Save function not available';
+          return;
+        }
+      } catch (e) {
+        error = `Failed to save configuration: ${e}`;
+        return;
+      }
+    }
+
     showDialog = true;
     loading = true;
     error = null;
 
     try {
-      // Send only the protected patterns, backend will read config from disk
-      const protectedPatterns = config.protected_icons || [];
-      preview = await invoke<IconCleanupPreview>('preview_icon_cleanup', {
-        protectedPatterns
-      });
+      // Backend will read config from disk (which is now up-to-date)
+      preview = await invoke<IconCleanupPreview>('preview_icon_cleanup');
     } catch (e) {
       error = e as string;
     } finally {
@@ -64,11 +86,8 @@
     error = null;
 
     try {
-      // Send only the protected patterns, backend will read config from disk
-      const protectedPatterns = config.protected_icons || [];
-      await invoke<number>('execute_icon_cleanup', {
-        protectedPatterns
-      });
+      // Backend will read config from disk (which was saved before preview)
+      await invoke<number>('execute_icon_cleanup');
 
       // Close dialog and notify parent
       closeDialog();

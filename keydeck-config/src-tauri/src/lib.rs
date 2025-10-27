@@ -387,7 +387,7 @@ struct IconCleanupPreview {
 
 /// Preview which icons will be deleted by the cleanup process
 #[tauri::command]
-fn preview_icon_cleanup(protected_patterns: Vec<String>) -> Result<IconCleanupPreview, String> {
+fn preview_icon_cleanup() -> Result<IconCleanupPreview, String> {
     let icon_dir = PathBuf::from(get_icon_dir());
 
     if !icon_dir.exists() {
@@ -415,9 +415,10 @@ fn preview_icon_cleanup(protected_patterns: Vec<String>) -> Result<IconCleanupPr
         })
         .collect();
 
-    // Load the actual config from disk to find which icons are in use
+    // Load the actual config from disk to find which icons are in use and protected patterns
     let config_path = get_config_path();
     let mut used_icons = std::collections::HashSet::new();
+    let mut config_protected_patterns = Vec::new();
 
     if config_path.exists() {
         let config_content = std::fs::read_to_string(&config_path)
@@ -426,7 +427,15 @@ fn preview_icon_cleanup(protected_patterns: Vec<String>) -> Result<IconCleanupPr
             .map_err(|e| format!("Failed to parse config file: {}", e))?;
 
         collect_used_icons(&config, &mut used_icons);
+
+        // Get protected patterns from config (prefer config over parameter)
+        if let Some(protected) = config.protected_icons {
+            config_protected_patterns = protected;
+        }
     }
+
+    // Use protected patterns from config
+    let final_protected_patterns = config_protected_patterns;
 
     // Categorize icons
     let mut in_use = Vec::new();
@@ -436,7 +445,7 @@ fn preview_icon_cleanup(protected_patterns: Vec<String>) -> Result<IconCleanupPr
     for icon in all_icons {
         if used_icons.contains(&icon) {
             in_use.push(icon);
-        } else if is_protected(&icon, &protected_patterns) {
+        } else if is_protected(&icon, &final_protected_patterns) {
             protected.push(icon);
         } else {
             unused.push(icon);
@@ -457,15 +466,15 @@ fn preview_icon_cleanup(protected_patterns: Vec<String>) -> Result<IconCleanupPr
 
 /// Execute icon cleanup, deleting unused icons
 #[tauri::command]
-fn execute_icon_cleanup(protected_patterns: Vec<String>) -> Result<usize, String> {
+fn execute_icon_cleanup() -> Result<usize, String> {
     let icon_dir = PathBuf::from(get_icon_dir());
 
     if !icon_dir.exists() {
         return Ok(0);
     }
 
-    // Get the preview to know which icons to delete
-    let preview = preview_icon_cleanup(protected_patterns)?;
+    // Get the preview to know which icons to delete (reads config from disk)
+    let preview = preview_icon_cleanup()?;
 
     let mut deleted_count = 0;
 

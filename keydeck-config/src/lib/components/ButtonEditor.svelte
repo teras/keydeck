@@ -387,11 +387,13 @@
           text: "",
           actions: []
         };
-        // Also update root level since it's flattened
+        // Trigger reactivity by creating a new page group object
+        // We need to maintain the dual reference: config[groupKey] and config.page_groups[groupKey]
+        // must point to the same object after this operation
         const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
-        config[groupKey][currentPage][buttonKey] = page[buttonKey];
-        // Trigger reactivity by reassigning the page group
-        config.page_groups[groupKey] = { ...config.page_groups[groupKey] };
+        const newPageGroup = { ...config.page_groups[groupKey] };
+        config.page_groups[groupKey] = newPageGroup;
+        config[groupKey] = newPageGroup;
       }
     }
   }
@@ -662,13 +664,16 @@
         const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
         delete config.page_groups[groupKey][currentPage][buttonKey];
         // Trigger reactivity by creating new nested objects
+        // Maintain dual reference: config[groupKey] and config.page_groups[groupKey] must be the same object
+        const newPageGroup = {
+          ...config.page_groups[groupKey],
+          [currentPage]: { ...config.page_groups[groupKey][currentPage] }
+        };
         config.page_groups = {
           ...config.page_groups,
-          [groupKey]: {
-            ...config.page_groups[groupKey],
-            [currentPage]: { ...config.page_groups[groupKey][currentPage] }
-          }
+          [groupKey]: newPageGroup
         };
+        config[groupKey] = newPageGroup;
       }
     }
   }
