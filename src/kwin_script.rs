@@ -60,7 +60,8 @@ const LISTENER_METHOD_NAME: &str = "keydeck_windowActivated";
 
 /// KWin scripting client
 ///
-/// Designed for single-instance use. Uses fixed script names and cleans up on startup/shutdown.
+/// Can be used for both persistent listeners and one-shot operations.
+/// Multiple instances can coexist - only the instance that started the listener will clean it up.
 pub struct KWinScriptClient {
     kwin_conn: Connection,
     temp_dir: PathBuf,
@@ -70,6 +71,7 @@ pub struct KWinScriptClient {
     dbus_thread: Option<JoinHandle<()>>,
     dbus_connection: Arc<SyncConnection>,
     message_receiver_token: Token,
+    owns_listener: bool,  // Track if this instance started the listener
 }
 
 impl KWinScriptClient {
@@ -138,7 +140,7 @@ impl KWinScriptClient {
             }
         });
 
-        let client = Self {
+        Ok(Self {
             kwin_conn,
             temp_dir,
             dbus_addr,
@@ -147,12 +149,8 @@ impl KWinScriptClient {
             dbus_thread: Some(dbus_thread),
             dbus_connection: self_conn,
             message_receiver_token,
-        };
-
-        // Clean up any stale scripts from previous runs
-        client.cleanup_stale_scripts();
-
-        Ok(client)
+            owns_listener: false,  // New instances don't own the listener by default
+        })
     }
 
     /// Clean up any stale scripts from previous runs
@@ -334,7 +332,10 @@ impl KWinScriptClient {
     ///
     /// Note: Only one listener can be active at a time. Calling this multiple times
     /// will stop the previous listener and start a new one.
-    pub fn start_focus_listener(&self) -> Result<MpscReceiver<WindowInfo>, Error> {
+    pub fn start_focus_listener(&mut self) -> Result<MpscReceiver<WindowInfo>, Error> {
+        // Clean up any stale scripts from previous runs before starting a new listener
+        self.cleanup_stale_scripts();
+
         // Check if listener is already running
         {
             let listener_id = self.listener_script_id.read().unwrap();
@@ -479,6 +480,9 @@ impl KWinScriptClient {
         // Clean up temp file
         let _ = fs::remove_file(&script_file_path);
 
+        // Mark that this instance owns the listener
+        self.owns_listener = true;
+
         Ok(receiver)
     }
 
@@ -525,8 +529,10 @@ impl KWinScriptClient {
 
 impl Drop for KWinScriptClient {
     fn drop(&mut self) {
-        // Stop the listener if it's running
-        let _ = self.stop_focus_listener();
+        // Only stop the listener if this instance owns it
+        if self.owns_listener {
+            let _ = self.stop_focus_listener();
+        }
 
         // Stop receiving D-Bus messages
         let _ = self.dbus_connection.stop_receive(self.message_receiver_token);
@@ -561,10 +567,12 @@ impl Drop for KWinScriptClient {
         // This is defensive cleanup in case any channels were leaked
         {
             let _activate_channels = ACTIVATE_CHANNELS.write().unwrap();
-            let mut listener_channels = LISTENER_CHANNELS.write().unwrap();
 
-            // Remove listener channel if present
-            listener_channels.remove(LISTENER_METHOD_NAME);
+            // Only remove listener channel if this instance owns it
+            if self.owns_listener {
+                let mut listener_channels = LISTENER_CHANNELS.write().unwrap();
+                listener_channels.remove(LISTENER_METHOD_NAME);
+            }
 
             // Note: We can't easily identify which activate channels belong to this instance
             // since they use UUIDs, but they should have been cleaned up already.

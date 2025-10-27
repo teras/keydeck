@@ -23,7 +23,7 @@ pub fn listener_focus_wayland(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>
         // Main restart loop
         while active.load(Ordering::Relaxed) {
             // Create KWin script client
-            let client = match KWinScriptClient::new() {
+            let mut client = match KWinScriptClient::new() {
                 Ok(c) => c,
                 Err(e) => {
                     error_log!("Failed to create KWin script client: {}", e);
