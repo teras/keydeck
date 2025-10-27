@@ -1,4 +1,4 @@
-use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap};
+use cosmic_text::{Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap};
 use image::{Rgba, RgbaImage};
 use std::sync::OnceLock;
 
@@ -136,7 +136,7 @@ fn calculate_optimal_font_size(
         buffer.set_size(font_system, Some(width as f32), None);
 
         let spans = build_rich_text_spans(line, font_system);
-        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, None);
+        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
         buffer.shape_until_scroll(font_system, false);
 
         for run in buffer.layout_runs() {
@@ -171,7 +171,7 @@ fn calculate_optimal_font_size(
         buffer.set_size(font_system, Some(target_width), None);
 
         let spans = build_rich_text_spans(longest_line, font_system);
-        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, None);
+        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
         buffer.shape_until_scroll(font_system, false);
 
         let mut line_width = 0.0f32;
@@ -279,9 +279,9 @@ fn render_line_on_canvas(
     buffer.set_wrap(&mut font_system, Wrap::None);
     buffer.set_size(&mut font_system, Some(width as f32), Some(height as f32));
 
-    // Set text with emoji-aware rich text
+    // Set text with emoji-aware rich text and center alignment
     let spans = build_rich_text_spans(text, &font_system);
-    buffer.set_rich_text(&mut font_system, spans, &Attrs::new(), Shaping::Advanced, None);
+    buffer.set_rich_text(&mut font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
     buffer.shape_until_scroll(&mut font_system, false);
 
     // Calculate vertical centering
@@ -306,19 +306,8 @@ fn render_line_on_canvas(
         let offsets = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
 
         for &(dx, dy) in &offsets {
-            let layout_runs_for_outline: Vec<_> = buffer.layout_runs().collect();
-
             buffer.draw(&mut font_system, &mut swash_cache, outline_color, |x, y, w, h, color| {
-                let mut x_offset = 0.0;
-                let y_f32 = y as f32;
-                for run in &layout_runs_for_outline {
-                    if y_f32 >= run.line_top && y_f32 < run.line_top + run.line_height {
-                        x_offset = ((width as f32 - run.line_w) / 2.0).max(0.0);
-                        break;
-                    }
-                }
-
-                let final_x = (x as f32 + x_offset + dx) as i32;
+                let final_x = (x as f32 + dx) as i32;
                 let final_y = (y as f32 + y_offset + dy) as i32;
 
                 if final_x >= 0 && final_y >= 0 {
@@ -329,19 +318,8 @@ fn render_line_on_canvas(
     }
 
     // Draw main text
-    let layout_runs_for_drawing: Vec<_> = buffer.layout_runs().collect();
-
     buffer.draw(&mut font_system, &mut swash_cache, cosmic_color, |x, y, w, h, color| {
-        let mut x_offset = 0.0;
-        let y_f32 = y as f32;
-        for run in &layout_runs_for_drawing {
-            if y_f32 >= run.line_top && y_f32 < run.line_top + run.line_height {
-                x_offset = ((width as f32 - run.line_w) / 2.0).max(0.0);
-                break;
-            }
-        }
-
-        let final_x = (x as f32 + x_offset) as i32;
+        let final_x = x as i32;
         let final_y = (y as f32 + y_offset) as i32;
 
         if final_x >= 0 && final_y >= 0 {
