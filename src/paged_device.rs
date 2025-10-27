@@ -958,6 +958,20 @@ impl PagedDevice {
             .unwrap_or_else(|e| error_log!("Error while setting button image: {}", e));
     }
 
+    /// Clear a button and its cache entry
+    fn clear_button(&self, button_index: u8) {
+        // Clear the button image on the device
+        self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| {
+            error_log!("Error while clearing button image: {}", e);
+        });
+
+        // Clear the cache for this button so it can be redrawn properly next time
+        let mut button_images = self.button_images.borrow_mut();
+        let mut button_backgrounds = self.button_backgrounds.borrow_mut();
+        button_images[button_index as usize - 1] = String::new();
+        button_backgrounds[button_index as usize - 1] = String::new();
+    }
+
     fn refresh_page(&self) {
         let button_count = self.device.get_button_count();
         let current_page = { self.current_page_ref.borrow().clone() };
@@ -970,18 +984,13 @@ impl PagedDevice {
                     self.update_button("", None, button.background.clone(), button.draw.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
                 }
             } else {
-                // Use efficient low-level API to clear undefined buttons
-                self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| {
-                    error_log!("Error while clearing button image: {}", e);
-                });
+                self.clear_button(button_index);
             }
         }
         self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
         // Process all invalid button indices
         for &button_index in &invalid_indices {
-            self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| {
-                error_log!("Error while clearing button image: {}", e);
-            });
+            self.clear_button(button_index);
         }
     }
 
