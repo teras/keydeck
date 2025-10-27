@@ -970,7 +970,10 @@ impl PagedDevice {
                     self.update_button("", None, button.background.clone(), button.draw.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
                 }
             } else {
-                self.update_button("", None, None, None, None, None, None, button_index, &mut invalid_indices);
+                // Use efficient low-level API to clear undefined buttons
+                self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| {
+                    error_log!("Error while clearing button image: {}", e);
+                });
             }
         }
         self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
