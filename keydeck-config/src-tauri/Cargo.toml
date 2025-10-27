@@ -26,7 +26,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10.0"
 keydeck = { path = "../.." }
 nix = { version = "0.29", features = ["signal"] }
-image = { version = "0.25", features = ["png", "jpeg", "gif", "bmp", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 resvg = "0.45"
 rayon = "1.10"
 chrono = "0.4"
@@ -39,4 +39,11 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 lnk = "0.5"
 exeico = "0.1"
+
+[profile.release]
+lto = true              # Enable Link Time Optimization
+codegen-units = 1       # Better optimization (slower compile)
+opt-level = "z"         # Optimize for size
+strip = true            # Automatically strip symbols
+panic = "abort"         # Smaller panic handler
 
