@@ -1,0 +1,227 @@
+#!/bin/bash
+set -e
+
+# Docker-based build script for KeyDeck binaries
+# Builds keydeck (CLI) and keydeck-config (UI) as standalone binaries
+# No packaging - just raw executables
+#
+# Usage:
+#   ./build.sh app    - Build binaries
+#   ./build.sh clean  - Clean all build artifacts and return to fresh state
+#   ./build.sh help   - Show help message
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Get directories
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+DIST_DIR="$PROJECT_ROOT/dist"
+DOCKER_DIR="$PROJECT_ROOT/docker"
+
+# Show help function
+show_help() {
+    echo "======================================"
+    echo "KeyDeck Build Script"
+    echo "======================================"
+    echo ""
+    echo "Usage: ./build.sh <command>"
+    echo ""
+    echo "Commands:"
+    echo "  app     - Build both keydeck and keydeck-config binaries"
+    echo "  clean   - Remove all build artifacts and return to fresh state"
+    echo "  help    - Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ./build.sh app"
+    echo "  ./build.sh clean"
+    echo ""
+}
+
+# Handle commands
+case "$1" in
+    help|--help|-h|"")
+        show_help
+        exit 0
+        ;;
+    clean)
+        # Handle clean command below
+        ;;
+    app)
+        # Handle app command below
+        ;;
+    *)
+        echo -e "${RED}Error: Unknown command '$1'${NC}"
+        echo ""
+        show_help
+        exit 1
+        ;;
+esac
+
+# Handle clean command
+if [ "$1" = "clean" ]; then
+    echo "======================================"
+    echo "KeyDeck Clean"
+    echo "======================================"
+    echo ""
+    echo -e "${YELLOW}This will remove all build artifacts and return the project to a fresh state.${NC}"
+    echo -e "${YELLOW}The following will be deleted:${NC}"
+    echo "  - target/"
+    echo "  - dist/"
+    echo "  - keydeck-config/node_modules/"
+    echo "  - keydeck-config/.svelte-kit/"
+    echo "  - keydeck-config/build/"
+    echo "  - keydeck-config/src-tauri/target/"
+    echo ""
+    read -p "Are you sure? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo -e "${BLUE}Cleaning build artifacts...${NC}"
+
+        rm -rf target
+        rm -rf dist
+        rm -rf keydeck-config/node_modules
+        rm -rf keydeck-config/.svelte-kit
+        rm -rf keydeck-config/build
+        rm -rf keydeck-config/src-tauri/target
+
+        echo -e "${GREEN}✓ Clean complete - project is now in fresh state${NC}"
+        echo ""
+        echo -e "${BLUE}To rebuild:${NC}"
+        echo "  ./build.sh app"
+    else
+        echo "Clean cancelled"
+    fi
+    exit 0
+fi
+
+# Build command starts here
+echo "======================================"
+echo "KeyDeck Docker Binary Builder"
+echo "======================================"
+echo ""
+
+# Create dist directory
+mkdir -p "$DIST_DIR"
+
+# Get user ID for Docker
+USER_ID=$(id -u)
+GROUP_ID=$(id -g)
+
+echo -e "${BLUE}Project root: $PROJECT_ROOT${NC}"
+echo -e "${BLUE}Binaries output: $DIST_DIR${NC}"
+echo ""
+
+# Function to build Docker image if needed
+build_image_if_needed() {
+    if docker images | grep -q "^keydeck-builder-ubuntu\\s"; then
+        echo -e "${BLUE}Using cached Ubuntu build image${NC}"
+    else
+        echo -e "${BLUE}Building Ubuntu Docker image...${NC}"
+        docker build \
+            --build-arg USER_ID=$USER_ID \
+            --build-arg GROUP_ID=$GROUP_ID \
+            -t keydeck-builder-ubuntu \
+            -f "$DOCKER_DIR/ubuntu/Dockerfile" \
+            "$DOCKER_DIR/ubuntu/"
+    fi
+}
+
+# Function to clean build artifacts as root (handles permission issues)
+clean_artifacts() {
+    echo -e "${BLUE}Cleaning previous build artifacts...${NC}"
+    docker run --rm \
+        -v "$PROJECT_ROOT:/app" \
+        -u root \
+        keydeck-builder-ubuntu \
+        bash -c "cd /app && rm -rf target keydeck-config/.svelte-kit keydeck-config/build keydeck-config/src-tauri/target keydeck-config/node_modules" || true
+    echo -e "${GREEN}✓ Cleanup complete${NC}"
+}
+
+# Build Ubuntu image
+echo -e "${YELLOW}=== Building binaries ===${NC}"
+echo ""
+build_image_if_needed
+clean_artifacts
+echo ""
+
+# Build keydeck CLI binary
+echo -e "${YELLOW}=== Building keydeck CLI binary ===${NC}"
+echo -e "${BLUE}Running Rust build for keydeck...${NC}"
+docker run --rm \
+    -v "$PROJECT_ROOT:/app" \
+    -u $USER_ID:$GROUP_ID \
+    keydeck-builder-ubuntu \
+    bash -c "cd /app && cargo build --release --bins"
+
+if [ $? -ne 0 ]; then
+    echo -e "${RED}✗ keydeck CLI build failed${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ keydeck CLI build complete${NC}"
+echo ""
+
+# Copy keydeck binary
+echo -e "${BLUE}Copying keydeck binary...${NC}"
+cp "$PROJECT_ROOT/target/release/keydeck" "$DIST_DIR/keydeck"
+echo -e "${GREEN}✓ keydeck binary copied to dist/keydeck${NC}"
+echo ""
+
+# Build keydeck-config UI binary
+echo -e "${YELLOW}=== Building keydeck-config UI binary ===${NC}"
+echo -e "${BLUE}Running Tauri build for keydeck-config...${NC}"
+docker run --rm \
+    -v "$PROJECT_ROOT:/app" \
+    -u $USER_ID:$GROUP_ID \
+    keydeck-builder-ubuntu \
+    bash -c "cd /app/keydeck-config && npm install && npm run tauri build -- --no-bundle"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ keydeck-config UI build complete${NC}"
+    echo ""
+
+    # Copy binary
+    echo -e "${BLUE}Copying keydeck-config binary...${NC}"
+    cp "$PROJECT_ROOT/keydeck-config/src-tauri/target/release/keydeck-config" "$DIST_DIR/keydeck-config"
+    echo -e "${GREEN}✓ keydeck-config binary copied to dist/keydeck-config${NC}"
+else
+    echo -e "${RED}✗ keydeck-config UI build failed${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}======================================"
+echo "Build Complete!"
+echo "======================================${NC}"
+echo ""
+echo -e "${BLUE}Binaries created in: $DIST_DIR${NC}"
+echo ""
+
+# List all binaries
+if [ -d "$DIST_DIR" ]; then
+    ls -lh "$DIST_DIR"/ 2>/dev/null
+fi
+
+echo ""
+echo -e "${BLUE}Binary sizes:${NC}"
+if [ -f "$DIST_DIR/keydeck" ]; then
+    echo -e "  keydeck:        $(du -h "$DIST_DIR/keydeck" | cut -f1)"
+fi
+if [ -f "$DIST_DIR/keydeck-config" ]; then
+    echo -e "  keydeck-config: $(du -h "$DIST_DIR/keydeck-config" | cut -f1)"
+fi
+
+echo ""
+echo -e "${BLUE}To install:${NC}"
+echo "  sudo cp $DIST_DIR/keydeck /usr/local/bin/"
+echo "  sudo cp $DIST_DIR/keydeck-config /usr/local/bin/"
+echo ""
+echo -e "${BLUE}To rebuild Docker image from scratch:${NC}"
+echo "  docker rmi keydeck-builder-ubuntu"
+echo ""

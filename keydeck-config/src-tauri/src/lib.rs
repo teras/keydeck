@@ -290,21 +290,41 @@ fn list_icons() -> Result<Vec<String>, String> {
 // Helper functions
 
 fn find_keydeck_binary() -> Result<PathBuf, String> {
-    // Try release build first, then debug build
-    let possible_paths = vec![
+    // 1. Check in the same directory as the current executable
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let keydeck_path = exe_dir.join("keydeck");
+            if keydeck_path.exists() {
+                return Ok(keydeck_path);
+            }
+        }
+    }
+
+    // 2. Search in PATH environment variable
+    if let Ok(path_env) = std::env::var("PATH") {
+        for dir in path_env.split(':') {
+            let keydeck_path = PathBuf::from(dir).join("keydeck");
+            if keydeck_path.exists() {
+                return Ok(keydeck_path);
+            }
+        }
+    }
+
+    // 3. Try relative development paths (for running from source during development)
+    let dev_paths = vec![
         PathBuf::from("../target/release/keydeck"),
         PathBuf::from("../target/debug/keydeck"),
         PathBuf::from("../../target/release/keydeck"),
         PathBuf::from("../../target/debug/keydeck"),
     ];
 
-    for path in possible_paths {
+    for path in dev_paths {
         if path.exists() {
             return Ok(path);
         }
     }
 
-    Err("keydeck binary not found. Please build keydeck first.".to_string())
+    Err("keydeck binary not found. Please ensure keydeck is installed in the same directory or in PATH.".to_string())
 }
 
 fn get_config_path() -> PathBuf {
