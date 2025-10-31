@@ -583,6 +583,22 @@ impl KeyDeckConf {
     pub fn new() -> Self {
         let path = get_default_config_path();
 
+        // Check if file exists, create empty file if not
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).unwrap_or_else(|e| {
+                    eprintln!("Error: Failed to create config directory at {}", parent.display());
+                    eprintln!("Reason: {}", e);
+                    std::process::exit(1);
+                });
+            }
+            fs::write(&path, "").unwrap_or_else(|e| {
+                eprintln!("Error: Failed to create empty config file at {}", path.display());
+                eprintln!("Reason: {}", e);
+                std::process::exit(1);
+            });
+        }
+
         let data = fs::read_to_string(&path).unwrap_or_else(|e| {
             eprintln!("Error: Failed to read config file at {}", path.display());
             eprintln!("Reason: {}", e);
