@@ -798,6 +798,7 @@
             isEditMode={isEditMode}
             onHomeClick={jumpToHome}
             onToggleMode={toggleEditMode}
+            onError={setError}
           />
         {/if}
       </div>

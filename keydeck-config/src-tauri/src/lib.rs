@@ -9,6 +9,13 @@ struct IconInfo {
     data_url: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct DaemonStatus {
+    running: bool,
+    pid: Option<i32>,
+    timestamp: i64,
+}
+
 mod icon_extractor;
 
 #[cfg(target_os = "linux")]
@@ -192,6 +199,108 @@ fn cleanup_old_backups(config_dir: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+/// Check if keydeck daemon is running
+#[tauri::command]
+fn check_daemon_status() -> DaemonStatus {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let lock_path = PathBuf::from("/tmp/.keydeck.lock");
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    // Check if lock file exists
+    if !lock_path.exists() {
+        return DaemonStatus {
+            running: false,
+            pid: None,
+            timestamp,
+        };
+    }
+
+    // Read PID from lock file
+    let pid_str = match fs::read_to_string(&lock_path) {
+        Ok(s) => s,
+        Err(_) => {
+            return DaemonStatus {
+                running: false,
+                pid: None,
+                timestamp,
+            };
+        }
+    };
+
+    let pid: i32 = match pid_str.trim().parse() {
+        Ok(p) => p,
+        Err(_) => {
+            return DaemonStatus {
+                running: false,
+                pid: None,
+                timestamp,
+            };
+        }
+    };
+
+    // Check if process exists
+    let proc_path = PathBuf::from(format!("/proc/{}", pid));
+    if !proc_path.exists() {
+        return DaemonStatus {
+            running: false,
+            pid: Some(pid),
+            timestamp,
+        };
+    }
+
+    // Verify process name is "keydeck"
+    let comm_path = proc_path.join("comm");
+    if let Ok(comm) = fs::read_to_string(&comm_path) {
+        if comm.trim() == "keydeck" {
+            return DaemonStatus {
+                running: true,
+                pid: Some(pid),
+                timestamp,
+            };
+        }
+    }
+
+    // Process exists but is not keydeck (PID reuse)
+    DaemonStatus {
+        running: false,
+        pid: Some(pid),
+        timestamp,
+    }
+}
+
+/// Check if systemd service is enabled
+#[tauri::command]
+fn check_service_enabled() -> bool {
+    use std::process::Command;
+
+    // Check if service file exists
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return false,
+    };
+
+    let service_file = PathBuf::from(&home).join(".config/systemd/user/keydeck.service");
+    if !service_file.exists() {
+        return false;
+    }
+
+    // Check if service is enabled
+    let output = match Command::new("systemctl")
+        .args(&["--user", "is-enabled", "keydeck.service"])
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+
+    output.status.success()
+}
+
 /// Send SIGHUP signal to keydeck server to reload configuration
 #[tauri::command]
 fn reload_keydeck() -> Result<(), String> {
@@ -216,6 +325,97 @@ fn reload_keydeck() -> Result<(), String> {
 
     kill(Pid::from_raw(pid), Signal::SIGHUP)
         .map_err(|e| format!("Failed to send SIGHUP: {}", e))?;
+
+    Ok(())
+}
+
+/// Start keydeck daemon as systemd service
+#[tauri::command]
+fn start_daemon_service() -> Result<(), String> {
+    use std::process::Command;
+    use std::fs;
+    use std::io::Write;
+
+    // Check if service file exists, create it if not
+    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let service_dir = PathBuf::from(&home).join(".config/systemd/user");
+    let service_file = service_dir.join("keydeck.service");
+
+    if !service_file.exists() {
+        // Find keydeck binary using existing helper function
+        let keydeck_bin = find_keydeck_binary()?
+            .to_str()
+            .ok_or_else(|| "keydeck binary path contains invalid UTF-8".to_string())?
+            .to_string();
+
+        // Create systemd user directory
+        fs::create_dir_all(&service_dir)
+            .map_err(|e| format!("Failed to create systemd user directory: {}", e))?;
+
+        // Create service file content
+        let service_content = format!(
+            "[Unit]\n\
+             Description=KeyDeck Daemon\n\
+             After=graphical-session.target\n\
+             \n\
+             [Service]\n\
+             Type=simple\n\
+             ExecStart={}\n\
+             Restart=on-failure\n\
+             RestartSec=5\n\
+             \n\
+             [Install]\n\
+             WantedBy=default.target\n",
+            keydeck_bin
+        );
+
+        // Write service file
+        let mut file = fs::File::create(&service_file)
+            .map_err(|e| format!("Failed to create service file: {}", e))?;
+        file.write_all(service_content.as_bytes())
+            .map_err(|e| format!("Failed to write service file: {}", e))?;
+
+        // Reload systemd daemon to recognize new service
+        let reload_output = Command::new("systemctl")
+            .args(&["--user", "daemon-reload"])
+            .output()
+            .map_err(|e| format!("Failed to reload systemd daemon: {}", e))?;
+
+        if !reload_output.status.success() {
+            let stderr = String::from_utf8_lossy(&reload_output.stderr);
+            return Err(format!("Failed to reload systemd daemon: {}", stderr));
+        }
+    }
+
+    // Enable and start systemd service
+    let output = Command::new("systemctl")
+        .args(&["--user", "enable", "--now", "keydeck.service"])
+        .output()
+        .map_err(|e| format!("Failed to execute systemctl: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to start service: {}", stderr));
+    }
+
+    Ok(())
+}
+
+/// Stop keydeck daemon service
+#[tauri::command]
+fn stop_daemon_service() -> Result<(), String> {
+    use std::process::Command;
+
+    // Stop and disable systemd service
+    let output = Command::new("systemctl")
+        .args(&["--user", "disable", "--now", "keydeck.service"])
+        .output()
+        .map_err(|e| format!("Failed to execute systemctl: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to stop service: {}", stderr));
+    }
 
     Ok(())
 }
@@ -684,7 +884,11 @@ pub fn run() {
             get_device_info,
             load_config,
             save_config,
+            check_daemon_status,
+            check_service_enabled,
+            start_daemon_service,
             reload_keydeck,
+            stop_daemon_service,
             export_config,
             get_image_path,
             check_directory_exists,
