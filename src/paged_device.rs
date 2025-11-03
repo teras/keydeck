@@ -1,6 +1,7 @@
 use crate::listener_button::button_listener;
 use crate::listener_time::TimeManager;
-use crate::device_manager::{find_path, KeyDeckDevice};
+use crate::device_manager::find_path;
+use crate::device_trait::KeydeckDevice;
 use crate::event::{DeviceEvent, WaitEventType};
 use crate::focus_property::set_focus;
 use crate::keyboard::{process_escape_sequences, send_key_combination, send_string};
@@ -34,7 +35,8 @@ struct PendingActionQueue {
 }
 
 pub struct PagedDevice {
-    device: KeyDeckDevice,
+    device: Box<dyn KeydeckDevice>,
+    serial: String,
     pages: Arc<Pages>,
     colors: Arc<Option<IndexMap<String, String>>>,
     button_templates: Arc<Option<IndexMap<String, Button>>>,
@@ -64,14 +66,18 @@ impl PagedDevice {
                services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
                services_state: ServicesState,
                services_active: Arc<AtomicBool>,
-               device: KeyDeckDevice,
+               device: Box<dyn KeydeckDevice>,
                tx: &Sender<DeviceEvent>,
                time_manager: Arc<TimeManager>,
                initial_page: Option<String>,
                brightness: u8) -> Self {
-        let button_count = { device.get_button_count() as usize };
+        let serial = device.serial_number().unwrap_or_else(|e| {
+            error_log!("Failed to get device serial number: {}", e);
+            "Unknown".to_string()
+        });
+        let button_count = { device.button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
-        button_listener(&device.serial, tx, &active_events);
+        button_listener(&serial, tx, &active_events);
         device.reset().unwrap_or_else(|e| { error_log!("Error while resetting device: {}", e) });
         device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
 
@@ -99,6 +105,7 @@ impl PagedDevice {
 
         let paged_device = PagedDevice {
             device,
+            serial,
             pages,
             colors,
             button_templates,
@@ -134,12 +141,12 @@ impl PagedDevice {
         // The hardware may not accept brightness commands immediately after reset/reconnect
         // Try at 100ms first, then again at 1000ms to ensure it gets set
         paged_device.time_manager.schedule_brightness(
-            paged_device.device.serial.clone(),
+            paged_device.serial.clone(),
             brightness,
             Duration::from_millis(100)
         );
         paged_device.time_manager.schedule_brightness(
-            paged_device.device.serial.clone(),
+            paged_device.serial.clone(),
             brightness,
             Duration::from_millis(1000)
         );
@@ -147,8 +154,12 @@ impl PagedDevice {
         paged_device
     }
 
-    pub fn get_hardware(&self) -> &KeyDeckDevice {
-        &self.device
+    pub fn get_hardware(&self) -> &dyn KeydeckDevice {
+        self.device.as_ref()
+    }
+
+    pub fn get_serial(&self) -> &str {
+        &self.serial
     }
 
     /// Returns the name of the currently displayed page, or None if no page is set
@@ -191,7 +202,7 @@ impl PagedDevice {
                   services_state: ServicesState,
                   services_active: Arc<AtomicBool>,
                   brightness: u8) {
-        verbose_log!("Reloading configuration for device {}", self.device.serial);
+        verbose_log!("Reloading configuration for device {}", self.serial);
 
         // Get current page name before updating pages reference
         let current_page_name = self.get_current_page_name();
@@ -420,7 +431,7 @@ impl PagedDevice {
                 Action::Wait { wait } => {
                     // Schedule an async timer event instead of blocking
                     self.time_manager.schedule_timer(
-                        self.device.serial.clone(),
+                        self.serial.clone(),
                         Duration::from_secs_f64(wait as f64)
                     );
 
@@ -532,7 +543,7 @@ impl PagedDevice {
                             // Refresh all dynamic buttons
                             verbose_log!("Refresh: updating all dynamic buttons");
                             let current_page = { self.current_page_ref.borrow().clone() };
-                            let button_count = self.device.get_button_count();
+                            let button_count = self.device.button_count();
 
                             for button_id in 1..=button_count {
                                 if let Some(button) = self.find_button(current_page, button_id) {
@@ -733,7 +744,7 @@ impl PagedDevice {
     /// Invalidates cache and refreshes a single button with dynamic parameter evaluation.
     /// Returns error if button number is invalid or button doesn't exist in config.
     fn invalidate_and_refresh_button(&self, button_id: u8) -> Result<(), String> {
-        let button_count = self.device.get_button_count();
+        let button_count = self.device.button_count();
 
         // Validate button range
         if button_id < 1 || button_id > button_count {
@@ -777,7 +788,7 @@ impl PagedDevice {
     fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, draw: Option<Vec<DrawConfig>>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
         // Get the button size from the device's image format
         let (width, height) = {
-            let (w, h) = self.device.get_deck().kind().key_image_format().size;
+            let (w, h) = self.device.button_image_size();
             (w as u32, h as u32)
         };
 
@@ -1030,7 +1041,7 @@ impl PagedDevice {
     }
 
     fn refresh_page(&self) {
-        let button_count = self.device.get_button_count();
+        let button_count = self.device.button_count();
         let current_page = { self.current_page_ref.borrow().clone() };
         let mut invalid_indices = Vec::new();
         for button_index in 1..=button_count {

@@ -1,5 +1,9 @@
 mod device_manager;
 mod device_info;
+mod device_trait;
+mod elgato_device;
+mod mirajazz_device;
+mod device_registry_init;
 mod server;
 mod pages;
 mod focus_property;
@@ -27,6 +31,8 @@ mod dynamic_detection;
 mod validate;
 
 use crate::device_manager::DeviceManager;
+use crate::device_registry_init::initialize_device_registry;
+use crate::mirajazz_device::init_registry;
 use crate::server::start_server;
 use std::env;
 use std::sync::atomic::AtomicBool;
@@ -71,6 +77,23 @@ fn main() {
             "--verbose" => DEBUG.store(true, std::sync::atomic::Ordering::Relaxed),
             _ => {}
         }
+    }
+
+    // Initialize device registry: extract embedded JSON files and get search paths
+    let device_paths = match initialize_device_registry() {
+        Ok(paths) => paths,
+        Err(e) => {
+            error_log!("Warning: Failed to initialize device registry: {}", e);
+            // Fallback to default paths if initialization fails
+            vec![
+                "/usr/share/keydeck/devices".to_string(),
+                format!("{}/.config/keydeck/devices", env::var("HOME").unwrap_or_default()),
+            ]
+        }
+    };
+
+    if let Err(e) = init_registry(&device_paths) {
+        error_log!("Warning: {}", e);
     }
 
     let mut arg_iter = args.iter();
@@ -140,18 +163,13 @@ fn main() {
                 }
             }
             "-l" | "--logo" => {
-                if let Some(arg1) = arg_iter.next() {
-                    if let Err(e) = manager.set_logo_image(arg1.to_string()) {
-                        error_log!("Error: {}", e);
-                    }
-                } else {
-                    error_log!("Error: Setting logo image requires an argument");
+                error_log!("Error: Logo image setting not supported in this version (Ajazz-specific feature removed)");
+                if arg_iter.next().is_none() {
+                    // Consume argument if provided
                 }
             }
             "-s" | "--sleep" => {
-                if let Err(e) = manager.sleep_devices() {
-                    error_log!("Error: {}", e);
-                }
+                error_log!("Error: Sleep command not supported in this version (Ajazz-specific feature removed)");
             }
             "-1" | "--enable" => {
                 if let Some(arg1) = arg_iter.next() {
@@ -182,9 +200,7 @@ fn main() {
                 }
             }
             "--shutdown" => {
-                if let Err(e) = manager.shutdown_devices() {
-                    error_log!("Error: {}", e);
-                }
+                error_log!("Error: Shutdown command not supported in this version (Ajazz-specific feature removed)");
             }
             "--list" => manager.list_devices(),
             "--info" => {

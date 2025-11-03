@@ -1,0 +1,4 @@
+[submodule "vendor/mirajazz-json"]
+	path = vendor/mirajazz-json
+	url = https://github.com/teras/mirajazz
+	branch = json-fork

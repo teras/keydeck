@@ -140,9 +140,13 @@ pub fn start_server() {
                 // Then handle new device
                 if !devices.contains_key(sn) {
                     if let Some(device) = find_device_by_serial(sn) {
+                        verbose_log!("Looking for configuration for device serial: '{}'", sn);
+                        verbose_log!("Available page groups: {:?}", conf_pages.keys().collect::<Vec<_>>());
                         let pages_arc = if let Some(page) = conf_pages.get(sn) {
+                            verbose_log!("Found specific configuration for device {}", sn);
                             Some(Arc::new(page.clone()))
                         } else if let Some(default_page) = conf_pages.get("default") {
+                            verbose_log!("Using default configuration for device {}", sn);
                             Some(Arc::new(default_page.clone()))
                         } else {
                             error_log!("Unable to match profile for device with serial number {}, or missing default profile", sn);
@@ -155,7 +159,7 @@ pub fn start_server() {
                                 verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
                             }
 
-                            let new_device = PagedDevice::new(pages, icon_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), device, &tx, time_manager.clone(), initial_page, conf_brightness);
+                            let new_device = PagedDevice::new(pages, icon_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), Box::new(device), &tx, time_manager.clone(), initial_page, conf_brightness);
                             new_device.focus_changed(&current_class, &current_title, false);
                             info_log!("Adding device {}", sn);
                             devices.insert(sn.clone(), new_device);

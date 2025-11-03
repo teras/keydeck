@@ -1061,8 +1061,9 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "elgato-streamdeck"
-version = "0.8.0"
-source = "git+https://github.com/teras/elgato-streamdeck.git#c56a0c56a5ee6e0d1641567b6cacc847e747949c"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24379f002d631a8561daf70751ce7680ba7045b6fdd9548d08c6681d4dea2596"
 dependencies = [
  "hidapi",
  "image",
@@ -2381,6 +2382,7 @@ dependencies = [
  "imageproc",
  "indexmap 2.12.0",
  "lazy_static",
+ "mirajazz-json",
  "regex",
  "serde",
  "serde_json",
@@ -2701,6 +2703,17 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mirajazz-json"
+version = "0.1.0"
+dependencies = [
+ "hidapi",
+ "image",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

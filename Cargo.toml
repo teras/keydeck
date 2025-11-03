@@ -16,7 +16,8 @@ name = "keydeck"
 path = "src/main.rs"
 
 [dependencies]
-elgato-streamdeck = { git = "https://github.com/teras/elgato-streamdeck.git" }
+elgato-streamdeck = "0.12.0"
+mirajazz-json = { path = "vendor/mirajazz-json" }
 indexmap = { version = "2.6.0", features = ["serde"] }
 image = { version = "0.25.4", default-features = false, features = [
     "jpeg",
