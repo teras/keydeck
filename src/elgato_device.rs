@@ -12,10 +12,10 @@ pub struct ElgatoDevice {
     pub(crate) hid_api: Arc<HidApi>,
     pub(crate) kind: Kind,
     pub serial: String,
-    pub(crate) device_id: String,
+    device_id: String,
     pub(crate) deck: RefCell<Option<Arc<StreamDeck>>>,
     pub(crate) reader: RefCell<Option<Arc<DeviceStateReader>>>,
-    pub enabled: bool,
+    enabled: bool,
 }
 
 // SAFETY: ElgatoDevice is safe to Send/Sync because:
@@ -47,6 +47,18 @@ impl ElgatoDevice {
             reader: RefCell::new(None),
             enabled: true,
         }
+    }
+
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
     }
 
     pub fn get_deck(&self) -> Arc<StreamDeck> {

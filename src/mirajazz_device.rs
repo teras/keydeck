@@ -47,11 +47,11 @@ pub struct MirajazzDevice {
     vid: u16,
     pid: u16,
     pub serial: String,
-    pub(crate) device_id: String,
+    device_id: String,
     device_def: &'static DeviceDefinition,
     device: RefCell<Option<Arc<Device>>>,
     reader: RefCell<Option<Arc<DeviceStateReader>>>,
-    pub(crate) enabled: bool,
+    enabled: bool,
 }
 
 // SAFETY: MirajazzDevice is safe to Send/Sync because:
@@ -108,6 +108,18 @@ impl MirajazzDevice {
         get_registry()
             .map(|registry| registry.is_supported(vid, pid))
             .unwrap_or(false)
+    }
+
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
     }
 
     fn get_device(&self) -> Arc<Device> {

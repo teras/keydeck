@@ -25,22 +25,22 @@ impl Device {
 
     pub fn device_id(&self) -> &str {
         match self {
-            Device::Elgato(d) => &d.device_id,
-            Device::Mirajazz(d) => &d.device_id,
+            Device::Elgato(d) => d.device_id(),
+            Device::Mirajazz(d) => d.device_id(),
         }
     }
 
     pub fn is_enabled(&self) -> bool {
         match self {
-            Device::Elgato(d) => d.enabled,
-            Device::Mirajazz(d) => d.enabled,
+            Device::Elgato(d) => d.is_enabled(),
+            Device::Mirajazz(d) => d.is_enabled(),
         }
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
         match self {
-            Device::Elgato(d) => d.enabled = enabled,
-            Device::Mirajazz(d) => d.enabled = enabled,
+            Device::Elgato(d) => d.set_enabled(enabled),
+            Device::Mirajazz(d) => d.set_enabled(enabled),
         }
     }
 }
