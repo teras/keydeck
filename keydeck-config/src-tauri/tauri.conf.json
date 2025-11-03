@@ -33,14 +33,7 @@
         "alwaysOnTop": true,
         "backgroundColor": "#1e1e1e"
       }
-    ],
-    "security": {
-      "csp": null,
-      "assetProtocol": {
-        "enable": true,
-        "scope": ["/**"]
-      }
-    }
+    ]
   },
   "bundle": {
     "active": true,

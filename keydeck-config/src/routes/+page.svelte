@@ -52,6 +52,7 @@
   let rightPanelWidth = $state<number>(300);
   let isResizingRightPanel = $state<boolean>(false);
   let sidebarToggleTab: ((tab: 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null) => void) | null = null;
+  let isEditMode = $state<boolean>(true); // true = edit (pencil), false = play mode
 
   // Parameter management state
   let showAddParam = $state<boolean>(false);
@@ -341,6 +342,24 @@
         sidebarToggleTab('pages');
       }
     }
+  }
+
+  function jumpToHome() {
+    if (!config?.page_groups) return;
+
+    // Get the main page for the current device or default
+    const pageGroup = selectedDevice
+      ? (config.page_groups[selectedDevice.serial] || config.page_groups.default)
+      : config.page_groups.default;
+
+    const mainPageName = pageGroup?.main_page || 'Main';
+
+    // Navigate to the main page
+    handlePageSelected(mainPageName);
+  }
+
+  function toggleEditMode() {
+    isEditMode = !isEditMode;
   }
 
   // Helper function to process loaded config (shared between reload and import)
@@ -738,6 +757,10 @@
           onPageTitleClicked={handlePageTitleClicked}
           onDeviceSelected={handleDeviceSelected}
           onRefresh={reloadConfig}
+          isEditMode={isEditMode}
+          onHomeClick={jumpToHome}
+          onToggleMode={toggleEditMode}
+          onPageJump={handlePageSelected}
         />
       {:else}
         <div class="placeholder">

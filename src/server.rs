@@ -39,6 +39,7 @@ pub fn start_server() {
     let mut conf_services = Arc::new(conf.services.clone());
     let icon_dir = Some(get_icon_dir());
     let mut conf_brightness = conf.brightness;
+    let conf_tick_time = Arc::new(std::sync::Mutex::new(conf.tick_time));
 
     // Initialize with empty focus - listener will send current window immediately
     let (mut current_class, mut current_title) = (String::new(), String::new());
@@ -58,7 +59,7 @@ pub fn start_server() {
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
     listener_focus(&tx, &still_active.clone());
     listener_signal(&tx);
-    listener_tick(&tx, &still_active.clone(), conf.tick_time);
+    listener_tick(&tx, &still_active.clone(), conf_tick_time.clone());
 
     let mut devices: HashMap<String, PagedDevice> = HashMap::new();
     // Track saved page states across reload events
@@ -192,6 +193,9 @@ pub fn start_server() {
                 conf_services = Arc::new(new_conf.services.clone());
                 // icon_dir remains hard-coded - no need to update
                 conf_brightness = new_conf.brightness;
+
+                // Update tick_time in the mutex (will be used in next tick cycle)
+                *conf_tick_time.lock().unwrap() = new_conf.tick_time;
 
                 // Create new services state and active flag
                 services_state = new_services_state();

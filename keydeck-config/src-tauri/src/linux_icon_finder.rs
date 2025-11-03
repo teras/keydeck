@@ -5,11 +5,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::process::Command;
+use image::GenericImageView;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppInfo {
     pub name: String,
     pub icon_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_data_url: Option<String>,
 }
 
 // Cache for application list
@@ -69,7 +72,7 @@ fn scan_desktop_files() -> Result<Vec<AppInfo>, String> {
     let apps: Vec<AppInfo> = desktop_files
         .par_iter()
         .filter_map(|path| parse_desktop_file(path))
-        .map(|(name, icon_path)| AppInfo { name, icon_path })
+        .map(|(name, icon_path)| AppInfo { name, icon_path, icon_data_url: None })
         .collect();
 
     // Sort by name
@@ -135,56 +138,62 @@ fn parse_desktop_file(path: &Path) -> Option<(String, String)> {
     Some((name, icon_path))
 }
 
-/// Get or create temporary directory for converted icons
-fn get_temp_icons_dir() -> Result<PathBuf, String> {
-    let temp_dir = std::env::temp_dir().join("keydeck_converted_icons");
+/// Get or create cache directory for normalized icons
+fn get_cache_icons_dir() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME")
+        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let cache_dir = PathBuf::from(home).join(".cache/keydeck/icons");
 
-    if !temp_dir.exists() {
-        fs::create_dir_all(&temp_dir)
-            .map_err(|e| format!("Failed to create temp icons directory: {}", e))?;
+    if !cache_dir.exists() {
+        fs::create_dir_all(&cache_dir)
+            .map_err(|e| format!("Failed to create cache icons directory: {}", e))?;
     }
 
-    Ok(temp_dir)
+    Ok(cache_dir)
 }
 
-/// Convert unsupported icon formats to PNG using Rust libraries
-/// Only PNG and JPG are natively supported, all others need conversion
-fn convert_icon_to_png(source_path: &Path) -> Result<PathBuf, String> {
-    let ext = source_path.extension()
-        .and_then(|s| s.to_str())
-        .ok_or("No file extension")?
-        .to_lowercase();
-
-    // PNG and JPG/JPEG are already supported, no conversion needed
-    if ext == "png" || ext == "jpg" || ext == "jpeg" {
-        return Err("Already a supported format".to_string());
-    }
-
-    // Create output path in temp directory with deterministic name
-    let temp_dir = get_temp_icons_dir()?;
+/// Cache and normalize icon to 256x256 PNG with timestamp-based invalidation
+/// Processes ALL image formats, scales to max 256x256, and caches to ~/.cache/keydeck/icons/
+fn cache_and_normalize_icon(source_path: &Path) -> Result<PathBuf, String> {
+    // Create cache directory
+    let cache_dir = get_cache_icons_dir()?;
 
     // Convert source path to safe filename: /usr/share/icons/audacity.xpm -> _usr_share_icons_audacity.xpm.png
     let safe_name = source_path.to_string_lossy()
         .replace('/', "_")
         .replace('\\', "_");
-    let output_path = temp_dir.join(format!("{}.png", safe_name));
+    let cache_path = cache_dir.join(format!("{}.png", safe_name));
 
-    // Skip if already converted (cache hit)
-    if output_path.exists() {
-        return Ok(output_path);
+    // Check if cache is valid (exists and is newer than source)
+    if cache_path.exists() {
+        if let (Ok(source_meta), Ok(cache_meta)) = (fs::metadata(source_path), fs::metadata(&cache_path)) {
+            if let (Ok(source_mtime), Ok(cache_mtime)) = (source_meta.modified(), cache_meta.modified()) {
+                if cache_mtime >= source_mtime {
+                    // Cache is valid, return cached path
+                    return Ok(cache_path);
+                }
+            }
+        }
     }
 
-    // Try format-specific conversion
-    match ext.as_str() {
-        "svg" => convert_svg_to_png(source_path, &output_path),
-        "gif" | "bmp" | "webp" => convert_with_image_crate(source_path, &output_path),
-        "xpm" => convert_with_imagemagick(source_path, &output_path),
-        _ => Err(format!("Unsupported format: {}", ext)),
+    // Cache miss or invalid - need to regenerate
+    let ext = source_path.extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase());
+
+    // Load and normalize based on format
+    match ext.as_deref() {
+        Some("svg") => normalize_svg_to_cache(source_path, &cache_path),
+        Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp") => {
+            normalize_raster_to_cache(source_path, &cache_path)
+        }
+        Some("xpm") => normalize_xpm_to_cache(source_path, &cache_path),
+        _ => Err(format!("Unsupported format: {:?}", ext)),
     }
 }
 
-/// Convert SVG to PNG using resvg
-fn convert_svg_to_png(source_path: &Path, output_path: &Path) -> Result<PathBuf, String> {
+/// Normalize SVG to 256x256 PNG
+fn normalize_svg_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathBuf, String> {
     use resvg::usvg;
 
     // Read SVG file
@@ -196,9 +205,9 @@ fn convert_svg_to_png(source_path: &Path, output_path: &Path) -> Result<PathBuf,
     let tree = usvg::Tree::from_data(&svg_data, &options)
         .map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
-    // Calculate size (limit to 512x512)
+    // Calculate size (limit to 256x256, maintain aspect ratio)
     let size = tree.size();
-    let scale = (512.0 / size.width().max(size.height())).min(1.0);
+    let scale = (256.0 / size.width().max(size.height())).min(1.0);
     let width = (size.width() * scale) as u32;
     let height = (size.height() * scale) as u32;
 
@@ -209,26 +218,37 @@ fn convert_svg_to_png(source_path: &Path, output_path: &Path) -> Result<PathBuf,
     resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
 
     // Save as PNG
-    pixmap.save_png(output_path)
+    pixmap.save_png(cache_path)
         .map_err(|e| format!("Failed to save PNG: {}", e))?;
 
-    Ok(output_path.to_path_buf())
+    Ok(cache_path.to_path_buf())
 }
 
-/// Convert GIF/BMP/WebP to PNG using the image crate
-fn convert_with_image_crate(source_path: &Path, output_path: &Path) -> Result<PathBuf, String> {
+/// Normalize raster images (PNG/JPG/GIF/BMP/WebP) to 256x256 PNG
+fn normalize_raster_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathBuf, String> {
     // Load image with the image crate
     let img = image::open(source_path)
         .map_err(|e| format!("Failed to load image: {}", e))?;
 
-    // Convert to RGBA
-    let rgba = img.to_rgba8();
+    // Get current dimensions
+    let (width, height) = img.dimensions();
 
-    // Save as PNG
-    rgba.save(output_path)
+    // Scale down if larger than 256x256 (maintain aspect ratio)
+    let scaled_img = if width > 256 || height > 256 {
+        let scale = 256.0 / width.max(height) as f32;
+        let new_width = (width as f32 * scale) as u32;
+        let new_height = (height as f32 * scale) as u32;
+        img.resize_exact(new_width, new_height, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    // Convert to RGBA and save as PNG
+    let rgba = scaled_img.to_rgba8();
+    rgba.save(cache_path)
         .map_err(|e| format!("Failed to save PNG: {}", e))?;
 
-    Ok(output_path.to_path_buf())
+    Ok(cache_path.to_path_buf())
 }
 
 /// Check if ImageMagick convert command is available
@@ -240,20 +260,23 @@ fn is_imagemagick_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Convert XPM to PNG using ImageMagick as fallback
-fn convert_with_imagemagick(source_path: &Path, output_path: &Path) -> Result<PathBuf, String> {
+/// Normalize XPM to 256x256 PNG using ImageMagick
+fn normalize_xpm_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathBuf, String> {
     // Check if convert is available first
     if !is_imagemagick_available() {
         return Err("ImageMagick 'convert' command not found. Please install ImageMagick to use XPM icons.".to_string());
     }
 
+    // Use ImageMagick to convert and resize in one step
     let status = Command::new("convert")
         .arg(source_path)
-        .arg(output_path)
+        .arg("-resize")
+        .arg("256x256>") // Only shrink if larger, maintain aspect ratio
+        .arg(cache_path)
         .status();
 
     match status {
-        Ok(status) if status.success() => Ok(output_path.to_path_buf()),
+        Ok(status) if status.success() => Ok(cache_path.to_path_buf()),
         Ok(_) => Err("ImageMagick conversion failed".to_string()),
         Err(e) => Err(format!("Failed to run convert command: {}", e)),
     }
@@ -303,31 +326,15 @@ fn resolve_icon_path(icon_field: &str) -> Option<String> {
     None
 }
 
-/// Convert icon to PNG if it's not PNG or JPG, otherwise return original path
+/// Cache and normalize all icons to 256x256 PNG
 fn convert_if_needed(path: &Path) -> Option<String> {
-    let ext = path.extension()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_lowercase());
-
-    match ext.as_deref() {
-        Some("png") | Some("jpg") | Some("jpeg") => {
-            // Already supported format, return as-is
-            Some(path.to_string_lossy().to_string())
-        }
-        Some(_) => {
-            // Unsupported format (XPM, SVG, GIF, BMP, etc.) - try to convert
-            match convert_icon_to_png(path) {
-                Ok(converted_path) => Some(converted_path.to_string_lossy().to_string()),
-                Err(_) => {
-                    // Conversion failed (e.g., XPM without ImageMagick)
-                    // Return None to skip this icon rather than showing broken icon
-                    None
-                }
-            }
-        }
-        None => {
-            // No extension, return as-is
-            Some(path.to_string_lossy().to_string())
+    // Always cache and normalize ALL formats (including PNG/JPG)
+    // This ensures consistent size and location
+    match cache_and_normalize_icon(path) {
+        Ok(cached_path) => Some(cached_path.to_string_lossy().to_string()),
+        Err(_) => {
+            // Caching/normalization failed - skip this icon
+            None
         }
     }
 }

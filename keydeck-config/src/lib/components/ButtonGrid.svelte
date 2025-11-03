@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+  import { invoke } from '@tauri-apps/api/core';
   import DeviceSelector from './DeviceSelector.svelte';
+  import HelperButtons from './HelperButtons.svelte';
   import { processEscapeSequences } from '$lib/utils/escapeChars';
 
   interface DeviceInfo {
@@ -37,26 +38,32 @@
     onPageTitleClicked?: () => void;
     onDeviceSelected?: (device: DeviceInfo) => void;
     onRefresh?: () => void;
+    isEditMode?: boolean;
+    onHomeClick?: () => void;
+    onToggleMode?: () => void;
+    onPageJump?: (pageName: string) => void;
   }
 
-  let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked, onDeviceSelected, onRefresh }: Props = $props();
+  let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked, onDeviceSelected, onRefresh, isEditMode = true, onHomeClick, onToggleMode, onPageJump }: Props = $props();
 
-  // Get icon directory from backend
-  let iconDir = $state<string>('');
+  // Load available icons with data URLs
+  let availableIcons = $state<{filename: string; data_url: string}[]>([]);
 
-  async function getIconPath(): Promise<string> {
+  async function loadIcons() {
     try {
-      const dir = await invoke<string>('ensure_default_icon_dir');
-      return dir;
+      const icons = await invoke<{filename: string; data_url: string}[]>('list_icons');
+      availableIcons = icons || [];
     } catch (e) {
-      console.error('Failed to get icon directory:', e);
-      return '';
+      console.error('Failed to load icons:', e);
+      availableIcons = [];
     }
   }
 
-  // Load icon directory on mount
+  // Load icons on mount and when config changes
   $effect(() => {
-    getIconPath().then(dir => iconDir = dir);
+    if (config) {
+      loadIcons();
+    }
   });
 
   // Get button configuration from template inheritance chain
@@ -309,12 +316,9 @@
 
     if (!buttonConfig.icon) return null;
 
-    // Use hard-coded icon directory
-    if (!iconDir) return null;
-
-    // Build full path and convert to Tauri asset URL
-    const fullPath = `${iconDir}/${buttonConfig.icon}`;
-    return convertFileSrc(fullPath);
+    // Find icon data URL from loaded icons
+    const icon = availableIcons.find(i => i.filename === buttonConfig.icon);
+    return icon?.data_url || null;
   }
 
   function getButtonOutline(index: number): string | null {
@@ -350,12 +354,162 @@
 
     return buttonConfig.text_color || null;
   }
+
+  // Find the first jump or autojump action in a button's configuration
+  function findFirstJumpAction(index: number): { target: string; isAutoJump: boolean; isFocus?: boolean } | null {
+    let buttonConfig = getButtonConfig(index);
+
+    if (!buttonConfig) return null;
+
+    // Resolve button definition reference
+    if (typeof buttonConfig === 'string') {
+      const buttonDef = config.buttons?.[buttonConfig];
+      if (buttonDef) {
+        buttonConfig = buttonDef;
+      } else {
+        return null;
+      }
+    }
+
+    // Check if button has actions
+    if (!buttonConfig.actions || !Array.isArray(buttonConfig.actions)) {
+      return null;
+    }
+
+    // Find the first jump, auto_jump, or focus action
+    for (const action of buttonConfig.actions) {
+      if (action.jump) {
+        return { target: action.jump, isAutoJump: false };
+      }
+      if ('auto_jump' in action) {
+        return { target: action.auto_jump, isAutoJump: true };
+      }
+      if (action.focus) {
+        return { target: action.focus, isAutoJump: false, isFocus: true };
+      }
+    }
+
+    return null;
+  }
+
+  // Get all pages with their window names from the configuration
+  function getPagesWithWindowNames(): { pageName: string; windowName: string | null }[] {
+    const pages: { pageName: string; windowName: string | null }[] = [];
+
+    // Check if pages are in page_groups
+    if (config?.page_groups) {
+      for (const [groupName, groupConfig] of Object.entries(config.page_groups)) {
+        const group = groupConfig as any;
+
+        // Known fields that are not page names
+        const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+
+        // Iterate through all keys in the group
+        for (const [key, value] of Object.entries(group)) {
+          // Skip known fields
+          if (knownFields.includes(key)) continue;
+
+          const page = value as any;
+          // Check if this is a page object (has properties like buttons, inherits, etc.)
+          if (typeof page === 'object' && page !== null) {
+            pages.push({
+              pageName: key,
+              windowName: page.window_name || null
+            });
+          }
+        }
+      }
+    }
+
+    return pages;
+  }
+
+  // Simple fuzzy matching function - returns similarity score between 0 and 1
+  function fuzzyMatch(str1: string, str2: string): number {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+    
+    // Exact match gets highest score
+    if (s1 === s2) return 1.0;
+    
+    // Check if one contains the other
+    if (s1.includes(s2) || s2.includes(s1)) return 0.8;
+    
+    // Simple character matching score
+    let matches = 0;
+    let shorter = s1.length < s2.length ? s1 : s2;
+    let longer = s1.length >= s2.length ? s1 : s2;
+    
+    for (let i = 0; i < shorter.length; i++) {
+      if (longer.includes(shorter[i])) {
+        matches++;
+      }
+    }
+    
+    return matches / longer.length;
+  }
+
+  // Find the best matching page for a given target using fuzzy matching against window names
+  function findBestPageMatch(target: string): string | null {
+    if (!target) return null;
+
+    const allPages = getPagesWithWindowNames();
+    if (allPages.length === 0) return null;
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const page of allPages) {
+      // Only match against pages that have a window name
+      if (page.windowName) {
+        const score = fuzzyMatch(target, page.windowName);
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = page.pageName;
+        }
+      }
+    }
+
+    // Only return a match if it has a reasonable similarity score (0.3 or higher)
+    return bestScore >= 0.3 ? bestMatch : null;
+  }
+
+  // Handle button click - either select for editing or jump in play mode
+  function handleButtonClick(index: number) {
+    if (isEditMode || isTemplate) {
+      // In edit mode or viewing a template, select the button for editing
+      onButtonSelected(index);
+    } else {
+      // In play mode, find first jump, auto_jump, or focus action and navigate
+      const jumpResult = findFirstJumpAction(index);
+
+      if (jumpResult) {
+        if (jumpResult.isAutoJump) {
+          // For auto_jump, go to main page
+          if (onHomeClick) {
+            onHomeClick();
+          }
+        } else if (jumpResult.isFocus) {
+          // For focus, use fuzzy matching to find the best page match
+          const bestMatch = findBestPageMatch(jumpResult.target);
+          if (bestMatch && onPageJump) {
+            onPageJump(bestMatch);
+          }
+        } else {
+          // For regular jump, go to the specified target
+          if (onPageJump) {
+            onPageJump(jumpResult.target);
+          }
+        }
+      }
+    }
+  }
 </script>
 
 <div class="button-grid-container">
   <div class="device-info">
     {#if config}
-      <DeviceSelector onDeviceSelected={onDeviceSelected} onRefresh={onRefresh} />
+      <DeviceSelector onDeviceSelected={onDeviceSelected || (() => {})} onRefresh={onRefresh || (() => {})} />
     {/if}
   </div>
 
@@ -396,7 +550,7 @@
         class:inherited={isInherited(buttonIndex)}
         class:button-def-reference={isButtonDefReference(buttonIndex)}
         class:has-icon={iconUrl !== null}
-        onclick={() => onButtonSelected(buttonIndex)}
+        onclick={() => handleButtonClick(buttonIndex)}
         title="Button {buttonIndex}"
       >
         {#if iconUrl}
@@ -412,6 +566,14 @@
       </button>
     {/each}
     </div>
+
+    {#if onHomeClick && onToggleMode}
+      <HelperButtons
+        isEditMode={isEditMode}
+        onHomeClick={onHomeClick}
+        onToggleMode={onToggleMode}
+      />
+    {/if}
   </div>
 
   {#if device.lcd_strip}

@@ -3,6 +3,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::Manager;
 
+#[derive(Debug, Serialize, Deserialize)]
+struct IconInfo {
+    filename: String,
+    data_url: String,
+}
+
 mod icon_extractor;
 
 #[cfg(target_os = "linux")]
@@ -249,7 +255,7 @@ fn check_directory_exists(path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn list_icons() -> Result<Vec<String>, String> {
+fn list_icons() -> Result<Vec<IconInfo>, String> {
     let base_dir = PathBuf::from(get_icon_dir());
 
     if !base_dir.exists() {
@@ -274,7 +280,13 @@ fn list_icons() -> Result<Vec<String>, String> {
                     if valid_extensions.contains(&ext_str.to_lowercase().as_str()) {
                         if let Some(filename) = path.file_name() {
                             if let Some(filename_str) = filename.to_str() {
-                                icons.push(filename_str.to_string());
+                                // Convert to data URL
+                                if let Ok(data_url) = get_icon_data_url(path.to_string_lossy().to_string()) {
+                                    icons.push(IconInfo {
+                                        filename: filename_str.to_string(),
+                                        data_url,
+                                    });
+                                }
                             }
                         }
                     }
@@ -283,7 +295,8 @@ fn list_icons() -> Result<Vec<String>, String> {
         }
     }
 
-    icons.sort();
+    // Sort by filename
+    icons.sort_by(|a, b| a.filename.cmp(&b.filename));
     Ok(icons)
 }
 
@@ -359,11 +372,28 @@ fn ensure_default_icon_dir() -> Result<String, String> {
 #[tauri::command]
 async fn list_applications() -> Result<Vec<linux_icon_finder::AppInfo>, String> {
     // Run the blocking operation on a background thread
-    tokio::task::spawn_blocking(|| {
+    let apps = tokio::task::spawn_blocking(|| {
         linux_icon_finder::find_applications()
     })
     .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    // Convert icon paths to base64 data URLs
+    let apps_with_data_urls: Vec<linux_icon_finder::AppInfo> = apps
+        .into_iter()
+        .filter_map(|mut app| {
+            // Convert the icon path to a data URL
+            match get_icon_data_url(app.icon_path.clone()) {
+                Ok(data_url) => {
+                    app.icon_data_url = Some(data_url);
+                    Some(app)
+                }
+                Err(_) => None, // Skip apps with failed icon conversion
+            }
+        })
+        .collect();
+
+    Ok(apps_with_data_urls)
 }
 
 /// Select and copy an application icon to the keydeck icons directory (Linux only)
@@ -574,6 +604,41 @@ fn extract_icon_from_exe(file_path: String) -> Result<String, String> {
     icon_extractor::extract_icon_from_exe(file_path, icon_dir)
 }
 
+/// Read an icon file from any system path and return it as a base64 data URL
+/// This bypasses Tauri's asset protocol restrictions for system icons
+#[tauri::command]
+fn get_icon_data_url(file_path: String) -> Result<String, String> {
+    use std::fs;
+    use base64::{Engine as _, engine::general_purpose};
+
+    let path = PathBuf::from(&file_path);
+
+    if !path.exists() {
+        return Err(format!("Icon file not found: {}", file_path));
+    }
+
+    // Read the file
+    let data = fs::read(&path)
+        .map_err(|e| format!("Failed to read icon file: {}", e))?;
+
+    // Determine MIME type from extension
+    let mime_type = match path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()).as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("bmp") => "image/bmp",
+        Some("webp") => "image/webp",
+        _ => "image/png", // Default to PNG
+    };
+
+    // Encode as base64
+    let base64_data = general_purpose::STANDARD.encode(&data);
+
+    // Return data URL
+    Ok(format!("data:{};base64,{}", mime_type, base64_data))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -630,6 +695,7 @@ pub fn run() {
             select_app_icon,
             preview_icon_cleanup,
             execute_icon_cleanup,
+            get_icon_data_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

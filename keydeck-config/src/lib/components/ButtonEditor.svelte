@@ -4,7 +4,6 @@
   import TriStateCheckbox from './TriStateCheckbox.svelte';
   import DrawConfigEditor from './DrawConfigEditor.svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { convertFileSrc } from '@tauri-apps/api/core';
   import { onMount } from 'svelte';
   import { ask, message } from '@tauri-apps/plugin-dialog';
 
@@ -27,7 +26,7 @@
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
 
-  let availableIcons = $state<string[]>([]);
+  let availableIcons = $state<{filename: string; data_url: string}[]>([]);
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
   let openActionIndex = $state<number>(-1);
@@ -37,14 +36,14 @@
 
   // Application browser state
   let showAppBrowser = $state(false);
-  let availableApps = $state<{name: string; icon_path: string}[]>([]);
+  let availableApps = $state<{name: string; icon_path: string; icon_data_url?: string}[]>([]);
   let appSearchFilter = $state("");
   let loadingApps = $state(false);
 
   // Load available icons from hard-coded image directory
   async function loadIcons() {
     try {
-      const icons = await invoke<string[]>('list_icons');
+      const icons = await invoke<{filename: string; data_url: string}[]>('list_icons');
       availableIcons = icons || [];
     } catch (e) {
       console.error('Failed to load icons:', e);
@@ -59,32 +58,16 @@
     }
   });
 
-  // Get icon URL from hard-coded icon directory
-  async function getIconPath(): Promise<string> {
-    try {
-      const iconDir = await invoke<string>('ensure_default_icon_dir');
-      return iconDir;
-    } catch (e) {
-      console.error('Failed to get icon directory:', e);
-      return '';
-    }
+
+  // Get icon data URL by filename from availableIcons
+  function getIconDataUrl(filename: string): string {
+    if (!filename) return '';
+    const icon = availableIcons.find(i => i.filename === filename);
+    return icon?.data_url || '';
   }
 
-  let iconDir = $state<string>('');
-
-  // Load icon directory on mount
-  $effect(() => {
-    getIconPath().then(dir => iconDir = dir);
-  });
-
-  function getIconUrl(filename: string): string {
-    if (!iconDir) return '';
-    const fullPath = `${iconDir}/${filename}`;
-    return convertFileSrc(fullPath);
-  }
-
-  function selectIcon(iconFile: string) {
-    updateIcon(iconFile);
+  function selectIcon(iconFilename: string) {
+    updateIcon(iconFilename);
     showIconDropdown = false;
     iconSearchFilter = "";
   }
@@ -134,7 +117,7 @@
 
   let filteredIcons = $derived(
     iconSearchFilter.trim()
-      ? availableIcons.filter(icon => icon.toLowerCase().includes(iconSearchFilter.toLowerCase()))
+      ? availableIcons.filter(icon => icon.filename.toLowerCase().includes(iconSearchFilter.toLowerCase()))
       : availableIcons
   );
 
@@ -596,7 +579,7 @@
     if (showAppBrowser && availableApps.length === 0 && !loadingApps) {
       loadingApps = true;
       try {
-        const apps = await invoke<{name: string; icon_path: string}[]>('list_applications');
+        const apps = await invoke<{name: string; icon_path: string; icon_data_url?: string}[]>('list_applications');
         availableApps = apps || [];
       } catch (e) {
         console.error('Failed to load applications:', e);
@@ -612,9 +595,9 @@
     }
   }
 
-  async function selectApp(app: {name: string; icon_path: string}) {
+  async function selectApp(app: {name: string; icon_path: string; icon_data_url?: string}) {
     try {
-      // Copy the icon and get the filename
+      // Copy the icon and get the filename (use original icon_path, not data URL)
       const iconFilename = await invoke<string>('select_app_icon', {
         appName: app.name,
         iconPath: app.icon_path
@@ -864,7 +847,7 @@
           >
             <div class="selected-icon">
               {#if getDetailedConfig()?.icon}
-                <img src={getIconUrl(getDetailedConfig().icon)} alt="" class="icon-thumb" />
+                <img src={getIconDataUrl(getDetailedConfig().icon)} alt="" class="icon-thumb" />
                 <span>{getDetailedConfig().icon}</span>
               {:else}
                 <span class="no-icon-text">No icon</span>
@@ -890,14 +873,14 @@
                 >
                   <span class="no-icon-text">No icon</span>
                 </button>
-                {#each filteredIcons as iconFile}
+                {#each filteredIcons as icon}
                   <button
                     class="icon-option"
-                    class:selected={getDetailedConfig()?.icon === iconFile}
-                    onclick={() => selectIcon(iconFile)}
+                    class:selected={getDetailedConfig()?.icon === icon.filename}
+                    onclick={() => selectIcon(icon.filename)}
                   >
-                    <img src={getIconUrl(iconFile)} alt="" class="icon-thumb" />
-                    <span>{iconFile}</span>
+                    <img src={icon.data_url} alt="" class="icon-thumb" />
+                    <span>{icon.filename}</span>
                   </button>
                 {/each}
               </div>
@@ -940,7 +923,7 @@
                     onclick={() => selectApp(app)}
                     disabled={isReadOnly}
                   >
-                    <img src={convertFileSrc(app.icon_path)} alt="" class="app-icon-thumb" />
+                    <img src={app.icon_data_url || ''} alt="" class="app-icon-thumb" />
                     <span>{app.name}</span>
                   </button>
                 {/each}
@@ -960,7 +943,7 @@
         disabled={isReadOnly}
       />
     {/if}
-    <p class="help">Icons are stored in: {iconDir || '~/.config/keydeck/icons'}</p>
+    <p class="help">Icons are stored in: ~/.config/keydeck/icons</p>
   </div>
 
   <div class="form-group">

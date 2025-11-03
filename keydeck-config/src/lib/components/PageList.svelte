@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ask } from '@tauri-apps/plugin-dialog';
+  import { ask, message } from '@tauri-apps/plugin-dialog';
 
   interface Props {
     config: any;
@@ -90,6 +90,21 @@
   async function deletePage(pageName: string) {
     showPageMenu = null;
 
+    const groupKey = getGroupKey();
+    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+
+    // Check if this is the last page
+    const currentPages = Object.keys(config.page_groups[groupKey] || {})
+      .filter(key => !knownFields.includes(key));
+
+    if (currentPages.length <= 1) {
+      await message('Cannot delete the last page. At least one page must exist.', {
+        title: 'Cannot Delete Page',
+        kind: 'warning'
+      });
+      return;
+    }
+
     const confirmed = await ask(`Are you sure you want to delete page "${pageName}"?`, {
       title: 'Confirm Delete',
       kind: 'warning'
@@ -97,24 +112,17 @@
 
     if (!confirmed) return;
 
-    const groupKey = getGroupKey();
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
-
     // Delete from page_groups
     delete config.page_groups[groupKey][pageName];
     // Also delete from root level
     delete config[groupKey][pageName];
 
-    // Select first available page or create Main if none exist
+    // Select first available page
     const remainingPages = Object.keys(config.page_groups[groupKey] || {})
       .filter(key => !knownFields.includes(key));
 
     if (remainingPages.length > 0) {
       onPageSelected(remainingPages[0]);
-    } else {
-      config.page_groups[groupKey]['Main'] = {};
-      config[groupKey]['Main'] = {};
-      onPageSelected('Main');
     }
   }
 
