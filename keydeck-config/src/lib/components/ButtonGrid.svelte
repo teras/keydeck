@@ -513,74 +513,62 @@
     {/if}
   </div>
 
-  <div class="center-content">
-    {#if pageName}
-      <div class="page-info">
-        <h2
-          class="page-title"
-          class:clickable={!!onPageTitleClicked}
-          onclick={() => onPageTitleClicked?.()}
-          role={onPageTitleClicked ? "button" : undefined}
-          tabindex={onPageTitleClicked ? 0 : undefined}
-        >
-          <span class="page-icon">{isTemplate ? '🏗️' : '🗂️'}</span>
-          {pageName}
-        </h2>
-      </div>
-    {/if}
+  <div class="main-content">
+    <div class="center-content">
+      {#if pageName}
+        <div class="page-info">
+          <h2
+            class="page-title"
+            class:clickable={!!onPageTitleClicked}
+            onclick={() => onPageTitleClicked?.()}
+            role={onPageTitleClicked ? "button" : undefined}
+            tabindex={onPageTitleClicked ? 0 : undefined}
+          >
+            <span class="page-icon">{isTemplate ? '🏗️' : '🗂️'}</span>
+            {pageName}
+          </h2>
+        </div>
+      {/if}
 
-    <div
-      class="button-grid"
-      style="
-        grid-template-columns: repeat({device.button_layout.columns}, 1fr);
-        grid-template-rows: repeat({device.button_layout.rows}, 1fr);
-      "
-    >
-    {#each Array(device.button_layout.total) as _, index}
-      {@const buttonIndex = index + 1}
-      {@const iconUrl = getButtonIcon(buttonIndex)}
-      {@const outline = getButtonOutline(buttonIndex)}
-      {@const textColor = getButtonTextColor(buttonIndex)}
-      {@const label = getButtonLabel(buttonIndex)}
-      {@const fontSize = getButtonFontSize(buttonIndex)}
-      <button
-        class="grid-button"
-        class:selected={selectedButton === buttonIndex}
-        class:configured={hasConfig(buttonIndex) && !isInherited(buttonIndex) && !isButtonDefReference(buttonIndex)}
-        class:inherited={isInherited(buttonIndex)}
-        class:button-def-reference={isButtonDefReference(buttonIndex)}
-        class:has-icon={iconUrl !== null}
-        onclick={() => handleButtonClick(buttonIndex)}
-        title="Button {buttonIndex}"
+      <div
+        class="button-grid"
+        style="
+          grid-template-columns: repeat({device.button_layout.columns}, 1fr);
+          grid-template-rows: repeat({device.button_layout.rows}, 1fr);
+        "
       >
-        {#if iconUrl}
-          <img src={iconUrl} alt="Button {buttonIndex}" class="button-icon" />
-          {#if label}
-            <span class="button-text-overlay" style="font-size: {fontSize * 0.3}px;{textColor ? ` color: ${textColor};` : ''}{outline ? ` --outline-color: ${outline};` : ''}">{label}</span>
+      {#each Array(device.button_layout.total) as _, index}
+        {@const buttonIndex = index + 1}
+        {@const iconUrl = getButtonIcon(buttonIndex)}
+        {@const outline = getButtonOutline(buttonIndex)}
+        {@const textColor = getButtonTextColor(buttonIndex)}
+        {@const label = getButtonLabel(buttonIndex)}
+        {@const fontSize = getButtonFontSize(buttonIndex)}
+        <button
+          class="grid-button"
+          class:selected={selectedButton === buttonIndex}
+          class:configured={hasConfig(buttonIndex) && !isInherited(buttonIndex) && !isButtonDefReference(buttonIndex)}
+          class:inherited={isInherited(buttonIndex)}
+          class:button-def-reference={isButtonDefReference(buttonIndex)}
+          class:has-icon={iconUrl !== null}
+          onclick={() => handleButtonClick(buttonIndex)}
+          title="Button {buttonIndex}"
+        >
+          {#if iconUrl}
+            <img src={iconUrl} alt="Button {buttonIndex}" class="button-icon" />
+            {#if label}
+              <span class="button-text-overlay" style="font-size: {fontSize * 0.3}px;{textColor ? ` color: ${textColor};` : ''}{outline ? ` --outline-color: ${outline};` : ''}">{label}</span>
+            {/if}
+          {:else if label}
+            <span class="button-label" style="font-size: {fontSize * 0.3}px;{textColor ? ` color: ${textColor};` : ''}{outline ? ` --outline-color: ${outline};` : ''}">{label}</span>
+          {:else}
+            <span class="button-number">{buttonIndex}</span>
           {/if}
-        {:else if label}
-          <span class="button-label" style="font-size: {fontSize * 0.3}px;{textColor ? ` color: ${textColor};` : ''}{outline ? ` --outline-color: ${outline};` : ''}">{label}</span>
-        {:else}
-          <span class="button-number">{buttonIndex}</span>
-        {/if}
-      </button>
-    {/each}
+        </button>
+      {/each}
+      </div>
     </div>
-
-    {#if onHomeClick && onToggleMode}
-      <HelperButtons
-        isEditMode={isEditMode}
-        onHomeClick={onHomeClick}
-        onToggleMode={onToggleMode}
-      />
-    {/if}
   </div>
-
-  {#if device.lcd_strip}
-    <div class="lcd-strip">
-      <p>LCD Strip: {device.lcd_strip.width} × {device.lcd_strip.height}</p>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -600,13 +588,20 @@
     padding: 20px 0;
   }
 
+  .main-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+  }
+
   .center-content {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 16px;
-    flex: 1;
-    justify-content: center;
   }
 
   .page-info {

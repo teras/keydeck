@@ -12,6 +12,7 @@
   import PageEditor from "../lib/components/PageEditor.svelte";
   import TemplateEditor from "../lib/components/TemplateEditor.svelte";
   import ActionEditor from "../lib/components/ActionEditor.svelte";
+  import HelperButtons from "../lib/components/HelperButtons.svelte";
 
   interface DeviceInfo {
     device_id: string;
@@ -360,6 +361,11 @@
 
   function toggleEditMode() {
     isEditMode = !isEditMode;
+
+    // When switching to Navigate mode, deselect button to show page/template view on right
+    if (!isEditMode) {
+      selectedButton = null;
+    }
   }
 
   // Helper function to process loaded config (shared between reload and import)
@@ -725,7 +731,7 @@
   {/if}
 
   <div class="main-layout">
-    <!-- Tabbed Sidebar -->
+    <!-- Left Sidebar (full height) -->
     <Sidebar
       config={config}
       selectedDevice={selectedDevice}
@@ -735,7 +741,7 @@
       currentMacro={currentMacro}
       currentButtonDef={currentButtonDef}
       selectedButton={selectedButton}
-          onPageSelected={handlePageSelected}
+      onPageSelected={handlePageSelected}
       onTemplateSelected={handleTemplateSelected}
       onServiceSelected={handleServiceSelected}
       onMacroSelected={handleMacroSelected}
@@ -743,47 +749,61 @@
       openTab={(fn) => sidebarToggleTab = fn}
     />
 
-    <!-- Center: Button Grid -->
-    <main class="center-panel">
-      {#if selectedDevice && config && (currentPage || currentTemplate)}
-        <ButtonGrid
-          device={selectedDevice}
-          config={config}
-          currentPage={currentPage || currentTemplate}
-          selectedButton={selectedButton}
-          onButtonSelected={handleButtonSelected}
-          isTemplate={!!currentTemplate}
-          pageName={currentPage || currentTemplate}
-          onPageTitleClicked={handlePageTitleClicked}
-          onDeviceSelected={handleDeviceSelected}
-          onRefresh={reloadConfig}
-          isEditMode={isEditMode}
-          onHomeClick={jumpToHome}
-          onToggleMode={toggleEditMode}
-          onPageJump={handlePageSelected}
-        />
-      {:else}
-        <div class="placeholder">
-          {#if config}
-            <DeviceSelector onDeviceSelected={handleDeviceSelected} onRefresh={reloadConfig} />
-            <p style="margin-top: 20px;">{selectedDevice ? 'Select a page or template' : 'Select a device to get started'}</p>
-          {:else}
-            <p>Loading configuration...</p>
-          {/if}
-        </div>
-      {/if}
+    <!-- Center Column (Button Grid + Bottom Bar) -->
+    <div class="center-column">
+      <!-- Center: Button Grid -->
+      <main class="center-panel">
+        {#if selectedDevice && config && (currentPage || currentTemplate)}
+          <ButtonGrid
+            device={selectedDevice}
+            config={config}
+            currentPage={currentPage || currentTemplate}
+            selectedButton={selectedButton}
+            onButtonSelected={handleButtonSelected}
+            isTemplate={!!currentTemplate}
+            pageName={currentPage || currentTemplate}
+            onPageTitleClicked={handlePageTitleClicked}
+            onDeviceSelected={handleDeviceSelected}
+            onRefresh={reloadConfig}
+            isEditMode={isEditMode}
+            onHomeClick={jumpToHome}
+            onToggleMode={toggleEditMode}
+            onPageJump={handlePageSelected}
+          />
+        {:else}
+          <div class="placeholder">
+            {#if config}
+              <DeviceSelector onDeviceSelected={handleDeviceSelected} onRefresh={reloadConfig} />
+              <p style="margin-top: 20px;">{selectedDevice ? 'Select a page or template' : 'Select a device to get started'}</p>
+            {:else}
+              <p>Loading configuration...</p>
+            {/if}
+          </div>
+        {/if}
 
-      <!-- Right panel toggle button -->
-      <button
-        class="panel-toggle-btn right-toggle"
-        onclick={() => isRightPanelOpen = !isRightPanelOpen}
-        title={isRightPanelOpen ? "Hide properties panel" : "Show properties panel"}
-      >
-        {isRightPanelOpen ? '❯' : '❮'}
-      </button>
-    </main>
+        <!-- Right panel toggle button -->
+        <button
+          class="panel-toggle-btn right-toggle"
+          onclick={() => isRightPanelOpen = !isRightPanelOpen}
+          title={isRightPanelOpen ? "Hide properties panel" : "Show properties panel"}
+        >
+          {isRightPanelOpen ? '❯' : '❮'}
+        </button>
+      </main>
 
-    <!-- Right Sidebar: Button/Page/Template Config -->
+      <!-- Bottom Panel -->
+      <div class="bottom-panel">
+        {#if selectedDevice && config && (currentPage || currentTemplate)}
+          <HelperButtons
+            isEditMode={isEditMode}
+            onHomeClick={jumpToHome}
+            onToggleMode={toggleEditMode}
+          />
+        {/if}
+      </div>
+    </div>
+
+    <!-- Right Sidebar: Button/Page/Template Config (full height) -->
     <aside class="properties-panel" class:closed={!isRightPanelOpen} style="width: {isRightPanelOpen ? rightPanelWidth : 0}px;">
       {#if isRightPanelOpen}
         <div
@@ -1103,6 +1123,14 @@
 
   .main-layout {
     display: flex;
+    flex-direction: row;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .center-column {
+    display: flex;
+    flex-direction: column;
     flex: 1;
     overflow: hidden;
   }
@@ -1115,6 +1143,14 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
+    position: relative;
+  }
+
+  .bottom-panel {
+    background-color: #1a1a1a;
+    border-top: 1px solid #2d2d30;
+    flex-shrink: 0;
+    width: 100%;
     position: relative;
   }
 

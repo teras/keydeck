@@ -53,7 +53,7 @@
 
   <div class="titlebar-toolbar">
     {#if $hasUnsavedChanges}
-      <span class="unsaved-indicator" title="Unsaved changes">🔴</span>
+      <span class="unsaved-indicator" title="Unsaved changes">💾</span>
     {/if}
     {#if lastSaveTime}
       <span class="last-save">Last: {lastSaveTime}</span>
@@ -159,7 +159,7 @@
   }
 
   .unsaved-indicator {
-    font-size: 10px;
+    font-size: 18px;
     display: flex;
     align-items: center;
   }
