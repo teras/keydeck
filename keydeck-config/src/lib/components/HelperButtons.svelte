@@ -88,7 +88,9 @@
     } catch (e) {
       console.error("Failed to start daemon as service:", e);
       if (onError) {
-        onError(`Failed to start daemon as service: ${e}`);
+        // Extract the actual error message (Tauri wraps it)
+        const errorMsg = typeof e === 'string' ? e : String(e);
+        onError(errorMsg);
       }
     }
   }
@@ -103,7 +105,26 @@
     } catch (e) {
       console.error("Failed to stop daemon service:", e);
       if (onError) {
-        onError(`Failed to stop daemon service: ${e}`);
+        // Extract the actual error message (Tauri wraps it)
+        const errorMsg = typeof e === 'string' ? e : String(e);
+        onError(errorMsg);
+      }
+    }
+  }
+
+  async function reinstallDaemonService() {
+    closeDaemonMenu();
+
+    try {
+      await invoke("reinstall_daemon_service");
+      // Wait a moment for the service to start
+      setTimeout(() => checkDaemonStatus(), 1000);
+    } catch (e) {
+      console.error("Failed to reinstall daemon service:", e);
+      if (onError) {
+        // Extract the actual error message (Tauri wraps it)
+        const errorMsg = typeof e === 'string' ? e : String(e);
+        onError(errorMsg);
       }
     }
   }
@@ -155,7 +176,7 @@
         onclick={() => isEditMode && onToggleMode()}
         title="Navigate mode"
       >
-        ▶️ Navigate
+        🧭 Navigate
       </button>
     </div>
   </div>
@@ -181,6 +202,14 @@
 
     {#if showDaemonMenu}
       <div class="daemon-menu">
+        <!-- Reinstall Service option (always available if service file exists) -->
+        {#if serviceEnabled}
+          <button class="menu-item" onclick={() => reinstallDaemonService()}>
+            <span class="menu-icon">♻️</span>
+            Reinstall Service
+          </button>
+        {/if}
+
         <!-- View Logs option (always available) -->
         <button class="menu-item" onclick={openLogViewer}>
           <span class="menu-icon">📋</span>
@@ -195,7 +224,7 @@
           </button>
         {:else}
           <button class="menu-item" onclick={() => startDaemonService()}>
-            <span class="menu-icon">🔄</span>
+            <span class="menu-icon">▶️</span>
             Start as Service
           </button>
         {/if}

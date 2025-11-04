@@ -399,76 +399,141 @@ fn reload_keydeck() -> Result<(), String> {
     Ok(())
 }
 
+/// Get detailed error message when service fails to start
+fn get_service_failure_details() -> String {
+    use std::process::Command;
+
+    // Check if service is in failed state
+    let status_output = Command::new("systemctl")
+        .args(&["--user", "is-active", "keydeck.service"])
+        .output();
+
+    if let Ok(output) = status_output {
+        let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if status == "failed" {
+            // Get detailed status information
+            if let Ok(detail_output) = Command::new("systemctl")
+                .args(&["--user", "status", "keydeck.service", "--lines=10", "--no-pager"])
+                .output()
+            {
+                let detail = String::from_utf8_lossy(&detail_output.stdout);
+
+                // Try to extract the most relevant error
+                for line in detail.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.contains("ExecStart=") && trimmed.contains("No such file") {
+                        return "Service failed: keydeck binary not found at configured path. The binary may have moved since service was created.".to_string();
+                    }
+                    if trimmed.contains("Failed") || trimmed.contains("error:") {
+                        return format!("Service failed: {}", trimmed);
+                    }
+                }
+
+                // Return first few lines of status if we can't find specific error
+                let lines: Vec<&str> = detail.lines().skip(2).take(3).collect();
+                if !lines.is_empty() {
+                    return format!("Service failed: {}", lines.join(" | "));
+                }
+            }
+        }
+    }
+
+    "Service may have failed to start. Check logs for details.".to_string()
+}
+
 /// Start keydeck daemon as systemd service
 #[tauri::command]
-fn start_daemon_service() -> Result<(), String> {
+async fn start_daemon_service() -> Result<(), String> {
     use std::process::Command;
     use std::fs;
     use std::io::Write;
 
-    // Check if service file exists, create it if not
-    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
-    let service_dir = PathBuf::from(&home).join(".config/systemd/user");
-    let service_file = service_dir.join("keydeck.service");
+    // Run blocking operations in a background thread
+    tokio::task::spawn_blocking(move || {
+        // Check if service file exists, create it if not
+        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let service_dir = PathBuf::from(&home).join(".config/systemd/user");
+        let service_file = service_dir.join("keydeck.service");
 
-    if !service_file.exists() {
-        // Find keydeck binary using existing helper function
-        let keydeck_bin = find_keydeck_binary()?
-            .to_str()
-            .ok_or_else(|| "keydeck binary path contains invalid UTF-8".to_string())?
-            .to_string();
+        if !service_file.exists() {
+            // Find keydeck binary using existing helper function
+            let keydeck_bin = find_keydeck_binary()?
+                .to_str()
+                .ok_or_else(|| "keydeck binary path contains invalid UTF-8".to_string())?
+                .to_string();
 
-        // Create systemd user directory
-        fs::create_dir_all(&service_dir)
-            .map_err(|e| format!("Failed to create systemd user directory: {}", e))?;
+            // Create systemd user directory
+            fs::create_dir_all(&service_dir)
+                .map_err(|e| format!("Failed to create systemd user directory: {}", e))?;
 
-        // Create service file content
-        let service_content = format!(
-            "[Unit]\n\
-             Description=KeyDeck Daemon\n\
-             After=graphical-session.target\n\
-             \n\
-             [Service]\n\
-             Type=simple\n\
-             ExecStart={}\n\
-             Restart=on-failure\n\
-             RestartSec=5\n\
-             \n\
-             [Install]\n\
-             WantedBy=default.target\n",
-            keydeck_bin
-        );
+            // Create service file content
+            let service_content = format!(
+                "[Unit]\n\
+                 Description=KeyDeck Daemon\n\
+                 After=graphical-session.target\n\
+                 \n\
+                 [Service]\n\
+                 Type=simple\n\
+                 ExecStart={}\n\
+                 Restart=on-failure\n\
+                 RestartSec=5\n\
+                 \n\
+                 [Install]\n\
+                 WantedBy=default.target\n",
+                keydeck_bin
+            );
 
-        // Write service file
-        let mut file = fs::File::create(&service_file)
-            .map_err(|e| format!("Failed to create service file: {}", e))?;
-        file.write_all(service_content.as_bytes())
-            .map_err(|e| format!("Failed to write service file: {}", e))?;
+            // Write service file
+            let mut file = fs::File::create(&service_file)
+                .map_err(|e| format!("Failed to create service file: {}", e))?;
+            file.write_all(service_content.as_bytes())
+                .map_err(|e| format!("Failed to write service file: {}", e))?;
 
-        // Reload systemd daemon to recognize new service
-        let reload_output = Command::new("systemctl")
-            .args(&["--user", "daemon-reload"])
-            .output()
-            .map_err(|e| format!("Failed to reload systemd daemon: {}", e))?;
+            // Reload systemd daemon to recognize new service
+            let reload_output = Command::new("systemctl")
+                .args(&["--user", "daemon-reload"])
+                .output()
+                .map_err(|e| format!("Failed to reload systemd daemon: {}", e))?;
 
-        if !reload_output.status.success() {
-            let stderr = String::from_utf8_lossy(&reload_output.stderr);
-            return Err(format!("Failed to reload systemd daemon: {}", stderr));
+            if !reload_output.status.success() {
+                let stderr = String::from_utf8_lossy(&reload_output.stderr);
+                return Err(format!("Failed to reload systemd daemon: {}", stderr));
+            }
         }
-    }
 
-    // Enable and start systemd service
-    let output = Command::new("systemctl")
-        .args(&["--user", "enable", "--now", "keydeck.service"])
-        .output()
-        .map_err(|e| format!("Failed to execute systemctl: {}", e))?;
+        // Enable and start systemd service
+        let output = Command::new("systemctl")
+            .args(&["--user", "enable", "--now", "keydeck.service"])
+            .output()
+            .map_err(|e| format!("Failed to execute systemctl: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to start service: {}", stderr));
-    }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to start service: {}", stderr));
+        }
 
-    Ok(())
+        // Wait a moment and check if service actually started
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+
+        // Check if service is running
+        let check_output = Command::new("systemctl")
+            .args(&["--user", "is-active", "keydeck.service"])
+            .output()
+            .map_err(|e| format!("Failed to check service status: {}", e))?;
+
+        let status = String::from_utf8_lossy(&check_output.stdout).trim().to_string();
+
+        if status != "active" {
+            // Service didn't start successfully, get detailed error
+            let error_details = get_service_failure_details();
+            return Err(error_details);
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Stop keydeck daemon service
@@ -488,6 +553,41 @@ fn stop_daemon_service() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Reinstall keydeck daemon service (stops, removes old service file, creates fresh one)
+#[tauri::command]
+async fn reinstall_daemon_service() -> Result<(), String> {
+    use std::process::Command;
+    use std::fs;
+
+    // Run blocking operations in a background thread
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let service_file = PathBuf::from(&home).join(".config/systemd/user/keydeck.service");
+
+        // Stop and disable the old service (ignore errors if it's not running)
+        let _ = Command::new("systemctl")
+            .args(&["--user", "stop", "keydeck.service"])
+            .output();
+
+        let _ = Command::new("systemctl")
+            .args(&["--user", "disable", "keydeck.service"])
+            .output();
+
+        // Remove old service file if it exists
+        if service_file.exists() {
+            fs::remove_file(&service_file)
+                .map_err(|e| format!("Failed to remove old service file: {}", e))?;
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))??;
+
+    // Now call start_daemon_service which will create a fresh service file
+    start_daemon_service().await
 }
 
 /// Export configuration to a specified file path
@@ -1086,8 +1186,9 @@ pub fn run() {
             increment_service_prompt_count,
             set_service_prompt_count,
             start_daemon_service,
-            reload_keydeck,
             stop_daemon_service,
+            reinstall_daemon_service,
+            reload_keydeck,
             export_config,
             get_image_path,
             check_directory_exists,
