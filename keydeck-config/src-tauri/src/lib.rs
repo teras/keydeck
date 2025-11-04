@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct IconInfo {
@@ -839,6 +839,74 @@ fn get_icon_data_url(file_path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime_type, base64_data))
 }
 
+/// Stream journalctl logs for keydeck.service to the frontend
+/// Fetches last 500 lines of history, then streams new entries
+#[tauri::command]
+async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+
+    // Spawn thread to handle log streaming after a small delay
+    // This ensures the frontend listener is ready
+    std::thread::spawn(move || {
+        // Small delay to ensure frontend is listening
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // First, get historical logs (last 200 lines)
+        let history_output = Command::new("journalctl")
+            .args(["--user", "-u", "keydeck.service", "-n", "200", "--output=json"])
+            .output();
+
+        match history_output {
+            Ok(output) if output.status.success() => {
+                let history = String::from_utf8_lossy(&output.stdout);
+                let mut count = 0;
+                for line in history.lines() {
+                    if !line.trim().is_empty() {
+                        if let Err(e) = window.emit("log-entry", line) {
+                            eprintln!("Failed to emit log entry: {}", e);
+                        } else {
+                            count += 1;
+                        }
+                    }
+                }
+                eprintln!("Emitted {} historical log entries", count);
+            }
+            Ok(output) => {
+                eprintln!("Failed to fetch history: {}", String::from_utf8_lossy(&output.stderr));
+            }
+            Err(e) => {
+                eprintln!("Failed to execute journalctl: {}", e);
+            }
+        }
+
+        // Then start streaming new logs
+        let child = Command::new("journalctl")
+            .args(["--user", "-u", "keydeck.service", "-f", "--output=json"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn();
+
+        match child {
+            Ok(mut process) => {
+                if let Some(stdout) = process.stdout.take() {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines() {
+                        if let Ok(line) = line {
+                            let _ = window.emit("log-entry", line);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to start journalctl streaming: {}", e);
+            }
+        }
+    });
+
+    Ok(())
+}
+
 /// Upload custom icon file to keydeck icons directory
 /// Returns the filename of the saved icon
 #[tauri::command]
@@ -960,6 +1028,7 @@ pub fn run() {
             execute_icon_cleanup,
             get_icon_data_url,
             upload_custom_icon,
+            stream_journal_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

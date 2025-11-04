@@ -10,9 +10,17 @@ macro_rules! verbose_log {
 #[macro_export]
 macro_rules! error_log {
     ($($arg:tt)*) => {
+        eprintln!("ERROR: {}", format!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! warn_log {
+    ($($arg:tt)*) => {
         eprintln!($($arg)*)
     };
 }
+
 #[macro_export]
 macro_rules! info_log {
     ($($arg:tt)*) => {

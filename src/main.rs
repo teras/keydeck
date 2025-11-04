@@ -83,7 +83,7 @@ fn main() {
     let device_paths = match initialize_device_registry() {
         Ok(paths) => paths,
         Err(e) => {
-            error_log!("Warning: Failed to initialize device registry: {}", e);
+            error_log!("Failed to initialize device registry: {}", e);
             // Fallback to default paths if initialization fails
             vec![
                 "/usr/share/keydeck/devices".to_string(),
@@ -93,7 +93,7 @@ fn main() {
     };
 
     if let Err(e) = init_registry(&device_paths) {
-        error_log!("Warning: {}", e);
+        error_log!("{}", e);
     }
 
     let mut arg_iter = args.iter();

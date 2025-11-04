@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
+  import LogViewer from "./LogViewer.svelte";
 
   interface Props {
     isEditMode: boolean;
@@ -25,6 +26,7 @@
   let serviceEnabled = $state<boolean>(false);
   let statusCheckInterval: number | null = null;
   let showDaemonMenu = $state<boolean>(false);
+  let showLogViewer = $state<boolean>(false);
 
   async function checkDaemonStatus() {
     try {
@@ -65,6 +67,15 @@
 
   function closeDaemonMenu() {
     showDaemonMenu = false;
+  }
+
+  function openLogViewer() {
+    closeDaemonMenu();
+    showLogViewer = true;
+  }
+
+  function closeLogViewer() {
+    showLogViewer = false;
   }
 
   async function startDaemonService() {
@@ -170,6 +181,12 @@
 
     {#if showDaemonMenu}
       <div class="daemon-menu">
+        <!-- View Logs option (always available) -->
+        <button class="menu-item" onclick={openLogViewer}>
+          <span class="menu-icon">📋</span>
+          View Logs
+        </button>
+
         <!-- Show service options based on whether service is enabled -->
         {#if serviceEnabled}
           <button class="menu-item" onclick={() => stopDaemonService()}>
@@ -186,6 +203,11 @@
     {/if}
   </div>
 </div>
+
+<!-- Log Viewer Modal -->
+{#if showLogViewer}
+  <LogViewer onClose={closeLogViewer} />
+{/if}
 
 <style>
   .helper-buttons {

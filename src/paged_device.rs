@@ -10,7 +10,7 @@ use crate::text_renderer;
 use crate::graphics_renderer;
 use crate::services::ServicesState;
 use crate::dynamic_params::evaluate_dynamic_params;
-use crate::{error_log, verbose_log};
+use crate::{error_log, verbose_log, warn_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
 use std::cell::RefCell;
@@ -824,7 +824,7 @@ impl PagedDevice {
             image
         } else {
             if image.len() > 0 {
-                error_log!("Image not found: {}", image);
+                warn_log!("Image not found: {}", image);
             }
             "".to_string()
         };
@@ -1108,7 +1108,7 @@ impl PagedDevice {
                     match self.button_templates.as_ref().as_ref()?.get(template) {
                         Some(button) => Some(button),
                         None => {
-                            println!("Warning: Button template '{}' not found", template);
+                            warn_log!("Button template '{}' not found", template);
                             None
                         }
                     }

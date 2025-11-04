@@ -1,3 +1,4 @@
+use crate::warn_log;
 use image::DynamicImage;
 use std::fmt;
 use std::sync::Arc;
@@ -146,21 +147,21 @@ pub trait KeydeckDevice: Send + Sync {
     /// Write to LCD strip (e.g., Stream Deck Neo/Plus)
     /// Default implementation logs warning and does nothing
     fn write_lcd_fill(&self, _x: u16, _y: u16, _image: &DynamicImage) -> Result<(), DeviceError> {
-        eprintln!("Warning: write_lcd_fill() not supported on this device");
+        warn_log!("write_lcd_fill() not supported on this device");
         Ok(())
     }
 
     /// Write to LCD strip with specific region
     /// Default implementation logs warning and does nothing
     fn write_lcd(&self, _x: u16, _y: u16, _width: u16, _height: u16, _image: &DynamicImage) -> Result<(), DeviceError> {
-        eprintln!("Warning: write_lcd() not supported on this device");
+        warn_log!("write_lcd() not supported on this device");
         Ok(())
     }
 
     /// Set logo/background image (e.g., Ajazz fullscreen background)
     /// Default implementation logs warning and does nothing
     fn set_logo_image(&self, _image: DynamicImage) -> Result<(), DeviceError> {
-        eprintln!("Warning: set_logo_image() not supported on this device");
+        warn_log!("set_logo_image() not supported on this device");
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 use crate::pages::{ButtonConfig, KeyDeckConf};
-use crate::{error_log, info_log, verbose_log};
+use crate::{error_log, info_log, verbose_log, warn_log};
 use keydeck::get_icon_dir;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -210,7 +210,7 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
     if json_output {
         // Output as JSON
         match serde_json::to_string_pretty(&result) {
-            Ok(json) => println!("{}", json),
+            Ok(json) => { println!("{}", json); },  // JSON output - no prefix
             Err(e) => {
                 eprintln!("Error serializing validation results to JSON: {}", e);
                 return false;
@@ -257,7 +257,7 @@ fn validate_macro_syntax(conf: &KeyDeckConf, result: &mut ValidationResult) {
             if !default_params.contains(param) {
                 let msg = format!("Macro '{}' uses parameter '{}' but doesn't define a default value",
                          macro_name, param);
-                eprintln!("Warning: {}", msg);
+                warn_log!("{}", msg);
                 result.warnings.push(ValidationWarning {
                     category: "macro".to_string(),
                     message: msg,
