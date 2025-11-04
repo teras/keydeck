@@ -367,6 +367,48 @@
   }
 
   // Find the first jump or autojump action in a button's configuration
+  // Helper function to recursively search for jump/auto_jump/focus actions
+  function searchActionsRecursive(actions: any[]): { target: string; isAutoJump: boolean; isFocus?: boolean } | null {
+    for (const action of actions) {
+      // Check for direct navigation actions
+      if (action.jump) {
+        return { target: action.jump, isAutoJump: false };
+      }
+      if ('auto_jump' in action) {
+        return { target: action.auto_jump, isAutoJump: true };
+      }
+      if (action.focus) {
+        return { target: action.focus, isAutoJump: false, isFocus: true };
+      }
+
+      // Recursively search in try blocks (both try and else branches)
+      if (action.try && Array.isArray(action.try)) {
+        const result = searchActionsRecursive(action.try);
+        if (result) return result;
+      }
+      if (action.else && Array.isArray(action.else)) {
+        const result = searchActionsRecursive(action.else);
+        if (result) return result;
+      }
+
+      // Recursively search in or blocks
+      if (action.or && Array.isArray(action.or)) {
+        const result = searchActionsRecursive(action.or);
+        if (result) return result;
+      }
+
+      // Recursively search in and blocks
+      if (action.and && Array.isArray(action.and)) {
+        const result = searchActionsRecursive(action.and);
+        if (result) return result;
+      }
+
+      // Skip 'not' blocks as requested
+    }
+
+    return null;
+  }
+
   function findFirstJumpAction(index: number): { target: string; isAutoJump: boolean; isFocus?: boolean } | null {
     let buttonConfig = getButtonConfig(index);
 
@@ -387,20 +429,8 @@
       return null;
     }
 
-    // Find the first jump, auto_jump, or focus action
-    for (const action of buttonConfig.actions) {
-      if (action.jump) {
-        return { target: action.jump, isAutoJump: false };
-      }
-      if ('auto_jump' in action) {
-        return { target: action.auto_jump, isAutoJump: true };
-      }
-      if (action.focus) {
-        return { target: action.focus, isAutoJump: false, isFocus: true };
-      }
-    }
-
-    return null;
+    // Recursively find the first jump, auto_jump, or focus action
+    return searchActionsRecursive(buttonConfig.actions);
   }
 
   // Get all pages with their window names from the configuration
