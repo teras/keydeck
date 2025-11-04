@@ -301,6 +301,76 @@ fn check_service_enabled() -> bool {
     output.status.success()
 }
 
+/// Check if we should show the service prompt (shows for first 3 launches)
+#[tauri::command]
+fn should_show_service_prompt() -> bool {
+    use std::fs;
+
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return true, // Show prompt if we can't determine
+    };
+
+    let config_dir = PathBuf::from(&home).join(".config/keydeck");
+    let counter_file = config_dir.join(".service_prompt_count");
+
+    // Read current count, default to 0 if file doesn't exist
+    let count: u32 = fs::read_to_string(&counter_file)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+
+    // Show prompt for first 3 launches
+    count < 3
+}
+
+/// Increment the service prompt counter
+#[tauri::command]
+fn increment_service_prompt_count() -> Result<(), String> {
+    use std::fs;
+
+    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let config_dir = PathBuf::from(&home).join(".config/keydeck");
+    let counter_file = config_dir.join(".service_prompt_count");
+
+    // Ensure config directory exists
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+
+    // Read current count, default to 0 if file doesn't exist
+    let count: u32 = fs::read_to_string(&counter_file)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+
+    // Increment and write back
+    let new_count = count + 1;
+    fs::write(&counter_file, new_count.to_string())
+        .map_err(|e| format!("Failed to write counter file: {}", e))?;
+
+    Ok(())
+}
+
+/// Set the service prompt counter to a specific value
+#[tauri::command]
+fn set_service_prompt_count(count: u32) -> Result<(), String> {
+    use std::fs;
+
+    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let config_dir = PathBuf::from(&home).join(".config/keydeck");
+    let counter_file = config_dir.join(".service_prompt_count");
+
+    // Ensure config directory exists
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+
+    // Write the specified count
+    fs::write(&counter_file, count.to_string())
+        .map_err(|e| format!("Failed to write counter file: {}", e))?;
+
+    Ok(())
+}
+
 /// Send SIGHUP signal to keydeck server to reload configuration
 #[tauri::command]
 fn reload_keydeck() -> Result<(), String> {
@@ -870,7 +940,6 @@ async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
                         }
                     }
                 }
-                eprintln!("Emitted {} historical log entries", count);
             }
             Ok(output) => {
                 eprintln!("Failed to fetch history: {}", String::from_utf8_lossy(&output.stderr));
@@ -1013,6 +1082,9 @@ pub fn run() {
             save_config,
             check_daemon_status,
             check_service_enabled,
+            should_show_service_prompt,
+            increment_service_prompt_count,
+            set_service_prompt_count,
             start_daemon_service,
             reload_keydeck,
             stop_daemon_service,

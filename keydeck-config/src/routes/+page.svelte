@@ -105,6 +105,69 @@
 
       // Auto-select the main page on load
       selectInitialPage();
+
+      // Check daemon status and propose to start if not running (first 3 launches)
+      try {
+        const shouldShowPrompt = await invoke<boolean>("should_show_service_prompt");
+
+        // Only show the prompt for first 3 launches
+        if (shouldShowPrompt) {
+          const status = await invoke<{ running: boolean; pid: number | null; timestamp: number }>("check_daemon_status");
+          const serviceEnabled = await invoke<boolean>("check_service_enabled");
+
+          // If daemon is already running or service is enabled, skip all future prompts
+          if (status.running || serviceEnabled) {
+            try {
+              // Set counter to 999 to permanently disable prompts
+              await invoke("set_service_prompt_count", { count: 999 });
+            } catch (e) {
+              console.warn("Failed to disable service prompt:", e);
+            }
+          } else {
+            // Daemon is not running and service is not enabled, ask user if they want to start it
+            const shouldStart = await ask(
+              "The keydeck daemon service is not running. Would you like to start it now?",
+              {
+                title: "Start KeyDeck Service",
+                kind: "info",
+                okLabel: "Start Service",
+                cancelLabel: "Not Now"
+              }
+            );
+
+            if (shouldStart) {
+              try {
+                await invoke("start_daemon_service");
+                console.log("Daemon service started successfully");
+                // Also disable future prompts since service is now enabled
+                try {
+                  await invoke("set_service_prompt_count", { count: 999 });
+                } catch (e) {
+                  console.warn("Failed to disable service prompt:", e);
+                }
+              } catch (e) {
+                console.error("Failed to start daemon service:", e);
+                setError(`Failed to start daemon service: ${e}`);
+                // Still increment counter normally if start failed
+                try {
+                  await invoke("increment_service_prompt_count");
+                } catch (e) {
+                  console.warn("Failed to increment service prompt counter:", e);
+                }
+              }
+            } else {
+              // User declined, increment counter normally
+              try {
+                await invoke("increment_service_prompt_count");
+              } catch (e) {
+                console.warn("Failed to increment service prompt counter:", e);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check daemon status on startup:", e);
+      }
     } catch (e) {
       // This should only happen for actual errors (e.g., parse errors, permission issues)
       const errorMsg = String(e);
