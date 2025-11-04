@@ -4,8 +4,11 @@
   import TriStateCheckbox from './TriStateCheckbox.svelte';
   import DrawConfigEditor from './DrawConfigEditor.svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { ask, message } from '@tauri-apps/plugin-dialog';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
+  import { iconRefreshTrigger } from '$lib/stores';
 
   interface Props {
     config: any;
@@ -30,9 +33,18 @@
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
   let openActionIndex = $state<number>(-1);
+  let isDraggingOver = $state(false);
 
   let showButtonDefDropdown = $state(false);
   let buttonDefSearchFilter = $state("");
+
+  let unlistenFileDropHover: UnlistenFn | null = null;
+
+  let iconDropZoneRef: HTMLDivElement | null = null;
+  let isHoveringDropZone = $state(false);
+
+  // Supported image extensions for icon upload
+  const VALID_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'];
 
   // Application browser state
   let showAppBrowser = $state(false);
@@ -51,11 +63,58 @@
     }
   }
 
+  // Setup Tauri file drop listeners
+  onMount(async () => {
+    const window = getCurrentWindow();
+
+    // Listen for file drop events
+    unlistenFileDropHover = await window.onDragDropEvent((event) => {
+      if (event.payload.type === 'drop') {
+        isDraggingOver = false;
+
+        // Only handle drop if we're hovering over the icon drop zone
+        if (!isReadOnly && isHoveringDropZone && event.payload.paths && event.payload.paths.length > 0) {
+          handleTauriFileDrop(event.payload.paths);
+        }
+      } else if (event.payload.type === 'leave') {
+        isDraggingOver = false;
+      }
+    });
+  });
+
+  onDestroy(() => {
+    if (unlistenFileDropHover) unlistenFileDropHover();
+  });
+
+  async function handleTauriFileDrop(paths: string[]) {
+    // Filter for image files
+    const imagePaths = paths.filter(path => {
+      const ext = path.split('.').pop()?.toLowerCase();
+      return ext && VALID_IMAGE_EXTENSIONS.includes(ext);
+    });
+
+    if (imagePaths.length > 0) {
+      await uploadIconFiles(imagePaths);
+    } else {
+      await message('No valid image files found in drop. Supported formats: PNG, JPG, GIF, BMP, SVG, WebP', {
+        title: 'Invalid Files',
+        kind: 'warning'
+      });
+    }
+  }
+
   // Reload icons when config changes
   $effect(() => {
     if (config) {
       loadIcons();
     }
+  });
+
+  // Reload icons when cleanup is triggered
+  $effect(() => {
+    // Subscribe to iconRefreshTrigger changes
+    $iconRefreshTrigger;
+    loadIcons();
   });
 
 
@@ -612,10 +671,96 @@
 
       // Reload icon list to include the new icon
       await loadIcons();
+
+      // Trigger global icon refresh for all components (including ButtonGrid)
+      iconRefreshTrigger.update(n => n + 1);
     } catch (e) {
       console.error('Failed to select app icon:', e);
       await message(`Failed to copy icon: ${e}`, { title: 'Error', kind: 'error' });
     }
+  }
+
+  async function openFileUploadDialog() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: true,
+        filters: [{
+          name: 'Image',
+          extensions: VALID_IMAGE_EXTENSIONS
+        }]
+      });
+
+      if (selected) {
+        const files = Array.isArray(selected) ? selected : [selected];
+        await uploadIconFiles(files);
+      }
+    } catch (e) {
+      console.error('Failed to open file dialog:', e);
+      await message(`Failed to open file dialog: ${e}`, { title: 'Error', kind: 'error' });
+    }
+  }
+
+  async function uploadIconFiles(filePaths: string[]) {
+    try {
+      let lastIconFilename = '';
+
+      for (const filePath of filePaths) {
+        const iconFilename = await invoke<string>('upload_custom_icon', {
+          filePath: filePath,
+          suggestedName: null
+        });
+        lastIconFilename = iconFilename;
+      }
+
+      // Reload icon list to include the new icons
+      await loadIcons();
+
+      // Trigger global icon refresh for all components (including ButtonGrid)
+      iconRefreshTrigger.update(n => n + 1);
+
+      // Auto-select the last uploaded icon
+      if (lastIconFilename) {
+        updateIcon(lastIconFilename);
+      }
+
+      // Close dropdown if only one file was uploaded
+      if (filePaths.length === 1) {
+        showIconDropdown = false;
+      }
+    } catch (e) {
+      console.error('Failed to upload icon:', e);
+      await message(`Failed to upload icon: ${e}`, { title: 'Error', kind: 'error' });
+    }
+  }
+
+  function handleDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    isDraggingOver = true;
+    isHoveringDropZone = true;
+  }
+
+  function handleDragLeave(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Check if we're actually leaving the drop zone (not just entering a child element)
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = event.clientX;
+    const y = event.clientY;
+
+    if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+      isDraggingOver = false;
+      isHoveringDropZone = false;
+    }
+  }
+
+  function handleDragEnter(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    isHoveringDropZone = true;
+    isDraggingOver = true;
   }
 
   let filteredApps = $derived(
@@ -835,16 +980,33 @@
 
   <div class="form-group">
     <label>Icon</label>
-    {#if availableIcons.length > 0}
-      <div class="icon-selector-row">
-        <div class="icon-dropdown-container">
-          <button
-            class="icon-dropdown-trigger"
-            class:reference={buttonDefReference !== null}
-            class:inherited={inheritedSource !== null}
-            onclick={() => showIconDropdown = !showIconDropdown}
-            disabled={isReadOnly}
-          >
+    <div
+      class="icon-selector-row"
+      bind:this={iconDropZoneRef}
+      ondragenter={handleDragEnter}
+      ondragover={handleDragOver}
+      ondragleave={handleDragLeave}
+    >
+      <button class="icon-search-btn" onclick={openIconSearchDialog} title="Search for application icons" disabled={isReadOnly}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <div class="icon-dropdown-container">
+        <button
+          class="icon-dropdown-trigger"
+          class:reference={buttonDefReference !== null}
+          class:inherited={inheritedSource !== null}
+          class:dragging-over={isDraggingOver && !showIconDropdown}
+          onclick={() => showIconDropdown = !showIconDropdown}
+          disabled={isReadOnly}
+        >
+          {#if isDraggingOver && !showIconDropdown}
+            <div class="drop-indicator-closed">
+              📤 Drop to upload
+            </div>
+          {:else}
             <div class="selected-icon">
               {#if getDetailedConfig()?.icon}
                 <img src={getIconDataUrl(getDetailedConfig().icon)} alt="" class="icon-thumb" />
@@ -854,10 +1016,15 @@
               {/if}
             </div>
             <span class="dropdown-arrow">▼</span>
-          </button>
+          {/if}
+        </button>
 
-          {#if showIconDropdown}
-            <div class="icon-dropdown-menu">
+        {#if showIconDropdown}
+          <div
+            class="icon-dropdown-menu"
+            class:dragging-over={isDraggingOver}
+          >
+            <div class="icon-dropdown-header">
               <input
                 type="text"
                 class="icon-search"
@@ -865,83 +1032,80 @@
                 bind:value={iconSearchFilter}
                 onclick={(e) => e.stopPropagation()}
               />
-              <div class="icon-options">
+              <button class="upload-btn" onclick={openFileUploadDialog} title="Upload custom icon">
+                📁
+              </button>
+            </div>
+            <div class="upload-hint">Drop images here or click 📁 to upload</div>
+            {#if isDraggingOver}
+              <div class="drop-overlay">
+                <div class="drop-indicator">
+                  📤<br/>Drop image to upload
+                </div>
+              </div>
+            {/if}
+            <div class="icon-options">
+              <button
+                class="icon-option"
+                class:selected={!getDetailedConfig()?.icon}
+                onclick={() => selectIcon("")}
+              >
+                <span class="no-icon-text">No icon</span>
+              </button>
+              {#each filteredIcons as icon}
                 <button
                   class="icon-option"
-                  class:selected={!getDetailedConfig()?.icon}
-                  onclick={() => selectIcon("")}
+                  class:selected={getDetailedConfig()?.icon === icon.filename}
+                  onclick={() => selectIcon(icon.filename)}
                 >
-                  <span class="no-icon-text">No icon</span>
+                  <img src={icon.data_url} alt="" class="icon-thumb" />
+                  <span>{icon.filename}</span>
                 </button>
-                {#each filteredIcons as icon}
-                  <button
-                    class="icon-option"
-                    class:selected={getDetailedConfig()?.icon === icon.filename}
-                    onclick={() => selectIcon(icon.filename)}
-                  >
-                    <img src={icon.data_url} alt="" class="icon-thumb" />
-                    <span>{icon.filename}</span>
-                  </button>
-                {/each}
-              </div>
+              {/each}
             </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Application Browser -->
+    {#if showAppBrowser}
+      <div class="app-browser">
+        <div class="app-browser-header">
+          {#if loadingApps}
+            <div class="loading-inline">
+              <div class="spinner"></div>
+              <span>Loading applications and converting icons...</span>
+            </div>
+          {:else}
+            <input
+              type="text"
+              class="app-search"
+              placeholder="Search applications..."
+              bind:value={appSearchFilter}
+              onclick={(e) => e.stopPropagation()}
+            />
           {/if}
         </div>
-        <button class="icon-search-btn" onclick={openIconSearchDialog} title="Search for application icons">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
-            <line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
-      </div>
-
-      <!-- Application Browser -->
-      {#if showAppBrowser}
-        <div class="app-browser">
-          <div class="app-browser-header">
-            {#if loadingApps}
-              <div class="loading-inline">
-                <div class="spinner"></div>
-                <span>Loading applications and converting icons...</span>
-              </div>
+        <div class="app-list">
+          {#if !loadingApps}
+            {#if filteredApps.length > 0}
+              {#each filteredApps as app}
+                <button
+                  class="app-option"
+                  onclick={() => selectApp(app)}
+                  disabled={isReadOnly}
+                >
+                  <img src={app.icon_data_url || ''} alt="" class="app-icon-thumb" />
+                  <span>{app.name}</span>
+                </button>
+              {/each}
             {:else}
-              <input
-                type="text"
-                class="app-search"
-                placeholder="Search applications..."
-                bind:value={appSearchFilter}
-                onclick={(e) => e.stopPropagation()}
-              />
+              <p class="no-apps">No applications found</p>
             {/if}
-          </div>
-          <div class="app-list">
-            {#if !loadingApps}
-              {#if filteredApps.length > 0}
-                {#each filteredApps as app}
-                  <button
-                    class="app-option"
-                    onclick={() => selectApp(app)}
-                    disabled={isReadOnly}
-                  >
-                    <img src={app.icon_data_url || ''} alt="" class="app-icon-thumb" />
-                    <span>{app.name}</span>
-                  </button>
-                {/each}
-              {:else}
-                <p class="no-apps">No applications found</p>
-              {/if}
-            {/if}
-          </div>
+          {/if}
         </div>
-      {/if}
-    {:else}
-      <input
-        type="text"
-        value={getDetailedConfig()?.icon || ""}
-        oninput={(e) => updateIcon(e.currentTarget.value)}
-        placeholder="icon.png or path to image"
-        disabled={isReadOnly}
-      />
+      </div>
     {/if}
     <p class="help">Icons are stored in: ~/.config/keydeck/icons</p>
   </div>
@@ -1205,6 +1369,11 @@
     background-color: #1177b8;
   }
 
+  .icon-search-btn:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+  }
+
   .form-group {
     display: flex;
     flex-direction: column;
@@ -1299,6 +1468,22 @@
     background-color: #4a4238;
   }
 
+  .icon-dropdown-trigger.dragging-over {
+    background-color: rgba(14, 99, 156, 0.3);
+    border-color: #0e639c;
+    border-width: 2px;
+  }
+
+  .drop-indicator-closed {
+    color: #0e639c;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+  }
+
   .selected-icon {
     display: flex;
     align-items: center;
@@ -1336,13 +1521,77 @@
     border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     z-index: 1000;
-    max-height: 300px;
+    max-height: 350px;
     display: flex;
     flex-direction: column;
+    position: relative;
+  }
+
+  .icon-dropdown-menu.dragging-over {
+    border-color: #0e639c;
+    border-width: 2px;
+  }
+
+  .icon-dropdown-header {
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+    border-bottom: 1px solid #3e3e42;
+  }
+
+  .upload-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background-color: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .upload-btn:hover {
+    background-color: #1177b8;
+  }
+
+  .upload-hint {
+    padding: 4px 12px;
+    font-size: 10px;
+    color: #888;
+    text-align: center;
+    font-style: italic;
+    border-bottom: 1px solid #3e3e42;
+  }
+
+  .drop-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(14, 99, 156, 0.9);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .drop-indicator {
+    color: white;
+    font-size: 24px;
+    text-align: center;
+    font-weight: 600;
   }
 
   .icon-search {
-    margin: 8px;
+    flex: 1;
     padding: 6px 8px;
     background-color: #3c3c3c;
     color: #cccccc;

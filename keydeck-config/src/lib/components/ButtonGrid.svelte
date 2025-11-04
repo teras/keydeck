@@ -3,6 +3,7 @@
   import DeviceSelector from './DeviceSelector.svelte';
   import HelperButtons from './HelperButtons.svelte';
   import { processEscapeSequences } from '$lib/utils/escapeChars';
+  import { iconRefreshTrigger } from '$lib/stores';
 
   interface DeviceInfo {
     device_id: string;
@@ -46,6 +47,9 @@
 
   let { device, config, currentPage, selectedButton, onButtonSelected, isTemplate = false, pageName, onPageTitleClicked, onDeviceSelected, onRefresh, isEditMode = true, onHomeClick, onToggleMode, onPageJump }: Props = $props();
 
+  let draggedButtonIndex = $state<number | null>(null);
+  let dropTargetIndex = $state<number | null>(null);
+
   // Load available icons with data URLs
   let availableIcons = $state<{filename: string; data_url: string}[]>([]);
 
@@ -64,6 +68,13 @@
     if (config) {
       loadIcons();
     }
+  });
+
+  // Reload icons when cleanup is triggered
+  $effect(() => {
+    // Subscribe to iconRefreshTrigger changes
+    $iconRefreshTrigger;
+    loadIcons();
   });
 
   // Get button configuration from template inheritance chain
@@ -504,6 +515,124 @@
       }
     }
   }
+
+  // Drag & drop handlers for button configuration copying
+  function handleDragStart(event: DragEvent, index: number) {
+    if (!isEditMode && !isTemplate) return; // Only in edit mode
+
+    // Only allow dragging configured buttons that are not inherited or references
+    if (!hasConfig(index) || isInherited(index) || isButtonDefReference(index)) {
+      event.preventDefault();
+      return;
+    }
+
+    draggedButtonIndex = index;
+    event.dataTransfer!.effectAllowed = 'copy';
+    event.dataTransfer!.setData('text/plain', index.toString());
+
+    // Create a custom drag image to avoid clipping issues
+    const draggedElement = event.target as HTMLElement;
+    const clone = draggedElement.cloneNode(true) as HTMLElement;
+
+    // Adjust for HiDPI displays
+    const scale = 1 / window.devicePixelRatio;
+    const width = draggedElement.offsetWidth;
+    const height = draggedElement.offsetHeight;
+
+    // Style the clone to ensure it's fully visible
+    clone.style.position = 'absolute';
+    clone.style.top = '-1000px';
+    clone.style.left = '-1000px';
+    clone.style.width = width + 'px';
+    clone.style.height = height + 'px';
+    clone.style.transform = `scale(${scale})`;
+    clone.style.transformOrigin = '0 0';
+    clone.style.pointerEvents = 'none';
+
+    document.body.appendChild(clone);
+
+    // Use the clone as drag image, centered
+    event.dataTransfer!.setDragImage(clone, (width * scale) / 2, (height * scale) / 2);
+
+    // Remove clone after a short delay
+    setTimeout(() => {
+      document.body.removeChild(clone);
+    }, 0);
+  }
+
+  function handleDragEnd() {
+    draggedButtonIndex = null;
+    dropTargetIndex = null;
+  }
+
+  function handleDragOver(event: DragEvent, index: number) {
+    if (!isEditMode && !isTemplate) return;
+    if (draggedButtonIndex === null) return;
+    if (draggedButtonIndex === index) return; // Can't drop on itself
+
+    // Allow dropping on:
+    // 1. Empty buttons (no config at all)
+    // 2. Inherited buttons (no local config, only inherited)
+    // Don't allow dropping on:
+    // 1. Locally configured buttons (would overwrite user's config)
+    // 2. Button def references (these are intentional references, not empty)
+    if (hasConfig(index) && !isInherited(index)) {
+      return; // Don't allow dropping on locally configured buttons or references
+    }
+
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = 'copy';
+    dropTargetIndex = index;
+  }
+
+  function handleDragLeave(event: DragEvent, index: number) {
+    if (dropTargetIndex === index) {
+      dropTargetIndex = null;
+    }
+  }
+
+  function handleDrop(event: DragEvent, targetIndex: number) {
+    event.preventDefault();
+
+    if (draggedButtonIndex === null) return;
+    if (!hasConfig(draggedButtonIndex)) return;
+
+    // Don't allow dropping on locally configured buttons or button def references
+    if (hasConfig(targetIndex) && !isInherited(targetIndex)) return;
+
+    // Get the source button config
+    const sourceButtonKey = `button${draggedButtonIndex}`;
+    const targetButtonKey = `button${targetIndex}`;
+
+    // Get the source config
+    let sourceConfig = getButtonConfig(draggedButtonIndex);
+    if (!sourceConfig) return;
+
+    // Deep clone the config to avoid reference issues
+    const clonedConfig = JSON.parse(JSON.stringify(sourceConfig));
+
+    // Apply to target
+    if (isTemplate) {
+      const template = config.templates[currentPage];
+      if (template) {
+        template[targetButtonKey] = clonedConfig;
+        config.templates = { ...config.templates };
+      }
+    } else {
+      const groupKey = config.page_groups[device.serial] ? device.serial : 'default';
+      const page = config.page_groups[groupKey][currentPage];
+      if (page) {
+        page[targetButtonKey] = clonedConfig;
+        config.page_groups = { ...config.page_groups };
+      }
+    }
+
+    dropTargetIndex = null;
+    draggedButtonIndex = null;
+
+    // Auto-select the new button
+    onButtonSelected(targetIndex);
+  }
 </script>
 
 <div class="button-grid-container">
@@ -544,18 +673,28 @@
         {@const textColor = getButtonTextColor(buttonIndex)}
         {@const label = getButtonLabel(buttonIndex)}
         {@const fontSize = getButtonFontSize(buttonIndex)}
+        {@const isConfigured = hasConfig(buttonIndex) && !isInherited(buttonIndex) && !isButtonDefReference(buttonIndex)}
+        {@const canDropHere = !isConfigured}
         <button
           class="grid-button"
           class:selected={selectedButton === buttonIndex}
-          class:configured={hasConfig(buttonIndex) && !isInherited(buttonIndex) && !isButtonDefReference(buttonIndex)}
+          class:configured={isConfigured}
           class:inherited={isInherited(buttonIndex)}
           class:button-def-reference={isButtonDefReference(buttonIndex)}
           class:has-icon={iconUrl !== null}
+          class:dragging={draggedButtonIndex === buttonIndex}
+          class:drop-target={dropTargetIndex === buttonIndex}
+          draggable={isConfigured && (isEditMode || isTemplate)}
+          ondragstart={(e) => handleDragStart(e, buttonIndex)}
+          ondragend={handleDragEnd}
+          ondragover={(e) => handleDragOver(e, buttonIndex)}
+          ondragleave={(e) => handleDragLeave(e, buttonIndex)}
+          ondrop={(e) => handleDrop(e, buttonIndex)}
           onclick={() => handleButtonClick(buttonIndex)}
-          title="Button {buttonIndex}"
+          title="Button {buttonIndex}{isConfigured ? ' (drag to copy)' : canDropHere ? ' (drop here to override)' : ''}"
         >
           {#if iconUrl}
-            <img src={iconUrl} alt="Button {buttonIndex}" class="button-icon" />
+            <img src={iconUrl} alt="Button {buttonIndex}" class="button-icon" draggable="false" />
             {#if label}
               <span class="button-text-overlay" style="font-size: {fontSize * 0.3}px;{textColor ? ` color: ${textColor};` : ''}{outline ? ` --outline-color: ${outline};` : ''}">{label}</span>
             {/if}
@@ -696,6 +835,33 @@
 
   .grid-button.button-def-reference.selected {
     border-color: #0e639c;
+  }
+
+  .grid-button.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+  }
+
+  .grid-button.drop-target {
+    border-color: #4ec9b0;
+    border-width: 3px;
+    background: linear-gradient(135deg, rgba(78, 201, 176, 0.2) 0%, rgba(78, 201, 176, 0.1) 100%);
+    box-shadow: 0 0 12px rgba(78, 201, 176, 0.5);
+  }
+
+  .grid-button.drop-target::after {
+    content: '📋';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .grid-button[draggable="true"]:not(.dragging) {
+    cursor: pointer;
   }
 
   .button-number {

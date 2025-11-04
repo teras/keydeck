@@ -839,6 +839,65 @@ fn get_icon_data_url(file_path: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", mime_type, base64_data))
 }
 
+/// Upload custom icon file to keydeck icons directory
+/// Returns the filename of the saved icon
+#[tauri::command]
+fn upload_custom_icon(file_path: String, suggested_name: Option<String>) -> Result<String, String> {
+    use std::fs;
+
+    let source = PathBuf::from(&file_path);
+
+    if !source.exists() {
+        return Err(format!("Icon file not found: {}", file_path));
+    }
+
+    // Get icon directory
+    let icon_dir = PathBuf::from(get_icon_dir());
+
+    // Ensure icon directory exists
+    fs::create_dir_all(&icon_dir)
+        .map_err(|e| format!("Failed to create icon directory: {}", e))?;
+
+    // Get extension from source file
+    let ext = source.extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("png");
+
+    // Determine base filename
+    let base_name = if let Some(name) = suggested_name {
+        // Use suggested name, sanitized
+        name.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect::<String>()
+    } else {
+        // Use original filename without extension
+        source.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("custom_icon")
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .collect::<String>()
+    };
+
+    // Find an available filename
+    let mut filename = format!("{}.{}", base_name, ext);
+    let mut dest = icon_dir.join(&filename);
+    let mut counter = 2;
+
+    // If file exists, try _2, _3, _4, etc.
+    while dest.exists() {
+        filename = format!("{}_{}.{}", base_name, counter, ext);
+        dest = icon_dir.join(&filename);
+        counter += 1;
+    }
+
+    // Copy the file
+    fs::copy(&source, &dest)
+        .map_err(|e| format!("Failed to copy icon: {}", e))?;
+
+    Ok(filename)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -900,6 +959,7 @@ pub fn run() {
             preview_icon_cleanup,
             execute_icon_cleanup,
             get_icon_data_url,
+            upload_custom_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

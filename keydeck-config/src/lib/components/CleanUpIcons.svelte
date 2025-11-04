@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { ask } from '@tauri-apps/plugin-dialog';
-  import { hasUnsavedChanges, saveConfigCallback } from '../stores';
+  import { hasUnsavedChanges, saveConfigCallback, iconRefreshTrigger } from '../stores';
 
   interface Props {
     config: any;
@@ -88,6 +88,9 @@
     try {
       // Backend will read config from disk (which was saved before preview)
       await invoke<number>('execute_icon_cleanup');
+
+      // Trigger icon refresh in all components
+      iconRefreshTrigger.update(n => n + 1);
 
       // Close dialog and notify parent
       closeDialog();
