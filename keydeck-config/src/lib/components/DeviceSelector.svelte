@@ -32,7 +32,7 @@
   }
 
   interface Props {
-    onDeviceSelected: (device: DeviceInfo) => void;
+    onDeviceSelected: (device: DeviceInfo | null) => void;
     onRefresh?: () => void;
   }
 
@@ -68,6 +68,7 @@
       } else {
         // No devices available, clear selection
         selectedDeviceId = null;
+        onDeviceSelected(null); // Notify parent to clear device state
       }
     } catch (e) {
       console.error("Failed to list devices:", e);

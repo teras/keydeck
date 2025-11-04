@@ -254,7 +254,7 @@
     }
   });
 
-  function handleDeviceSelected(device: DeviceInfo) {
+  function handleDeviceSelected(device: DeviceInfo | null) {
     console.log("Device selected:", device);
     selectedDevice = device;
   }
