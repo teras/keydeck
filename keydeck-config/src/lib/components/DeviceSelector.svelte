@@ -61,8 +61,13 @@
       devices = await invoke("list_devices");
       // Auto-select first device if available (or re-select if already selected)
       if (devices.length > 0) {
-        const deviceToSelect = selectedDeviceId || devices[0].device_id;
+        // Check if previously selected device still exists
+        const deviceExists = selectedDeviceId && devices.some(d => d.device_id === selectedDeviceId);
+        const deviceToSelect = deviceExists ? selectedDeviceId : devices[0].device_id;
         await selectDevice(deviceToSelect);
+      } else {
+        // No devices available, clear selection
+        selectedDeviceId = null;
       }
     } catch (e) {
       console.error("Failed to list devices:", e);
