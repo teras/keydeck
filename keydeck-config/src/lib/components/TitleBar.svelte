@@ -60,7 +60,7 @@
     {/if}
     {#if onSend}
       <button class="toolbar-btn" onclick={onSend} disabled={isSaving} title="Save configuration and reload device">
-        Send
+        Apply
       </button>
     {/if}
     {#if onImport}
@@ -195,6 +195,6 @@
   }
 
   .import-btn {
-    margin-left: 12px;
+    margin-left: 24px;
   }
 </style>

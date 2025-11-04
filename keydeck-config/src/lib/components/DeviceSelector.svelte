@@ -110,7 +110,8 @@
   {/if}
 
   <button onclick={refreshDevices} disabled={loading} title="Refresh devices and reload configuration">
-    ↻
+    <span class="icon">↻</span>
+    <span class="label">Reload</span>
   </button>
 </div>
 
@@ -138,13 +139,20 @@
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 24px;
     line-height: 1;
-    min-width: 42px;
     height: 42px;
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
+  }
+
+  button .icon {
+    font-size: 24px;
+  }
+
+  button .label {
+    font-size: 15px;
   }
 
   button:hover {
