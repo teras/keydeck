@@ -11,7 +11,7 @@ use crate::listener_tick::listener_tick;
 use crate::listener_time::TimeManager;
 use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
-use crate::pages::KeyDeckConf;
+use crate::pages::{KeyDeckConf, KeyDeckConfLoader};
 use crate::services::new_services_state;
 use crate::{error_log, info_log, verbose_log};
 use keydeck::get_icon_dir;
@@ -34,7 +34,7 @@ pub fn start_server() {
     info_log!("Starting KeyDeck Server");
 
     // Configuration - now reloadable via SIGHUP using Arc
-    let conf = Arc::new(KeyDeckConf::new());
+    let conf = Arc::new(KeyDeckConfLoader::load());
     let mut conf_pages = Arc::new(conf.page_groups.clone());
     let mut conf_colors = Arc::new(conf.colors.clone());
     let mut conf_buttons = Arc::new(conf.buttons.clone());
@@ -188,7 +188,7 @@ pub fn start_server() {
 
                 // Reload configuration from file
                 info_log!("Reloading configuration from file...");
-                let new_conf = Arc::new(KeyDeckConf::new());
+                let new_conf = Arc::new(KeyDeckConfLoader::load());
                 conf_pages = Arc::new(new_conf.page_groups.clone());
                 conf_colors = Arc::new(new_conf.colors.clone());
                 conf_buttons = Arc::new(new_conf.buttons.clone());

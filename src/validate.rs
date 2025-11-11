@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use crate::pages::{ButtonConfig, KeyDeckConf};
+use crate::pages::{ButtonConfig, KeyDeckConf, KeyDeckConfLoader};
 use crate::{error_log, info_log, verbose_log, warn_log};
 use keydeck::get_icon_dir;
 use serde::Serialize;
@@ -130,7 +130,7 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
 
                 for template_name in template_names {
                     let mut visited = Vec::new();
-                    match KeyDeckConf::resolve_template_recursive(template_name, templates_map, &mut visited) {
+                    match KeyDeckConfLoader::resolve_template_recursive(template_name, templates_map, &mut visited) {
                         Ok((resolved_buttons, resolved_on_tick, resolved_lock)) => {
                             for (button_name, button_config) in resolved_buttons {
                                 page.buttons

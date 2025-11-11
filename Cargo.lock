@@ -659,7 +659,7 @@ dependencies = [
 
 [[package]]
 name = "keydeck"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "cosmic-text",
@@ -669,6 +669,7 @@ dependencies = [
  "image",
  "imageproc",
  "indexmap",
+ "keydeck-types",
  "lazy_static",
  "mirajazz-json",
  "regex",
@@ -681,6 +682,16 @@ dependencies = [
  "strum_macros",
  "uuid",
  "x11rb",
+]
+
+[[package]]
+name = "keydeck-types"
+version = "0.9.0"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
 ]
 
 [[package]]

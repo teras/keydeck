@@ -35,6 +35,7 @@ show_help() {
     echo "  app     - Build both daemon and UI binaries"
     echo "  daemon  - Build only keydeck daemon (CLI) binary"
     echo "  ui      - Build only keydeck-config UI binary"
+    echo "  install - Stop service, copy binaries to ~/Works/System/bin, and restart service"
     echo "  clean   - Remove all build artifacts and return to fresh state"
     echo "  check   - Check for missing license headers in source files"
     echo "  help    - Show this help message"
@@ -43,6 +44,7 @@ show_help() {
     echo "  ./build.sh app"
     echo "  ./build.sh daemon"
     echo "  ./build.sh ui"
+    echo "  ./build.sh install"
     echo "  ./build.sh clean"
     echo "  ./build.sh check"
     echo ""
@@ -54,8 +56,8 @@ case "$1" in
         show_help
         exit 0
         ;;
-    clean|check)
-        # Handle clean and check commands below
+    clean|check|install)
+        # Handle clean, check, and install commands below
         ;;
     app|daemon|ui)
         # Handle build commands below
@@ -124,6 +126,77 @@ if [ "$1" = "check" ]; then
         echo -e "${RED}✗ Found $MISSING_FILES file(s) with missing license headers${NC}"
         exit 1
     fi
+fi
+
+# Handle install command
+if [ "$1" = "install" ]; then
+    echo "======================================"
+    echo "KeyDeck Install"
+    echo "======================================"
+    echo ""
+
+    INSTALL_DIR="$HOME/Works/System/bin"
+    KEYDECK_BIN="$DIST_DIR/keydeck"
+    KEYDECK_CONFIG_BIN="$DIST_DIR/keydeck-config"
+
+    # Check if binaries exist
+    if [ ! -f "$KEYDECK_BIN" ]; then
+        echo -e "${RED}✗ keydeck binary not found at $KEYDECK_BIN${NC}"
+        echo -e "${YELLOW}Run './build.sh daemon' or './build.sh app' first${NC}"
+        exit 1
+    fi
+
+    if [ ! -f "$KEYDECK_CONFIG_BIN" ]; then
+        echo -e "${RED}✗ keydeck-config binary not found at $KEYDECK_CONFIG_BIN${NC}"
+        echo -e "${YELLOW}Run './build.sh ui' or './build.sh app' first${NC}"
+        exit 1
+    fi
+
+    # Create install directory if it doesn't exist
+    mkdir -p "$INSTALL_DIR"
+
+    echo -e "${BLUE}Stopping keydeck service...${NC}"
+    if systemctl --user is-active --quiet keydeck; then
+        systemctl --user stop keydeck
+        echo -e "${GREEN}✓ Service stopped${NC}"
+    else
+        echo -e "${YELLOW}Service is not running${NC}"
+    fi
+    echo ""
+
+    echo -e "${BLUE}Copying binaries to $INSTALL_DIR...${NC}"
+    cp -v "$KEYDECK_BIN" "$INSTALL_DIR/keydeck"
+    cp -v "$KEYDECK_CONFIG_BIN" "$INSTALL_DIR/keydeck-config"
+    chmod +x "$INSTALL_DIR/keydeck"
+    chmod +x "$INSTALL_DIR/keydeck-config"
+    echo -e "${GREEN}✓ Binaries copied${NC}"
+    echo ""
+
+    echo -e "${BLUE}Starting keydeck service...${NC}"
+    systemctl --user start keydeck
+    sleep 1
+
+    if systemctl --user is-active --quiet keydeck; then
+        echo -e "${GREEN}✓ Service started successfully${NC}"
+    else
+        echo -e "${RED}✗ Service failed to start${NC}"
+        echo -e "${YELLOW}Check status with: systemctl --user status keydeck${NC}"
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${GREEN}======================================"
+    echo -e "Installation Complete!"
+    echo -e "======================================${NC}"
+    echo ""
+    echo -e "${BLUE}Installed binaries:${NC}"
+    ls -lh "$INSTALL_DIR/keydeck" "$INSTALL_DIR/keydeck-config"
+    echo ""
+    echo -e "${BLUE}Service status:${NC}"
+    systemctl --user status keydeck --no-pager | head -10
+    echo ""
+
+    exit 0
 fi
 
 # Handle clean command

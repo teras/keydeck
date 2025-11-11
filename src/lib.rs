@@ -20,32 +20,13 @@ pub mod device_trait;
 pub mod elgato_device;
 pub mod mirajazz_device;
 
-use std::path::PathBuf;
-
-// Re-export commonly used types
-pub use pages::{
+// Re-export types from keydeck-types
+pub use keydeck_types::{
     KeyDeckConf, Pages, Page, Button, ButtonConfig, Action, TextConfig, DrawConfig,
     ServiceConfig, Macro, MacroCall, FocusChangeRestorePolicy, GraphicType, Direction,
-    ColorMapEntry, RefreshTarget,
+    ColorMapEntry, RefreshTarget, DeviceInfo, ButtonLayout, ButtonImage, LcdStrip,
+    DEFAULT_ICON_DIR_REL, get_icon_dir, get_icon_dir_path,
 };
 
-pub use device_info::{
-    DeviceInfo, ButtonLayout, ButtonImage, LcdStrip,
-};
-
-/// Default icon directory path relative to home directory
-pub const DEFAULT_ICON_DIR_REL: &str = ".config/keydeck/icons";
-
-/// Get the absolute path to the default icon directory
-pub fn get_icon_dir() -> String {
-    if let Ok(home) = std::env::var("HOME") {
-        format!("{}/{}", home, DEFAULT_ICON_DIR_REL)
-    } else {
-        DEFAULT_ICON_DIR_REL.to_string()
-    }
-}
-
-/// Get the icon directory as PathBuf
-pub fn get_icon_dir_path() -> PathBuf {
-    PathBuf::from(get_icon_dir())
-}
+// Re-export backend-specific loader
+pub use pages::KeyDeckConfLoader;

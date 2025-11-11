@@ -1,0 +1,14 @@
+[package]
+name = "keydeck-types"
+version = "0.9.0"
+edition = "2021"
+description = "Shared types and data structures for KeyDeck"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/teras/keydeck"
+authors = ["Panayotis Katsaloulis"]
+
+[dependencies]
+serde = { version = "1.0.213", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_yaml_ng = "0.10.0"
+indexmap = { version = "2.6.0", features = ["serde"] }

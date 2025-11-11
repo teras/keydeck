@@ -28,7 +28,7 @@ mod linux_icon_finder;
 mod windows_icon_finder;
 
 // Re-export keydeck types and functions for frontend
-pub use keydeck::{DeviceInfo, KeyDeckConf, get_icon_dir, DEFAULT_ICON_DIR_REL};
+pub use keydeck_types::{DeviceInfo, KeyDeckConf, get_icon_dir, DEFAULT_ICON_DIR_REL};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DeviceListItem {
@@ -106,7 +106,7 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
 
     if !config_path.exists() {
         // Return default empty config for first-time launch
-        return Ok(KeyDeckConf::from_file_or_default());
+        return Ok(KeyDeckConf::default());
     }
 
     let content = std::fs::read_to_string(&config_path)
@@ -941,18 +941,18 @@ fn collect_used_icons(config: &KeyDeckConf, used_icons: &mut std::collections::H
     }
 }
 
-fn collect_icons_from_page(page: &keydeck::Page, used_icons: &mut std::collections::HashSet<String>) {
+fn collect_icons_from_page(page: &keydeck_types::Page, used_icons: &mut std::collections::HashSet<String>) {
     for button_config in page.buttons.values() {
         collect_icons_from_button_config(button_config, used_icons);
     }
 }
 
-fn collect_icons_from_button_config(button_config: &keydeck::ButtonConfig, used_icons: &mut std::collections::HashSet<String>) {
+fn collect_icons_from_button_config(button_config: &keydeck_types::ButtonConfig, used_icons: &mut std::collections::HashSet<String>) {
     match button_config {
-        keydeck::ButtonConfig::Template(_) => {
+        keydeck_types::ButtonConfig::Template(_) => {
             // Template references are resolved at runtime, can't determine icons here
         }
-        keydeck::ButtonConfig::Detailed(button) => {
+        keydeck_types::ButtonConfig::Detailed(button) => {
             if let Some(icon) = &button.icon {
                 used_icons.insert(icon.clone());
             }

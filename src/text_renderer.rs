@@ -18,10 +18,11 @@ const DEFAULT_FONT_SIZE: f32 = 28.0;
 /// Cache for the detected emoji font name
 static EMOJI_FONT_NAME: OnceLock<String> = OnceLock::new();
 
-/// Thread-local FontSystem - initialized once per thread (main event loop thread)
+// Thread-local FontSystem - initialized once per thread (main event loop thread)
+// FONT_SYSTEM: Main font rendering system
+// RENDERING_DEPTH: Track rendering depth to detect re-entrance
 thread_local! {
     static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(FontSystem::new());
-    // DEBUG_REENTRANCE: Track rendering depth to detect re-entrance
     static RENDERING_DEPTH: RefCell<u32> = RefCell::new(0);
 }
 
