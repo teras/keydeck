@@ -1033,13 +1033,10 @@ async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
         match history_output {
             Ok(output) if output.status.success() => {
                 let history = String::from_utf8_lossy(&output.stdout);
-                let mut count = 0;
                 for line in history.lines() {
                     if !line.trim().is_empty() {
                         if let Err(e) = window.emit("log-entry", line) {
                             eprintln!("Failed to emit log entry: {}", e);
-                        } else {
-                            count += 1;
                         }
                     }
                 }

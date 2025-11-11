@@ -42,14 +42,20 @@
   async function handleDoubleClick() {
     await appWindow.toggleMaximize();
   }
+
+  function stopPropagation(e: MouseEvent) {
+    e.stopPropagation();
+  }
 </script>
 
-<div class="titlebar">
+<div
+  class="titlebar"
+  onmousedown={startDrag}
+  ondblclick={handleDoubleClick}
+>
   <div
     class="titlebar-title"
     role="banner"
-    onmousedown={startDrag}
-    ondblclick={handleDoubleClick}
   >
     KeyDeck Configuration
   </div>
@@ -62,34 +68,34 @@
       <span class="last-save">Last: {lastSaveTime}</span>
     {/if}
     {#if onSend}
-      <button class="toolbar-btn" onclick={onSend} disabled={isSaving} title="Save configuration and reload device">
+      <button class="toolbar-btn" onclick={onSend} onmousedown={stopPropagation} disabled={isSaving} title="Save configuration and reload device">
         Apply
       </button>
     {/if}
     {#if onImport}
-      <button class="toolbar-btn import-btn" onclick={onImport} title="Import from YAML file">
+      <button class="toolbar-btn import-btn" onclick={onImport} onmousedown={stopPropagation} title="Import from YAML file">
         Import
       </button>
     {/if}
     {#if onExport}
-      <button class="toolbar-btn" onclick={onExport} title="Export to YAML file">
+      <button class="toolbar-btn" onclick={onExport} onmousedown={stopPropagation} title="Export to YAML file">
         Export
       </button>
     {/if}
   </div>
 
   <div class="titlebar-buttons">
-    <button class="titlebar-button" onclick={minimizeWindow}>
+    <button class="titlebar-button" onclick={minimizeWindow} onmousedown={stopPropagation}>
       <svg width="12" height="12" viewBox="0 0 12 12">
         <rect y="5" width="12" height="1" fill="currentColor"/>
       </svg>
     </button>
-    <button class="titlebar-button" onclick={maximizeWindow}>
+    <button class="titlebar-button" onclick={maximizeWindow} onmousedown={stopPropagation}>
       <svg width="12" height="12" viewBox="0 0 12 12">
         <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1" fill="none"/>
       </svg>
     </button>
-    <button class="titlebar-button titlebar-close" onclick={closeWindow}>
+    <button class="titlebar-button titlebar-close" onclick={closeWindow} onmousedown={stopPropagation}>
       <svg width="12" height="12" viewBox="0 0 12 12">
         <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1"/>
         <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1"/>
@@ -112,6 +118,7 @@
     right: 0;
     z-index: 1000;
     border-bottom: 1px solid #3a3a3a;
+    cursor: move;
   }
 
   .titlebar-title {
@@ -120,7 +127,6 @@
     font-weight: 500;
     color: #e0e0e0;
     flex: 1;
-    cursor: move;
   }
 
   .titlebar-buttons {
