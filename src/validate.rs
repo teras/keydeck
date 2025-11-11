@@ -302,8 +302,8 @@ fn validate_services(conf: &KeyDeckConf, result: &mut ValidationResult) {
     for (service_name, service_config) in services {
         verbose_log!("  Testing service '{}'...", service_name);
 
-        let cmd = service_config.exec();
-        let timeout = service_config.timeout();
+        let cmd = &service_config.exec;
+        let timeout = service_config.timeout;
 
         // Run the command with timeout
         let output = std::process::Command::new("bash")
@@ -347,11 +347,12 @@ fn validate_services(conf: &KeyDeckConf, result: &mut ValidationResult) {
                             break;
                         }
                         Ok(None) => {
-                            // Still running - check timeout
-                            if start.elapsed().as_secs_f64() > timeout {
-                                let _ = child.kill();
-                                let msg = format!("Service '{}' timed out after {}s", service_name, timeout);
-                                eprintln!("Error: {}", msg);
+                            // Still running - check timeout (if specified)
+                            if let Some(timeout_val) = timeout {
+                                if start.elapsed().as_secs_f64() > timeout_val {
+                                    let _ = child.kill();
+                                    let msg = format!("Service '{}' timed out after {}s", service_name, timeout_val);
+                                    eprintln!("Error: {}", msg);
                                 result.errors.push(ValidationError {
                                     category: "service".to_string(),
                                     message: msg.clone(),
@@ -362,7 +363,8 @@ fn validate_services(conf: &KeyDeckConf, result: &mut ValidationResult) {
                                     output: None,
                                     error: Some(msg),
                                 });
-                                break;
+                                    break;
+                                }
                             }
                             std::thread::sleep(std::time::Duration::from_millis(100));
                         }

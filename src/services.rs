@@ -29,9 +29,9 @@ pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState, 
     verbose_log!("Spawning service thread for '{}'", name);
 
     thread::spawn(move || {
-        let interval = config.interval();
-        let timeout = config.timeout();
-        let command = config.exec().to_string();
+        let interval = config.interval;
+        let timeout = config.timeout;
+        let command = config.exec.clone();
 
         while still_active.load(std::sync::atomic::Ordering::Relaxed) {
             // Execute command with timeout
@@ -61,10 +61,9 @@ pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState, 
     });
 }
 
-/// Executes a bash command with a timeout.
+/// Executes a bash command with an optional timeout.
 /// Returns stdout on success, or error message on failure/timeout.
-fn execute_with_timeout(command: &str, timeout_secs: f64) -> Result<String, String> {
-    // Spawn command via bash
+fn execute_with_timeout(command: &str, timeout_secs: Option<f64>) -> Result<String, String> {
     let mut child = Command::new("bash")
         .arg("-c")
         .arg(command)
@@ -73,38 +72,58 @@ fn execute_with_timeout(command: &str, timeout_secs: f64) -> Result<String, Stri
         .spawn()
         .map_err(|e| format!("Failed to spawn command: {}", e))?;
 
-    // Wait for command with timeout
-    let start = std::time::Instant::now();
-    let timeout_duration = Duration::from_secs_f64(timeout_secs);
+    match timeout_secs {
+        None => {
+            // No timeout - just wait directly (no helper thread!)
+            let output = child.wait_with_output()
+                .map_err(|e| format!("Failed to wait for command: {}", e))?;
 
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                // Process has finished
-                if status.success() {
-                    // Read stdout
-                    let output = child.wait_with_output()
-                        .map_err(|e| format!("Failed to read output: {}", e))?;
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    return Ok(stdout);
-                } else {
-                    return Err(format!("Command failed with exit code: {}", status.code().unwrap_or(-1)));
-                }
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                Ok(stdout)
+            } else {
+                Err(format!("Command failed with exit code: {}", output.status.code().unwrap_or(-1)))
             }
-            Ok(None) => {
-                // Process still running, check timeout
-                if start.elapsed() > timeout_duration {
-                    // Timeout exceeded, kill process
-                    let _ = child.kill();
-                    let _ = child.wait(); // Clean up zombie
-                    return Err(format!("Command timed out after {:.1}s", timeout_secs));
-                }
+        }
+        Some(timeout) => {
+            // Has timeout - use helper thread approach
+            use std::sync::mpsc;
 
-                // Sleep briefly before checking again
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(e) => {
-                return Err(format!("Error waiting for process: {}", e));
+            let (tx, rx) = mpsc::channel();
+            let child_id = child.id();
+
+            // Spawn a thread to wait for the child process
+            thread::spawn(move || {
+                let result = child.wait_with_output();
+                let _ = tx.send(result);
+            });
+
+            // Wait for either the result or timeout
+            let timeout_duration = Duration::from_secs_f64(timeout);
+            match rx.recv_timeout(timeout_duration) {
+                Ok(Ok(output)) => {
+                    if output.status.success() {
+                        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                        Ok(stdout)
+                    } else {
+                        Err(format!("Command failed with exit code: {}", output.status.code().unwrap_or(-1)))
+                    }
+                }
+                Ok(Err(e)) => {
+                    Err(format!("Failed to wait for command: {}", e))
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    // Timeout exceeded, kill process using kill command
+                    // This is simpler than using libc and works cross-platform
+                    let _ = Command::new("kill")
+                        .arg("-9")
+                        .arg(child_id.to_string())
+                        .output();
+                    Err(format!("Command timed out after {:.1}s", timeout))
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    Err("Internal error: channel disconnected".to_string())
+                }
             }
         }
     }

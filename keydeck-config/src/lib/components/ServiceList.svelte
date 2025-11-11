@@ -52,9 +52,7 @@
     }
 
     config.services[serviceName] = {
-      exec: "",
-      interval: 1,
-      timeout: 5
+      exec: ""
     };
     newServiceName = "";
     showAddService = false;

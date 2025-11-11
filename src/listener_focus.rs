@@ -129,12 +129,10 @@ impl X11FocusListener {
         let atoms = Atoms::new(&conn)?.reply()?;
 
         conn.change_window_attributes(root, &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
-            .event_mask(EventMask::PROPERTY_CHANGE | EventMask::SUBSTRUCTURE_NOTIFY))?;
+            .event_mask(EventMask::PROPERTY_CHANGE))?;
 
-        for child in conn.query_tree(root)?.reply()?.children {
-            conn.change_window_attributes(child, &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
-                .event_mask(EventMask::PROPERTY_CHANGE))?;
-        }
+        // Flush to ensure the event mask is set
+        conn.flush()?;
 
         Ok(Self {
             conn,

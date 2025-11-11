@@ -894,28 +894,36 @@
         <div class="editor-panel">
           <h2>Service: {currentService}</h2>
           <div class="service-config">
-            {#if typeof config.services[currentService] === 'string'}
-              <div class="form-group">
-                <label>Command</label>
-                <textarea bind:value={config.services[currentService]} rows="3" placeholder='echo "your data"'></textarea>
-                <p class="help">Shell command to execute (uses default interval: 1s, timeout: 5s)</p>
-              </div>
-            {:else}
-              <div class="form-group">
-                <label>Command</label>
-                <textarea bind:value={config.services[currentService].exec} rows="3" placeholder='echo "your data"'></textarea>
-              </div>
-              <div class="form-group">
-                <label>Interval (seconds)</label>
-                <input type="number" bind:value={config.services[currentService].interval} min="0.1" step="0.1" />
-                <p class="help">How often to run the command</p>
-              </div>
-              <div class="form-group">
-                <label>Timeout (seconds)</label>
-                <input type="number" bind:value={config.services[currentService].timeout} min="1" step="1" />
-                <p class="help">Maximum time to wait for command completion</p>
-              </div>
-            {/if}
+            <div class="form-group">
+              <label>Command</label>
+              <textarea
+                bind:value={config.services[currentService].exec}
+                rows="3"
+                placeholder='echo "your data"'
+              ></textarea>
+            </div>
+            <div class="form-group">
+              <label>Interval (seconds) <span style="color: #666; font-weight: normal; font-style: italic;">(optional)</span></label>
+              <input
+                type="number"
+                bind:value={config.services[currentService].interval}
+                min="0.1"
+                step="0.1"
+                placeholder="1.0 (default)"
+              />
+              <p class="help">How often to run the command (leave empty for default 1s interval)</p>
+            </div>
+            <div class="form-group">
+              <label>Timeout (seconds) <span style="color: #666; font-weight: normal; font-style: italic;">(optional)</span></label>
+              <input
+                type="number"
+                bind:value={config.services[currentService].timeout}
+                min="1"
+                step="1"
+                placeholder="No timeout (default)"
+              />
+              <p class="help">Maximum time to wait for command completion (leave empty for no timeout)</p>
+            </div>
           </div>
         </div>
       {:else if currentMacro && config}

@@ -91,55 +91,38 @@ pub struct Pages {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(untagged, deny_unknown_fields)]
-pub enum ServiceConfig {
-    /// Simple form: just the command string (uses default interval and timeout)
-    Simple(String),
+#[serde(deny_unknown_fields)]
+pub struct ServiceConfig {
+    /// Command to execute via bash
+    pub exec: String,
 
-    /// Detailed form: command with explicit interval and timeout
-    Detailed {
-        /// Command to execute via bash
-        exec: String,
+    /// Update interval in seconds (how often to run the command)
+    #[serde(default = "default_service_interval", skip_serializing_if = "is_default_interval")]
+    pub interval: f64,
 
-        /// Update interval in seconds (how often to run the command)
-        #[serde(default = "default_service_interval")]
-        interval: f64,
-
-        /// Command timeout in seconds (kill if exceeds this)
-        #[serde(default = "default_service_timeout")]
-        timeout: f64,
-    },
-}
-
-impl ServiceConfig {
-    pub fn exec(&self) -> &str {
-        match self {
-            ServiceConfig::Simple(cmd) => cmd,
-            ServiceConfig::Detailed { exec, .. } => exec,
-        }
-    }
-
-    pub fn interval(&self) -> f64 {
-        match self {
-            ServiceConfig::Simple(_) => default_service_interval(),
-            ServiceConfig::Detailed { interval, .. } => *interval,
-        }
-    }
-
-    pub fn timeout(&self) -> f64 {
-        match self {
-            ServiceConfig::Simple(_) => default_service_timeout(),
-            ServiceConfig::Detailed { timeout, .. } => *timeout,
-        }
-    }
+    /// Optional command timeout in seconds (None = no timeout)
+    /// Can be specified as: missing, null, empty, or a number
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_optional_f64")]
+    pub timeout: Option<f64>,
 }
 
 fn default_service_interval() -> f64 {
     1.0 // 1 second
 }
 
-fn default_service_timeout() -> f64 {
-    5.0 // 5 seconds
+fn is_default_interval(interval: &f64) -> bool {
+    *interval == 1.0
+}
+
+/// Custom deserializer for optional f64 that treats null, missing, and empty string as None
+fn deserialize_optional_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    // Accept either null or a valid f64
+    Option::<f64>::deserialize(deserializer)
 }
 
 fn default_tick_time() -> f64 {

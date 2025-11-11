@@ -193,7 +193,8 @@ protected_icons:
   - "state_*.png"     # Protect state-based icons
 
 services:
-  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  cpu:
+    exec: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
   weather:
     exec: "curl -s wttr.in/?format=%t"
     interval: 600
@@ -206,20 +207,13 @@ Services are background threads that execute commands periodically and cache the
 
 #### Service Configuration
 
-Services can be defined in two forms:
+Services are defined with the following structure:
 
-**Simple Form** (uses defaults):
 ```yaml
 services:
-  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
-  memory: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
-```
-- Command executes via bash every 1 second (default interval)
-- Timeout of 5 seconds (default)
-
-**Detailed Form** (explicit configuration):
-```yaml
-services:
+  cpu:
+    exec: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+    # interval defaults to 1.0 second
   weather:
     exec: "curl -s wttr.in/?format=%t"
     interval: 600  # Update every 10 minutes
@@ -230,7 +224,7 @@ services:
 
 - `exec`: *(required)* Shell command to execute via bash
 - `interval`: *(optional)* Seconds between command executions (default: 1.0)
-- `timeout`: *(optional)* Maximum seconds to wait for command (default: 5.0)
+- `timeout`: *(optional)* Maximum seconds to wait for command completion. If not specified, commands run without timeout
 
 #### Service Behavior
 
@@ -245,7 +239,9 @@ Services are referenced in button text using `${service:name}` syntax:
 
 ```yaml
 services:
-  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  cpu:
+    exec: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+    # interval: 1.0 (default)
 
 pages:
   Main:
@@ -342,7 +338,8 @@ protected_icons:
 
 # Step 2: Create buttons that use those icons
 services:
-  cpu_level: "get-cpu-level.sh"  # Returns 0-100
+  cpu_level:
+    exec: "get-cpu-level.sh"
 
 pages:
   Main:
@@ -1306,8 +1303,10 @@ References a background service's cached output. Services must be defined in the
 **Example:**
 ```yaml
 services:
-  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
-  memory: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
+  cpu:
+    exec: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  memory:
+    exec: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
 
 pages:
   Main:
@@ -1341,9 +1340,12 @@ button1:
 
 ```yaml
 services:
-  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
-  memory: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
-  disk: "df -h / | tail -1 | awk '{print $5}'"
+  cpu:
+    exec: "top -bn1 | grep 'Cpu' | awk '{print $2}'"
+  memory:
+    exec: "free -m | awk 'NR==2{printf \"%.0f%%\", $3*100/$2}'"
+  disk:
+    exec: "df -h / | tail -1 | awk '{print $5}'"
   uptime:
     exec: "uptime -p | sed 's/up //'"
     interval: 60
@@ -1575,7 +1577,8 @@ Multiple bars with support for all 4 directions.
 **Example - Vertical bars (default)**:
 ```yaml
 services:
-  cpu_cores: "top -bn1 | awk '/Cpu/ {print $2}' | head -4 | tr '\n' ' '"
+  cpu_cores:
+    exec: "top -bn1 | awk '/Cpu/ {print $2}' | head -4 | tr '\n' ' '"
 
 button3:
   draw:
@@ -1686,10 +1689,14 @@ button_audio:
 
 ```yaml
 services:
-  cpu: "top -bn1 | grep 'Cpu' | awk '{print $2}' | sed 's/%Cpu(s)://'"
-  memory: "free | awk 'NR==2{printf \"%.0f\", $3*100/$2}'"
-  disk: "df -h / | tail -1 | awk '{print $5}' | sed 's/%//'"
-  network_speed: "cat /sys/class/net/eth0/statistics/rx_bytes"  # Simplified
+  cpu:
+    exec: "top -bn1 | grep 'Cpu' | awk '{print $2}' | sed 's/%Cpu(s)://'"
+  memory:
+    exec: "free | awk 'NR==2{printf \"%.0f\", $3*100/$2}'"
+  disk:
+    exec: "df -h / | tail -1 | awk '{print $5}' | sed 's/%//'"
+  network_speed:
+    exec: "cat /sys/class/net/eth0/statistics/rx_bytes"
 
 pages:
   Dashboard:
@@ -1767,8 +1774,12 @@ pages:
 
 ```yaml
 services:
-  audio_left: "pactl list sinks | grep 'Volume:' | awk '{print $5}' | sed 's/%//'"
-  audio_right: "pactl list sinks | grep 'Volume:' | awk '{print $12}' | sed 's/%//'"
+  audio_left:
+    exec: "pactl list sinks | grep 'Volume:' | awk '{print $5}' | sed 's/%//'"
+    interval: 0.1
+  audio_right:
+    exec: "pactl list sinks | grep 'Volume:' | awk '{print $12}' | sed 's/%//'"
+    interval: 0.1
 
 pages:
   Audio:

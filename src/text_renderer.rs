@@ -1,5 +1,6 @@
 use cosmic_text::{Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap};
 use image::{Rgba, RgbaImage};
+use std::cell::RefCell;
 use std::sync::OnceLock;
 
 /// Padding around text when auto-sizing (percentage of image dimension)
@@ -13,6 +14,13 @@ const DEFAULT_FONT_SIZE: f32 = 28.0;
 
 /// Cache for the detected emoji font name
 static EMOJI_FONT_NAME: OnceLock<String> = OnceLock::new();
+
+/// Thread-local FontSystem - initialized once per thread (main event loop thread)
+thread_local! {
+    static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(FontSystem::new());
+    // DEBUG_REENTRANCE: Track rendering depth to detect re-entrance
+    static RENDERING_DEPTH: RefCell<u32> = RefCell::new(0);
+}
 
 /// Get platform-specific color emoji font names in order of preference
 fn get_emoji_font_candidates() -> &'static [&'static str] {
@@ -200,9 +208,38 @@ pub fn render_text_on_canvas(
     text_color: Option<Rgba<u8>>,
     outline_color: Option<[u8; 3]>,
 ) {
+    // DEBUG_REENTRANCE: Check for re-entrant calls
+    RENDERING_DEPTH.with(|depth| {
+        let current_depth = *depth.borrow();
+        if current_depth > 0 {
+            eprintln!("DEBUG_REENTRANCE: Re-entrant call detected! Depth: {} -> {}", current_depth, current_depth + 1);
+            eprintln!("DEBUG_REENTRANCE: Text being rendered: '{}'", text);
+        }
+        *depth.borrow_mut() += 1;
+    });
+
+    FONT_SYSTEM.with(|fs| {
+        let mut font_system = fs.borrow_mut();
+        render_text_on_canvas_internal(canvas, text, font_size, text_color, outline_color, &mut font_system);
+    });
+
+    // DEBUG_REENTRANCE: Decrement depth on exit
+    RENDERING_DEPTH.with(|depth| {
+        *depth.borrow_mut() -= 1;
+    });
+}
+
+/// Internal rendering function that works with a FontSystem reference
+fn render_text_on_canvas_internal(
+    canvas: &mut RgbaImage,
+    text: &str,
+    font_size: Option<f32>,
+    text_color: Option<Rgba<u8>>,
+    outline_color: Option<[u8; 3]>,
+    font_system: &mut FontSystem,
+) {
     let width = canvas.width();
     let height = canvas.height();
-    let mut font_system = FontSystem::new();
 
     // Split text into lines
     let lines: Vec<&str> = text.split('\n').collect();
@@ -210,7 +247,7 @@ pub fn render_text_on_canvas(
     // Determine final font size - always run auto-scaling
     // Use user's font size as preferred (or default if not specified)
     let preferred_size = font_size.unwrap_or(DEFAULT_FONT_SIZE);
-    let final_font_size = calculate_optimal_font_size(&mut font_system, &lines, width, height, preferred_size);
+    let final_font_size = calculate_optimal_font_size(font_system, &lines, width, height, preferred_size);
 
     // Calculate line height and total block height
     let line_height = final_font_size * LINE_SPACING_FACTOR;
@@ -231,6 +268,7 @@ pub fn render_text_on_canvas(
             final_font_size,
             text_color,
             outline_color,
+            font_system,
         );
 
         // Composite onto main canvas
@@ -266,23 +304,23 @@ fn render_line_on_canvas(
     font_size: f32,
     text_color: Option<Rgba<u8>>,
     outline_color: Option<[u8; 3]>,
+    font_system: &mut FontSystem,
 ) {
     let width = canvas.width();
     let height = canvas.height();
-    let mut font_system = FontSystem::new();
 
     // Create metrics and buffer
     let line_height = font_size * LINE_SPACING_FACTOR;
     let metrics = Metrics::new(font_size, line_height);
-    let mut buffer = Buffer::new(&mut font_system, metrics);
+    let mut buffer = Buffer::new(font_system, metrics);
 
-    buffer.set_wrap(&mut font_system, Wrap::None);
-    buffer.set_size(&mut font_system, Some(width as f32), Some(height as f32));
+    buffer.set_wrap(font_system, Wrap::None);
+    buffer.set_size(font_system, Some(width as f32), Some(height as f32));
 
     // Set text with emoji-aware rich text and center alignment
-    let spans = build_rich_text_spans(text, &font_system);
-    buffer.set_rich_text(&mut font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
-    buffer.shape_until_scroll(&mut font_system, false);
+    let spans = build_rich_text_spans(text, font_system);
+    buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
+    buffer.shape_until_scroll(font_system, false);
 
     // Calculate vertical centering
     let layout_runs: Vec<_> = buffer.layout_runs().collect();
@@ -306,7 +344,7 @@ fn render_line_on_canvas(
         let offsets = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
 
         for &(dx, dy) in &offsets {
-            buffer.draw(&mut font_system, &mut swash_cache, outline_color, |x, y, w, h, color| {
+            buffer.draw(font_system, &mut swash_cache, outline_color, |x, y, w, h, color| {
                 let final_x = (x as f32 + dx) as i32;
                 let final_y = (y as f32 + y_offset + dy) as i32;
 
@@ -318,7 +356,7 @@ fn render_line_on_canvas(
     }
 
     // Draw main text
-    buffer.draw(&mut font_system, &mut swash_cache, cosmic_color, |x, y, w, h, color| {
+    buffer.draw(font_system, &mut swash_cache, cosmic_color, |x, y, w, h, color| {
         let final_x = x as i32;
         let final_y = (y as f32 + y_offset) as i32;
 
