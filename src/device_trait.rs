@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::warn_log;
 use image::DynamicImage;
 use std::fmt;

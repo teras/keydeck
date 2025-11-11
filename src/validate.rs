@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::pages::{ButtonConfig, KeyDeckConf};
 use crate::{error_log, info_log, verbose_log, warn_log};
 use keydeck::get_icon_dir;

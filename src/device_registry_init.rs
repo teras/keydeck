@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::{error_log, info_log, verbose_log};
 use std::fs;
 use std::path::{Path, PathBuf};

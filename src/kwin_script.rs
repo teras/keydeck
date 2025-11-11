@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 //! KWin Scripting API for Wayland
 //!
 //! This module provides a Rust interface to KWin's JavaScript scripting API via D-Bus.

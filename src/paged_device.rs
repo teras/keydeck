@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::listener_button::button_listener;
 use crate::listener_time::TimeManager;
 use crate::device_manager::find_path;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::dynamic_params::ERROR_INDICATOR;
 use crate::pages::ServiceConfig;
 use crate::{error_log, verbose_log};

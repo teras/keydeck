@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::event::{send, DeviceEvent};
 use crate::session::{detect_session_type, SessionType};
 use crate::{error_log, verbose_log};

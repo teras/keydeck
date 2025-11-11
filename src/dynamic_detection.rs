@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::pages::{Action, Button, ButtonConfig, DrawConfig, KeyDeckConf, Macro, TextConfig};
 use indexmap::IndexMap;
 use regex::Regex;

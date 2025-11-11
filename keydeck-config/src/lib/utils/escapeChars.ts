@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 /**
  * Processes escape sequences in a string for display purposes.
  * Matches the backend implementation in src/keyboard.rs

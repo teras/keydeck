@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::kwin_script::KWinScriptClient;
 
 /// Sets focus to a window matching the given class and title on Wayland
@@ -15,4 +18,3 @@ pub fn set_focus(class: &String, title: &String) -> Result<(), String> {
 
     Ok(())
 }
-

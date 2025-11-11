@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;

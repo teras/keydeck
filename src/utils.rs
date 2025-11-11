@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 #[macro_export]
 macro_rules! verbose_log {
     ($($arg:tt)*) => {

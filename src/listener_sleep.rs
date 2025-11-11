@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::event::DeviceEvent;
 use crate::{error_log, verbose_log};
 use dbus::arg;

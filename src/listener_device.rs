@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::device_manager::DeviceManager;
 use crate::event::{send, DeviceEvent};
 use crate::verbose_log;

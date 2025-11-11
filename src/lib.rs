@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 // Public library interface for keydeck
 // This allows other crates (like keydeck-config) to use keydeck's types
 

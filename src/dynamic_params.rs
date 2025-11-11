@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::pages::ServiceConfig;
 use crate::services::{ensure_service_started, get_service_value, ServicesState};
 use chrono::Local;

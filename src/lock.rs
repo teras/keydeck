@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::error_log;
 use std::fs::{remove_file, File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};

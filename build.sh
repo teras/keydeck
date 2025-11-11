@@ -36,6 +36,7 @@ show_help() {
     echo "  daemon  - Build only keydeck daemon (CLI) binary"
     echo "  ui      - Build only keydeck-config UI binary"
     echo "  clean   - Remove all build artifacts and return to fresh state"
+    echo "  check   - Check for missing license headers in source files"
     echo "  help    - Show this help message"
     echo ""
     echo "Examples:"
@@ -43,6 +44,7 @@ show_help() {
     echo "  ./build.sh daemon"
     echo "  ./build.sh ui"
     echo "  ./build.sh clean"
+    echo "  ./build.sh check"
     echo ""
 }
 
@@ -52,8 +54,8 @@ case "$1" in
         show_help
         exit 0
         ;;
-    clean)
-        # Handle clean command below
+    clean|check)
+        # Handle clean and check commands below
         ;;
     app|daemon|ui)
         # Handle build commands below
@@ -65,6 +67,64 @@ case "$1" in
         exit 1
         ;;
 esac
+
+# Handle check command
+if [ "$1" = "check" ]; then
+    echo "======================================"
+    echo "KeyDeck License Header Check"
+    echo "======================================"
+    echo ""
+
+    MISSING_FILES=0
+
+    echo -e "${BLUE}Checking keydeck source files...${NC}"
+    for file in "$PROJECT_ROOT/src"/*.rs "$PROJECT_ROOT/build.rs"; do
+        if [ -f "$file" ]; then
+            if ! grep -q "SPDX-License-Identifier: GPL-3.0-or-later" "$file"; then
+                echo -e "${RED}✗ Missing GPL header: $file${NC}"
+                MISSING_FILES=$((MISSING_FILES + 1))
+            fi
+        fi
+    done
+
+    echo ""
+    echo -e "${BLUE}Checking keydeck-config Rust source files...${NC}"
+    for file in "$PROJECT_ROOT/keydeck-config/src-tauri/src"/*.rs "$PROJECT_ROOT/keydeck-config/src-tauri/build.rs"; do
+        if [ -f "$file" ]; then
+            if ! grep -q "SPDX-License-Identifier: AGPL-3.0-or-later" "$file"; then
+                echo -e "${RED}✗ Missing AGPL header: $file${NC}"
+                MISSING_FILES=$((MISSING_FILES + 1))
+            fi
+        fi
+    done
+
+    echo ""
+    echo -e "${BLUE}Checking keydeck-config frontend files (TypeScript/JavaScript)...${NC}"
+    while IFS= read -r -d '' file; do
+        if ! grep -q "SPDX-License-Identifier: AGPL-3.0-or-later" "$file"; then
+            echo -e "${RED}✗ Missing AGPL header: $file${NC}"
+            MISSING_FILES=$((MISSING_FILES + 1))
+        fi
+    done < <(find "$PROJECT_ROOT/keydeck-config/src" -type f \( -name "*.js" -o -name "*.ts" \) -print0)
+
+    echo ""
+    echo -e "${BLUE}Checking keydeck-config frontend files (Svelte)...${NC}"
+    while IFS= read -r -d '' file; do
+        if ! grep -q "SPDX-License-Identifier: AGPL-3.0-or-later" "$file"; then
+            echo -e "${RED}✗ Missing AGPL header: $file${NC}"
+            MISSING_FILES=$((MISSING_FILES + 1))
+        fi
+    done < <(find "$PROJECT_ROOT/keydeck-config/src" -type f -name "*.svelte" -print0)
+
+    echo ""
+    if [ $MISSING_FILES -eq 0 ]; then
+        echo -e "${GREEN}✓ All source files have proper license headers${NC}"
+        exit 0
+    else
+        echo -e "${RED}✗ Found $MISSING_FILES file(s) with missing license headers${NC}"
+        exit 1
+    fi
+fi
 
 # Handle clean command
 if [ "$1" = "clean" ]; then

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use std::str::FromStr;
 use std::{thread, time::Duration};
 use strum_macros::{Display, EnumString};

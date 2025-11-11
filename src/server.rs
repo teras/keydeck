@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025 Panayotis Katsaloulis
+
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
 use crate::listener_device::listener_device;

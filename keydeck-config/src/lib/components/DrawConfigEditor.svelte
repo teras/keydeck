@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Copyright (C) 2025 Panayotis Katsaloulis -->
+
 <script lang="ts">
   import ColorPicker from './ColorPicker.svelte';
   import ColorField from './ColorField.svelte';
