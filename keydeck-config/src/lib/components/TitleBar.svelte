@@ -73,12 +73,12 @@
       </button>
     {/if}
     {#if onImport}
-      <button class="toolbar-btn import-btn" onclick={onImport} onmousedown={stopPropagation} title="Import from YAML file">
+      <button class="toolbar-btn import-btn" onclick={onImport} onmousedown={stopPropagation} title="Import entire config directory from ZIP backup">
         Import
       </button>
     {/if}
     {#if onExport}
-      <button class="toolbar-btn" onclick={onExport} onmousedown={stopPropagation} title="Export to YAML file">
+      <button class="toolbar-btn" onclick={onExport} onmousedown={stopPropagation} title="Export entire config directory to ZIP file">
         Export
       </button>
     {/if}

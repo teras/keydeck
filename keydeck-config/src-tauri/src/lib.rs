@@ -20,6 +20,7 @@ struct DaemonStatus {
 }
 
 mod icon_extractor;
+mod backup_restore;
 
 #[cfg(target_os = "linux")]
 mod linux_icon_finder;
@@ -601,16 +602,16 @@ async fn reinstall_daemon_service() -> Result<(), String> {
     start_daemon_service().await
 }
 
-/// Export configuration to a specified file path
+/// Backup entire config directory to a zip file
 #[tauri::command]
-fn export_config(config: KeyDeckConf, path: String) -> Result<(), String> {
-    let yaml = serde_yaml_ng::to_string(&config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+fn backup_config_directory(path: String) -> Result<(), String> {
+    backup_restore::backup_config_directory(&path)
+}
 
-    std::fs::write(&path, yaml)
-        .map_err(|e| format!("Failed to write config file: {}", e))?;
-
-    Ok(())
+/// Restore entire config directory from a zip file
+#[tauri::command]
+fn restore_config_directory(path: String) -> Result<(), String> {
+    backup_restore::restore_config_directory(&path)
 }
 
 /// Get the full path to an image file from the hard-coded icon directory
@@ -1197,7 +1198,8 @@ pub fn run() {
             stop_daemon_service,
             reinstall_daemon_service,
             reload_keydeck,
-            export_config,
+            backup_config_directory,
+            restore_config_directory,
             get_image_path,
             check_directory_exists,
             list_icons,

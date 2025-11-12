@@ -573,46 +573,75 @@
   async function exportConfiguration() {
     try {
       const filePath = await save({
-        defaultPath: 'keydeck.yaml',
+        defaultPath: 'keydeck-backup.zip',
         filters: [{
-          name: 'YAML',
-          extensions: ['yaml', 'yml']
+          name: 'ZIP Archive',
+          extensions: ['zip']
         }]
       });
 
       if (filePath) {
-        // Sync page_groups changes back to root level before exporting
-        if (config.page_groups) {
-          for (const [groupName, groupData] of Object.entries(config.page_groups)) {
-            config[groupName] = groupData;
-          }
-        }
-
-        // Remove the frontend-only page_groups property before sending to backend
-        const { page_groups, ...backendConfig } = config;
-        await invoke("export_config", { config: backendConfig, path: filePath });
+        await invoke("backup_config_directory", { path: filePath });
       }
     } catch (e) {
-      setError(`Failed to export configuration: ${e}`);
+      setError(`Failed to backup configuration: ${e}`);
     }
   }
 
   async function importConfiguration() {
     try {
+      // Check confirmation FIRST, before doing anything
+      if ($hasUnsavedChanges) {
+        const confirmed = await ask(
+          "You have unsaved changes. Restore backup and discard them?",
+          {
+            title: "Confirm Restore",
+            kind: "warning"
+          }
+        );
+        if (!confirmed) {
+          // User cancelled - do nothing
+          return;
+        }
+      } else {
+        // Confirm restore even without unsaved changes
+        const confirmed = await ask(
+          "This will restore the entire configuration directory from backup. Continue?",
+          {
+            title: "Confirm Restore",
+            kind: "warning"
+          }
+        );
+        if (!confirmed) {
+          return;
+        }
+      }
+
       const filePath = await open({
         multiple: false,
         filters: [{
-          name: 'YAML',
-          extensions: ['yaml', 'yml']
+          name: 'ZIP Archive',
+          extensions: ['zip']
         }]
       });
 
       if (filePath) {
-        const importedConfig = await invoke("load_config", { path: filePath });
-        processLoadedConfig(importedConfig, false); // Don't preserve selection, import from arbitrary file
+        await invoke("restore_config_directory", { path: filePath });
+
+        // Reload keydeck daemon to pick up restored config
+        try {
+          await invoke("reload_keydeck");
+        } catch (reloadError) {
+          // Daemon might not be running, that's OK
+          console.log("Could not reload daemon:", reloadError);
+        }
+
+        // Force full page reload to refresh all images and state
+        // This ensures icons and all assets are reloaded from the restored directory
+        window.location.reload();
       }
     } catch (e) {
-      setError(`Failed to import configuration: ${e}`);
+      setError(`Failed to restore configuration: ${e}`);
     }
   }
 
