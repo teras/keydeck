@@ -844,8 +844,19 @@ impl PagedDevice {
 
         let bg_color_str = if let Some(bg_color) = background.as_ref() { bg_color.as_str() } else { "" };
 
-        // Create cache key including text information
-        let cache_key = format!("{}:{}:{}", image_path, bg_color_str, text_str);
+        // Extract font_size from TextConfig if available
+        let font_size_str = if let Some(TextConfig::Detailed { font_size, .. }) = &text {
+            font_size.map(|fs| fs.to_string()).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let text_color_str = text_color.as_deref().unwrap_or("");
+        let outline_str = outline.as_deref().unwrap_or("");
+
+        // Create cache key including all visual properties that affect rendering
+        let cache_key = format!("{}:{}:{}:{}:{}:{}",
+            image_path, bg_color_str, text_str, text_color_str, outline_str, font_size_str);
 
         {
             // Check if the button state is the same as the current one
