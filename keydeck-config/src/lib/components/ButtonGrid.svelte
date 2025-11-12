@@ -708,6 +708,7 @@
         {@const fontSize = getButtonFontSize(buttonIndex)}
         {@const isConfigured = hasConfig(buttonIndex) && !isInherited(buttonIndex) && !isButtonDefReference(buttonIndex)}
         {@const canDropHere = !isConfigured}
+        {@const hasNavigation = !isEditMode && !isTemplate && findFirstJumpAction(buttonIndex) !== null}
         <button
           class="grid-button"
           class:selected={selectedButton === buttonIndex}
@@ -717,6 +718,8 @@
           class:has-icon={iconUrl !== null}
           class:dragging={draggedButtonIndex === buttonIndex}
           class:drop-target={dropTargetIndex === buttonIndex}
+          class:navigatable={hasNavigation}
+          class:non-navigatable={!isEditMode && !isTemplate && !hasNavigation}
           draggable={isConfigured && (isEditMode || isTemplate)}
           ondragstart={(e) => handleDragStart(e, buttonIndex)}
           ondragend={handleDragEnd}
@@ -868,6 +871,23 @@
 
   .grid-button.button-def-reference.selected {
     border-color: #0e639c;
+  }
+
+  /* Navigate mode styling */
+  .grid-button.navigatable {
+    border-color: #d0d0d0;
+  }
+
+  .grid-button.navigatable:hover {
+    border-color: #e0e0e0;
+  }
+
+  .grid-button.non-navigatable {
+    border-color: #555;
+  }
+
+  .grid-button.non-navigatable:hover {
+    border-color: #777;
   }
 
   .grid-button.dragging {
