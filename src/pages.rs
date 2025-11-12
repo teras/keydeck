@@ -115,14 +115,19 @@ impl KeyDeckConfLoader {
             std::process::exit(1);
         });
 
-        let deserializer = serde_yaml_ng::Deserializer::from_str(&data);
-        let mut conf: KeyDeckConf = serde_path_to_error::deserialize(deserializer).unwrap_or_else(|e| {
-            eprintln!("Error parsing config file: {}", path.display());
-            eprintln!();
-            eprintln!("Path: {}", e.path());
-            eprintln!("{}", e.into_inner());
-            std::process::exit(1);
-        });
+        // If the file is empty, use default config
+        let mut conf: KeyDeckConf = if data.trim().is_empty() {
+            KeyDeckConf::default()
+        } else {
+            let deserializer = serde_yaml_ng::Deserializer::from_str(&data);
+            serde_path_to_error::deserialize(deserializer).unwrap_or_else(|e| {
+                eprintln!("Error parsing config file: {}", path.display());
+                eprintln!();
+                eprintln!("Path: {}", e.path());
+                eprintln!("{}", e.into_inner());
+                std::process::exit(1);
+            })
+        };
 
         // Validate tick_time is within range (1-60 seconds)
         if conf.tick_time < 1.0 || conf.tick_time > 60.0 {

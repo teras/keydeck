@@ -85,10 +85,13 @@ fn get_device_info(device_id: String) -> Result<DeviceInfo, String> {
         .map_err(|e| format!("Failed to execute keydeck: {}", e))?;
 
     if !output.status.success() {
-        return Err(format!("keydeck --info failed: {}", String::from_utf8_lossy(&output.stderr)));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!("keydeck --info failed.\nStderr: {}\nStdout: {}", stderr, stdout));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+
     serde_yaml_ng::from_str(&stdout)
         .map_err(|e| format!("Failed to parse device info: {}", e))
 }
@@ -111,6 +114,11 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
 
     let content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config file: {}", e))?;
+
+    // If the file is empty, return default config
+    if content.trim().is_empty() {
+        return Ok(KeyDeckConf::default());
+    }
 
     serde_yaml_ng::from_str(&content)
         .map_err(|e| format!("Failed to parse config: {}", e))

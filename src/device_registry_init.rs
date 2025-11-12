@@ -62,13 +62,13 @@ fn extract_embedded_devices() -> Result<(), String> {
         else {
             fs::write(&user_path, content)
                 .map_err(|e| format!("Failed to write device file '{}': {}", filename, e))?;
-            info_log!("Installing device file: {}", filename);
+            error_log!("Installing device file: {}", filename);
             created_count += 1;
         }
     }
 
     if created_count > 0 {
-        info_log!(
+        error_log!(
             "Installed {} device definition(s) to {}",
             created_count,
             user_dir.display()
@@ -87,7 +87,7 @@ fn extract_embedded_devices() -> Result<(), String> {
 /// Initialize device registry: extract embedded files and return search paths
 /// This should be called before device enumeration
 pub fn initialize_device_registry() -> Result<Vec<String>, String> {
-    // First, extract embedded device files to user directory
+    // Extract embedded device files to user directory
     if let Err(e) = extract_embedded_devices() {
         error_log!(
             "Warning: Failed to extract embedded device files: {}",
