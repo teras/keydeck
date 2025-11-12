@@ -53,6 +53,9 @@
   let draggedButtonIndex = $state<number | null>(null);
   let dropTargetIndex = $state<number | null>(null);
 
+  // Global keyboard state for Alt key (toggles Edit/Navigate mode)
+  let isAltPressed = $state<boolean>(false);
+
   // Load available icons with data URLs
   let availableIcons = $state<{filename: string; data_url: string}[]>([]);
 
@@ -78,6 +81,50 @@
     // Subscribe to iconRefreshTrigger changes
     $iconRefreshTrigger;
     loadIcons();
+  });
+
+  // Global keyboard event listeners for Alt key (toggles Edit/Navigate mode)
+  $effect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Alt' && !isAltPressed) {
+        isAltPressed = true;
+        // Toggle mode when Alt is pressed
+        if (onToggleMode) {
+          onToggleMode();
+        }
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Alt' && isAltPressed) {
+        isAltPressed = false;
+        // Toggle mode back when Alt is released
+        if (onToggleMode) {
+          onToggleMode();
+        }
+      }
+    };
+
+    // Reset Alt state when window loses focus
+    const handleBlur = () => {
+      if (isAltPressed) {
+        isAltPressed = false;
+        // Restore mode if Alt was pressed when focus was lost
+        if (onToggleMode) {
+          onToggleMode();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
   });
 
   // Get button configuration from template inheritance chain
