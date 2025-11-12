@@ -14,7 +14,9 @@ use crate::paged_device::PagedDevice;
 use crate::pages::{KeyDeckConf, KeyDeckConfLoader};
 use crate::services::new_services_state;
 use crate::{error_log, info_log, verbose_log};
+use indexmap::IndexMap;
 use keydeck::get_icon_dir;
+use keydeck_types::pages::{Button, Macro, Pages, ServiceConfig};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -26,6 +28,67 @@ fn dispatch_wait_event(message: &DeviceEvent, devices: &HashMap<String, PagedDev
         for device in devices.values() {
             device.check_pending_event(&event_type);
         }
+    }
+}
+
+/// Helper function to initialize a device with given configuration.
+/// Always creates the device, even if no config exists (device will be inactive until config is provided).
+fn initialize_device(
+    sn: &str,
+    conf_pages: &Arc<IndexMap<String, Pages>>,
+    conf_colors: &Arc<Option<IndexMap<String, String>>>,
+    conf_buttons: &Arc<Option<IndexMap<String, Button>>>,
+    conf_macros: &Arc<Option<IndexMap<String, Macro>>>,
+    conf_services: &Arc<Option<IndexMap<String, ServiceConfig>>>,
+    services_state: &crate::services::ServicesState,
+    services_active: &Arc<AtomicBool>,
+    icon_dir: Option<&String>,
+    tx: &std::sync::mpsc::Sender<DeviceEvent>,
+    time_manager: &Arc<TimeManager>,
+    current_class: &str,
+    current_title: &str,
+    conf_brightness: u8,
+    devices: &mut HashMap<String, PagedDevice>,
+    initial_page: Option<String>,
+) {
+    if let Some(device) = find_device_by_serial(sn) {
+        verbose_log!("Looking for configuration for device serial: '{}'", sn);
+        verbose_log!("Available page groups: {:?}", conf_pages.keys().collect::<Vec<_>>());
+
+        let pages_arc = if let Some(page) = conf_pages.get(sn) {
+            verbose_log!("Found specific configuration for device {}", sn);
+            Arc::new(page.clone())
+        } else if let Some(default_page) = conf_pages.get("default") {
+            verbose_log!("Using default configuration for device {}", sn);
+            Arc::new(default_page.clone())
+        } else {
+            verbose_log!("No configuration found for device with serial number {}, initializing with empty config", sn);
+            // Create empty Pages configuration
+            Arc::new(Pages {
+                main_page: None,
+                restore_mode: keydeck_types::pages::FocusChangeRestorePolicy::Main,
+                pages: IndexMap::new(),
+            })
+        };
+
+        let new_device = PagedDevice::new(
+            pages_arc,
+            icon_dir.cloned(),
+            conf_colors.clone(),
+            conf_buttons.clone(),
+            conf_macros.clone(),
+            conf_services.clone(),
+            services_state.clone(),
+            services_active.clone(),
+            Box::new(device),
+            tx,
+            time_manager.clone(),
+            initial_page,
+            conf_brightness,
+        );
+        new_device.focus_changed(current_class, current_title, false);
+        info_log!("Adding device {}", sn);
+        devices.insert(sn.to_string(), new_device);
     }
 }
 
@@ -143,32 +206,12 @@ pub fn start_server() {
                 dispatch_wait_event(message, &devices);
                 // Then handle new device
                 if !devices.contains_key(sn) {
-                    if let Some(device) = find_device_by_serial(sn) {
-                        verbose_log!("Looking for configuration for device serial: '{}'", sn);
-                        verbose_log!("Available page groups: {:?}", conf_pages.keys().collect::<Vec<_>>());
-                        let pages_arc = if let Some(page) = conf_pages.get(sn) {
-                            verbose_log!("Found specific configuration for device {}", sn);
-                            Some(Arc::new(page.clone()))
-                        } else if let Some(default_page) = conf_pages.get("default") {
-                            verbose_log!("Using default configuration for device {}", sn);
-                            Some(Arc::new(default_page.clone()))
-                        } else {
-                            error_log!("Unable to match profile for device with serial number {}, or missing default profile", sn);
-                            None
-                        };
-                        if let Some(pages) = pages_arc {
-                            // Check if we have a saved page for this device (from reload)
-                            let initial_page = saved_pages.remove(sn).clone();
-                            if initial_page.is_some() {
-                                verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
-                            }
-
-                            let new_device = PagedDevice::new(pages, icon_dir.clone(), conf_colors.clone(), conf_buttons.clone(), conf_macros.clone(), conf_services.clone(), services_state.clone(), services_active.clone(), Box::new(device), &tx, time_manager.clone(), initial_page, conf_brightness);
-                            new_device.focus_changed(&current_class, &current_title, false);
-                            info_log!("Adding device {}", sn);
-                            devices.insert(sn.clone(), new_device);
-                        }
+                    // Check if we have a saved page for this device (from reload)
+                    let initial_page = saved_pages.remove(sn).clone();
+                    if initial_page.is_some() {
+                        verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
                     }
+                    initialize_device(sn, &conf_pages, &conf_colors, &conf_buttons, &conf_macros, &conf_services, &services_state, &services_active, icon_dir.as_ref(), &tx, &time_manager, &current_class, &current_title, conf_brightness, &mut devices, initial_page);
                 }
             }
             ref message @ DeviceEvent::RemovedDevice { ref sn } => {
@@ -204,7 +247,7 @@ pub fn start_server() {
                 services_state = new_services_state();
                 services_active = Arc::new(AtomicBool::new(true));
 
-                // Update all connected devices with new configuration (without reinitializing USB)
+                // Update all connected devices with new configuration
                 info_log!("Updating {} device(s) with new configuration...", devices.len());
                 for (sn, device) in devices.iter_mut() {
                     verbose_log!("Reloading device {}", sn);
@@ -215,8 +258,12 @@ pub fn start_server() {
                     } else if let Some(default_page) = conf_pages.get("default") {
                         Arc::new(default_page.clone())
                     } else {
-                        error_log!("Unable to match profile for device with serial number {}, skipping reload", sn);
-                        continue;
+                        verbose_log!("No configuration found for device with serial number {}, using empty config", sn);
+                        Arc::new(Pages {
+                            main_page: None,
+                            restore_mode: keydeck_types::pages::FocusChangeRestorePolicy::Main,
+                            pages: IndexMap::new(),
+                        })
                     };
 
                     device.reload(

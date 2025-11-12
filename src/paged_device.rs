@@ -176,12 +176,17 @@ impl PagedDevice {
     }
 
     pub fn handle_tick(&self) {
-        let current_page = { self.current_page_ref.borrow().clone() };
-        let page = self.find_page(current_page);
+        // Skip tick if no valid page is set
+        if !self.has_valid_page() {
+            return;
+        }
 
-        if let Some(actions) = &page.on_tick {
-            if let Err(e) = self.execute_actions(actions.clone()) {
-                error_log!("Error executing tick actions: {}", e);
+        let current_page = { self.current_page_ref.borrow().clone() };
+        if let Some(page) = self.find_page(current_page) {
+            if let Some(actions) = &page.on_tick {
+                if let Err(e) = self.execute_actions(actions.clone()) {
+                    error_log!("Error executing tick actions: {}", e);
+                }
             }
         }
     }
@@ -615,6 +620,11 @@ impl PagedDevice {
             self.current_title.replace(title.to_string());
         }
 
+        // If device has no pages configured, nothing to do
+        if self.pages.pages.is_empty() {
+            return;
+        }
+
         if class.is_empty() && title.is_empty() {
             return;
         }
@@ -1044,6 +1054,16 @@ impl PagedDevice {
     }
 
     fn refresh_page(&self) {
+        // If no valid page is set, clear all buttons and return
+        if !self.has_valid_page() {
+            let button_count = self.device.button_count();
+            for button_index in 1..=button_count {
+                self.clear_button(button_index);
+            }
+            self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
+            return;
+        }
+
         let button_count = self.device.button_count();
         let current_page = { self.current_page_ref.borrow().clone() };
         let mut invalid_indices = Vec::new();
@@ -1095,17 +1115,19 @@ impl PagedDevice {
         }
     }
 
-    fn find_page(&self, page_id: usize) -> &Page {
-        let (_, page) = self.pages.pages.get_index(page_id).unwrap_or_else(|| {
-            error_log!("Page not found: {}", page_id);
-            std::process::exit(1);
-        });
-        page
+    fn find_page(&self, page_id: usize) -> Option<&Page> {
+        self.pages.pages.get_index(page_id).map(|(_, page)| page)
+    }
+
+    fn has_valid_page(&self) -> bool {
+        let current = *self.current_page_ref.borrow();
+        current != usize::MAX && self.pages.pages.get_index(current).is_some()
     }
 
     fn find_button(&self, page_id: usize, button_id: u8) -> Option<&Button> {
         let key = format!("button{}", button_id); // Generate the key based on button_id
-        if let Some(bc) = self.find_page(page_id).buttons.get(&key) {
+        let page = self.find_page(page_id)?;
+        if let Some(bc) = page.buttons.get(&key) {
             match bc {
                 ButtonConfig::Template(template) => {
                     match self.button_templates.as_ref().as_ref()?.get(template) {
