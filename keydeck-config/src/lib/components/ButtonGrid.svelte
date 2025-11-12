@@ -371,7 +371,7 @@
 
   // Find the first jump or autojump action in a button's configuration
   // Helper function to recursively search for jump/auto_jump/focus actions
-  function searchActionsRecursive(actions: any[]): { target: string; isAutoJump: boolean; isFocus?: boolean } | null {
+  function searchActionsRecursive(actions: any[], visited = new Set<string>()): { target: string; isAutoJump: boolean; isFocus?: boolean } | null {
     for (const action of actions) {
       // Check for direct navigation actions
       if (action.jump) {
@@ -384,25 +384,41 @@
         return { target: action.focus, isAutoJump: false, isFocus: true };
       }
 
+      // Recursively search in macro actions
+      if (action.macro) {
+        const macroName = typeof action.macro === 'string' ? action.macro : action.macro?.name;
+
+        // Prevent infinite loops from recursive macros
+        if (macroName && !visited.has(macroName)) {
+          visited.add(macroName);
+
+          const macro = config?.macros?.[macroName];
+          if (macro && macro.actions && Array.isArray(macro.actions)) {
+            const result = searchActionsRecursive(macro.actions, visited);
+            if (result) return result;
+          }
+        }
+      }
+
       // Recursively search in try blocks (both try and else branches)
       if (action.try && Array.isArray(action.try)) {
-        const result = searchActionsRecursive(action.try);
+        const result = searchActionsRecursive(action.try, visited);
         if (result) return result;
       }
       if (action.else && Array.isArray(action.else)) {
-        const result = searchActionsRecursive(action.else);
+        const result = searchActionsRecursive(action.else, visited);
         if (result) return result;
       }
 
       // Recursively search in or blocks
       if (action.or && Array.isArray(action.or)) {
-        const result = searchActionsRecursive(action.or);
+        const result = searchActionsRecursive(action.or, visited);
         if (result) return result;
       }
 
       // Recursively search in and blocks
       if (action.and && Array.isArray(action.and)) {
-        const result = searchActionsRecursive(action.and);
+        const result = searchActionsRecursive(action.and, visited);
         if (result) return result;
       }
 
