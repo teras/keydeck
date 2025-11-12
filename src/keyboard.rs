@@ -74,6 +74,42 @@ enum Keys {
     ArrowDown = 0xff54,          // XK_Down
     ArrowLeft = 0xff51,          // XK_Left
     ArrowRight = 0xff53,         // XK_Right
+    // Media keys
+    #[strum(serialize = "volumeup", serialize = "audiovolumeup")]
+    VolumeUp = 0x1008ff13,       // XF86XK_AudioRaiseVolume
+    #[strum(serialize = "volumedown", serialize = "audiovolumedown")]
+    VolumeDown = 0x1008ff11,     // XF86XK_AudioLowerVolume
+    #[strum(serialize = "volumemute", serialize = "audiovolumemute")]
+    VolumeMute = 0x1008ff12,     // XF86XK_AudioMute
+    #[strum(serialize = "micmute", serialize = "audiomicmute")]
+    MicMute = 0x1008ffb2,        // XF86XK_AudioMicMute
+    #[strum(serialize = "mediaplaypause", serialize = "playpause")]
+    MediaPlayPause = 0x1008ff14, // XF86XK_AudioPlay
+    MediaStop = 0x1008ff15,      // XF86XK_AudioStop
+    #[strum(serialize = "medianext", serialize = "nexttrack")]
+    MediaNext = 0x1008ff17,      // XF86XK_AudioNext
+    #[strum(serialize = "mediaprev", serialize = "prevtrack", serialize = "mediatrackprevious")]
+    MediaPrev = 0x1008ff16,      // XF86XK_AudioPrev
+    // Brightness keys
+    #[strum(serialize = "brightnessup", serialize = "monbrightnessup")]
+    BrightnessUp = 0x1008ff02,   // XF86XK_MonBrightnessUp
+    #[strum(serialize = "brightnessdown", serialize = "monbrightnessdown")]
+    BrightnessDown = 0x1008ff03, // XF86XK_MonBrightnessDown
+    // Browser keys
+    BrowserBack = 0x1008ff26,    // XF86XK_Back
+    BrowserForward = 0x1008ff27, // XF86XK_Forward
+    BrowserRefresh = 0x1008ff29, // XF86XK_Reload
+    BrowserHome = 0x1008ff18,    // XF86XK_HomePage
+    BrowserSearch = 0x1008ff1b,  // XF86XK_Search
+    BrowserFavorites = 0x1008ff30, // XF86XK_Favorites
+    // Application keys
+    LaunchMail = 0x1008ff19,     // XF86XK_Mail
+    LaunchCalculator = 0x1008ff1d, // XF86XK_Calculator
+    LaunchExplorer = 0x1008ff5d, // XF86XK_Explorer
+    // System keys
+    #[strum(serialize = "sleep", serialize = "standby")]
+    Sleep = 0x1008ff2f,          // XF86XK_Sleep
+    Eject = 0x1008ff2c,          // XF86XK_Eject
 }
 
 // Maps ASCII characters to keysyms and returns whether Shift is needed

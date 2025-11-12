@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import ActionEditor from './ActionEditor.svelte';
+  import KeyRecorder from './KeyRecorder.svelte';
   import { processEscapeSequences } from '$lib/utils/escapeChars';
 
   interface Props {
@@ -315,11 +316,9 @@
       {:else if actionType === 'key'}
         <div class="form-row">
           <label>Keyboard Shortcut</label>
-          <input
-            type="text"
+          <KeyRecorder
             value={action.key || ''}
-            oninput={(e) => onUpdate({ ...action, key: e.currentTarget.value })}
-            placeholder="e.g., LCtrl+LShift+z or F12"
+            onUpdate={(newKey) => onUpdate({ ...action, key: newKey })}
             disabled={disabled}
           />
         </div>
