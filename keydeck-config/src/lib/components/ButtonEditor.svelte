@@ -6,6 +6,7 @@
   import ColorField from './ColorField.svelte';
   import TriStateCheckbox from './TriStateCheckbox.svelte';
   import DrawConfigEditor from './DrawConfigEditor.svelte';
+  import EmojiAutocomplete from './EmojiAutocomplete.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { onMount, onDestroy } from 'svelte';
   import { ask, message } from '@tauri-apps/plugin-dialog';
@@ -493,19 +494,45 @@
     }
   }
 
+  // Check if a string contains exactly one emoji character
+  function isSingleEmoji(str: string): boolean {
+    if (!str) return false;
+    // Use the Intl.Segmenter to properly count grapheme clusters (handles complex emojis)
+    const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+    const segments = Array.from(segmenter.segment(str));
+    return segments.length === 1;
+  }
+
   function updateText(value: string) {
     const detailed = getDetailedConfig();
     const currentText = detailed?.text;
+    const currentFontSize = typeof currentText === 'object' ? currentText.font_size : undefined;
 
     // If there's no value and no font_size, clear the text field
-    if (!value && (!currentText || typeof currentText === 'string' || !currentText.font_size)) {
+    if (!value && (!currentText || typeof currentText === 'string' || !currentFontSize)) {
       updateButton({ text: undefined });
       return;
     }
 
-    // If there's a font_size already set, preserve it
-    if (currentText && typeof currentText === 'object' && currentText.font_size) {
-      updateButton({ text: { value, font_size: currentText.font_size } });
+    // Smart font size logic:
+    // - If exactly 1 emoji and no font_size set → set to 64
+    // - If NOT exactly 1 emoji and font_size is exactly 64 → clear to undefined
+    // - Otherwise preserve the current font_size
+
+    const isSingle = isSingleEmoji(value);
+    let newFontSize = currentFontSize;
+
+    if (isSingle && !currentFontSize) {
+      // Single emoji with no font size → set to 64
+      newFontSize = 64;
+    } else if (!isSingle && currentFontSize === 64) {
+      // Not a single emoji but font size is 64 → clear it
+      newFontSize = undefined;
+    }
+
+    // Update with the appropriate form
+    if (newFontSize) {
+      updateButton({ text: { value, font_size: newFontSize } });
     } else {
       // Simple string form
       updateButton({ text: value || undefined });
@@ -971,10 +998,9 @@
   <div class="form-group">
     <label>Text</label>
     <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <input
-        type="text"
+      <EmojiAutocomplete
         value={getTextValue()}
-        oninput={(e) => updateText(e.currentTarget.value)}
+        onUpdate={(newValue) => updateText(newValue)}
         placeholder="Button label"
         disabled={isReadOnly}
       />
