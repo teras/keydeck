@@ -6,7 +6,7 @@
   import ColorField from './ColorField.svelte';
   import TriStateCheckbox from './TriStateCheckbox.svelte';
   import DrawConfigEditor from './DrawConfigEditor.svelte';
-  import EmojiAutocomplete from './EmojiAutocomplete.svelte';
+  import TextAutocomplete from './TextAutocomplete.svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { onMount, onDestroy } from 'svelte';
   import { ask, message } from '@tauri-apps/plugin-dialog';
@@ -49,6 +49,100 @@
 
   // Supported image extensions for icon upload
   const VALID_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'];
+
+  interface ServiceEntry {
+    name: string;
+    description?: string;
+  }
+
+  interface ServiceAutocompleteOption {
+    name: string;
+    source: 'embedded' | 'user' | 'both';
+    description?: string;
+  }
+
+  function extractServiceEntries(source: any): ServiceEntry[] {
+    if (!source) {
+      return [];
+    }
+
+    if (Array.isArray(source)) {
+      return source
+        .map((entry) => {
+          if (typeof entry === 'string') {
+            return { name: entry };
+          }
+          if (entry && typeof entry === 'object' && typeof entry.name === 'string') {
+            return {
+              name: entry.name,
+              description: typeof entry.description === 'string' ? entry.description : undefined
+            };
+          }
+          return null;
+        })
+        .filter((entry): entry is ServiceEntry => !!entry && !!entry.name);
+    }
+
+    if (typeof source === 'object') {
+      return Object.entries(source).map(([name, value]) => ({
+        name,
+        description: typeof value === 'object' && value !== null && typeof (value as any).description === 'string'
+          ? (value as any).description
+          : undefined
+      }));
+    }
+
+    return [];
+  }
+
+  function mergeServiceEntries(embedded: ServiceEntry[], custom: ServiceEntry[]): ServiceAutocompleteOption[] {
+    const suggestions: ServiceAutocompleteOption[] = [];
+    const indexMap = new Map<string, number>();
+
+    embedded.forEach((entry) => {
+      const normalized = entry.name.trim();
+      if (!normalized || indexMap.has(normalized)) {
+        return;
+      }
+      indexMap.set(normalized, suggestions.length);
+      suggestions.push({
+        name: normalized,
+        source: 'embedded',
+        description: entry.description
+      });
+    });
+
+    custom.forEach((entry) => {
+      const normalized = entry.name.trim();
+      if (!normalized) {
+        return;
+      }
+      if (indexMap.has(normalized)) {
+        const idx = indexMap.get(normalized)!;
+        const current = suggestions[idx];
+        suggestions[idx] = {
+          name: normalized,
+          source: 'both',
+          description: current.description ?? entry.description
+        };
+      } else {
+        indexMap.set(normalized, suggestions.length);
+        suggestions.push({
+          name: normalized,
+          source: 'user',
+          description: entry.description
+        });
+      }
+    });
+
+    return suggestions;
+  }
+
+  let serviceAutocompleteOptions = $derived.by(() => {
+    const embeddedEntries = extractServiceEntries(config?.embedded_services);
+    const customEntries = extractServiceEntries(config?.services);
+    return mergeServiceEntries(embeddedEntries, customEntries);
+  });
 
   // Application browser state
   let showAppBrowser = $state(false);
@@ -998,11 +1092,12 @@
   <div class="form-group">
     <label>Text</label>
     <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-      <EmojiAutocomplete
+      <TextAutocomplete
         value={getTextValue()}
         onUpdate={(newValue) => updateText(newValue)}
         placeholder="Button label"
         disabled={isReadOnly}
+        serviceSuggestions={serviceAutocompleteOptions}
       />
     </div>
   </div>
