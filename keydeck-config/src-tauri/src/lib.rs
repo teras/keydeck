@@ -125,6 +125,12 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
         .map_err(|e| format!("Failed to parse config: {}", e))
 }
 
+/// List environment variable names available to the frontend for autocomplete
+#[tauri::command]
+fn list_env_vars() -> Vec<String> {
+    std::env::vars().map(|(name, _)| name).collect()
+}
+
 /// Save keydeck configuration to ~/.config/keydeck/config.yaml atomically with timestamped backup
 #[tauri::command]
 fn save_config(config: KeyDeckConf) -> Result<(), String> {
@@ -1197,6 +1203,7 @@ pub fn run() {
             start_daemon_service,
             stop_daemon_service,
             reinstall_daemon_service,
+            list_env_vars,
             reload_keydeck,
             backup_config_directory,
             restore_config_directory,

@@ -6,10 +6,10 @@
 
   type ServiceSource = 'embedded' | 'user' | 'both';
 
-  interface ServiceSuggestion {
+  interface ProviderEntry {
     name: string;
-    source?: ServiceSource;
     description?: string;
+    source?: ServiceSource;
   }
 
   interface EmojiSuggestion {
@@ -18,14 +18,33 @@
     name: string;
   }
 
-  interface ServiceSuggestionItem {
-    kind: 'service';
+  interface ProviderSuggestionItem {
+    kind: 'provider';
+    provider: string;
     name: string;
-    source: ServiceSource;
     description?: string;
+    source?: ServiceSource;
   }
 
-  type AutocompleteSuggestion = EmojiSuggestion | ServiceSuggestionItem;
+  interface ProviderTypeSuggestion {
+    kind: 'provider-type';
+    provider: string;
+    displayName: string;
+  }
+
+  interface InfoSuggestion {
+    kind: 'info';
+    message: string;
+  }
+
+  type AutocompleteSuggestion = EmojiSuggestion | ProviderSuggestionItem | ProviderTypeSuggestion | InfoSuggestion;
+
+  interface ProviderSuggestionGroup {
+    provider: string;
+    displayName?: string;
+    entries: ProviderEntry[];
+    insertTemplate?: (name: string) => string;
+  }
 
   interface Props {
     value: string;
@@ -34,7 +53,8 @@
     placeholder?: string;
     multiline?: boolean;
     rows?: number;
-    serviceSuggestions?: ServiceSuggestion[];
+    serviceSuggestions?: ProviderEntry[];
+    providerSuggestionMap?: Record<string, ProviderSuggestionGroup>;
   }
 
   let {
@@ -44,7 +64,8 @@
     placeholder = '',
     multiline = false,
     rows = 3,
-    serviceSuggestions = []
+    serviceSuggestions = [],
+    providerSuggestionMap = {}
   }: Props = $props();
 
   let inputElement = $state<HTMLInputElement | HTMLTextAreaElement | undefined>();
@@ -52,6 +73,104 @@
   let suggestions = $state<AutocompleteSuggestion[]>([]);
   let selectedIndex = $state(0);
   let searchStart = $state(0);
+  let providerTriggerMode = $state<'curly' | 'dollar' | null>(null);
+  let activeProvider = $state<string | null>(null);
+  const MAX_RESULTS = 50;
+
+  function getProviderEntries(provider: string): ProviderEntry[] {
+    if (providerSuggestionMap[provider]) {
+      const entries = providerSuggestionMap[provider].entries;
+      if (entries.length > 0) {
+        return entries;
+      }
+    }
+    if (provider === 'service') {
+      return serviceSuggestions;
+    }
+    return [];
+  }
+
+  function applyLimit<T>(items: T[]): { list: T[]; truncated: boolean } {
+    if (items.length <= MAX_RESULTS) {
+      return { list: items, truncated: false };
+    }
+    return { list: items.slice(0, MAX_RESULTS), truncated: true };
+  }
+
+  function buildProviderEntrySuggestions(provider: string, searchText: string): AutocompleteSuggestion[] {
+    const entries = getProviderEntries(provider);
+    if (!entries.length) return [];
+
+    const normalized = searchText.toLowerCase();
+    const filtered = entries.filter(entry => entry.name.toLowerCase().includes(normalized));
+    const limited = applyLimit(filtered);
+    const items: AutocompleteSuggestion[] = limited.list.map(entry => ({
+      kind: 'provider',
+      provider,
+      name: entry.name,
+      description: entry.description,
+      source: entry.source,
+    }));
+
+    if (limited.truncated) {
+      items.push({
+        kind: 'info',
+        message: 'More matches available… keep typing',
+      });
+    }
+
+    return items;
+  }
+
+  function getAvailableProviders(): string[] {
+    const keys = Object.keys(providerSuggestionMap);
+    if (!keys.includes('service')) {
+      if (getProviderEntries('service').length > 0 || Object.keys(providerSuggestionMap).length === 0) {
+        keys.push('service');
+      }
+    }
+    return keys;
+  }
+
+  function buildProviderTypeSuggestions(searchText: string): AutocompleteSuggestion[] {
+    const keys = getAvailableProviders();
+    if (keys.length === 0) return [];
+    const normalized = searchText.toLowerCase();
+    const filtered = keys.filter(key => key.toLowerCase().includes(normalized));
+    const limited = applyLimit(filtered);
+    const list: AutocompleteSuggestion[] = limited.list.map(key => ({
+      kind: 'provider-type',
+      provider: key,
+      displayName: getProviderLabel(key),
+    }));
+
+    if (limited.truncated) {
+      list.push({
+        kind: 'info',
+        message: 'More providers available… keep typing',
+      });
+    }
+
+    return list;
+  }
+
+  function activateProviderEntries(
+    provider: string,
+    searchText: string,
+    triggerMode: 'curly' | 'dollar',
+    startPosition: number
+  ): boolean {
+    const list = buildProviderEntrySuggestions(provider, searchText);
+    if (list.length === 0) return false;
+
+    searchStart = startPosition;
+    providerTriggerMode = triggerMode;
+    activeProvider = provider;
+    suggestions = list;
+    showSuggestions = true;
+    selectedIndex = 0;
+    return true;
+  }
 
   function handleInput(event: Event) {
     const target = event.target as HTMLInputElement | HTMLTextAreaElement;
@@ -61,29 +180,52 @@
     onUpdate(newValue);
 
     const textBeforeCursor = newValue.slice(0, cursorPos);
+    const providerKeys = getAvailableProviders();
 
-    // Service autocomplete (triggered with ${service:...})
-    const servicePrefix = '${service:';
-    const lastServiceIndex = textBeforeCursor.lastIndexOf(servicePrefix);
+    // Continue suggestions when inside an inserted provider template
+    if (providerTriggerMode === 'curly' && activeProvider && cursorPos >= searchStart) {
+      const searchText = newValue.slice(searchStart, cursorPos);
+      if (activateProviderEntries(activeProvider, searchText, 'curly', searchStart)) {
+        return;
+      }
+    }
 
-    if (serviceSuggestions.length > 0 && lastServiceIndex !== -1) {
-      const serviceSearch = textBeforeCursor.slice(lastServiceIndex + servicePrefix.length);
+    // Manual ${provider:...} typing
+    if (providerKeys.length > 0) {
+      for (const provider of providerKeys) {
+        const prefix = `${'${'}${provider}:`;
+        const lastIndex = textBeforeCursor.lastIndexOf(prefix);
+        if (lastIndex !== -1) {
+          const start = lastIndex + prefix.length;
+          const searchText = textBeforeCursor.slice(start);
+          if (!/\s/.test(searchText) && !searchText.includes('}')) {
+            if (activateProviderEntries(provider, searchText, 'curly', start)) {
+              return;
+            }
+          }
+        }
+      }
+    }
 
-      // Stop if the current token already closed or contains whitespace
-      if (!/\s/.test(serviceSearch) && !serviceSearch.includes('}')) {
-        const filteredServices = serviceSuggestions
-          .filter(item => item.name.toLowerCase().includes(serviceSearch.toLowerCase()))
-          .slice(0, 10)
-          .map(item => ({
-            kind: 'service',
-            name: item.name,
-            source: item.source ?? 'user',
-            description: item.description
-          } as ServiceSuggestionItem));
+    // Dollar-triggered providers ($provider or $provider:value)
+    const lastDollarIndex = textBeforeCursor.lastIndexOf('$');
+    if (providerKeys.length > 0 && lastDollarIndex !== -1) {
+      const providerExpr = textBeforeCursor.slice(lastDollarIndex + 1);
+      const colonIndex = providerExpr.indexOf(':');
 
-        if (filteredServices.length > 0) {
-          searchStart = lastServiceIndex + servicePrefix.length;
-          suggestions = filteredServices;
+      if (colonIndex >= 0) {
+        const provider = providerExpr.slice(0, colonIndex);
+        const searchText = providerExpr.slice(colonIndex + 1);
+        if (provider && activateProviderEntries(provider, searchText, 'dollar', lastDollarIndex)) {
+          return;
+        }
+      } else {
+      const providerSuggestions = buildProviderTypeSuggestions(providerExpr).slice(0, MAX_RESULTS);
+        if (providerSuggestions.length > 0) {
+          searchStart = lastDollarIndex;
+          providerTriggerMode = null;
+          activeProvider = null;
+          suggestions = providerSuggestions;
           showSuggestions = true;
           selectedIndex = 0;
           return;
@@ -105,7 +247,6 @@
         searchStart = lastColonIndex;
         const filtered = emojiList
           .filter(item => item.name.toLowerCase().includes(searchText.toLowerCase()))
-          .slice(0, 10)
           .map(item => ({
             kind: 'emoji',
             emoji: item.emoji,
@@ -113,7 +254,10 @@
           } as EmojiSuggestion));
 
         if (filtered.length > 0) {
-          suggestions = filtered;
+          const { list, truncated } = applyLimit(filtered);
+          suggestions = truncated
+            ? [...list, { kind: 'info', message: 'More emoji available… keep typing' }]
+            : list;
           showSuggestions = true;
           selectedIndex = 0;
           return;
@@ -123,6 +267,8 @@
 
     showSuggestions = false;
     suggestions = [];
+    providerTriggerMode = null;
+    activeProvider = null;
   }
 
   function insertEmoji(emoji: string, name: string) {
@@ -136,6 +282,7 @@
 
     onUpdate(newValue);
     showSuggestions = false;
+    providerTriggerMode = null;
 
     // Restore focus and cursor position
     setTimeout(() => {
@@ -146,23 +293,62 @@
     }, 0);
   }
 
-  function insertService(name: string) {
+  function insertProviderValue(provider: string, name: string) {
     if (!inputElement) return;
 
     const cursorPos = inputElement.selectionStart || 0;
     const textBefore = value.slice(0, searchStart);
     const textAfter = value.slice(cursorPos);
-    const newValue = textBefore + name + textAfter;
-    const newCursorPos = searchStart + name.length;
+    const providerKey = provider || activeProvider || 'service';
+    const group = providerSuggestionMap[providerKey];
+
+    let insertion: string;
+    if (providerTriggerMode === 'curly') {
+      insertion = `${name}}`;
+    } else if (group?.insertTemplate) {
+      insertion = group.insertTemplate(name);
+    } else {
+      insertion = `\${${providerKey}:${name}}`;
+    }
+
+    const newValue = textBefore + insertion + textAfter;
+    const newCursorPos = textBefore.length + insertion.length;
 
     onUpdate(newValue);
     showSuggestions = false;
+    providerTriggerMode = null;
+    activeProvider = null;
 
     setTimeout(() => {
       if (inputElement) {
         inputElement.focus();
         inputElement.setSelectionRange(newCursorPos, newCursorPos);
       }
+    }, 0);
+  }
+
+  function insertProviderTemplate(provider: string) {
+    if (!inputElement) return;
+
+    const cursorPos = inputElement.selectionStart || 0;
+    const textBefore = value.slice(0, searchStart);
+    const textAfter = value.slice(cursorPos);
+    const insertion = `\${${provider}:`;
+    const newValue = textBefore + insertion + textAfter;
+    const newCursorPos = textBefore.length + insertion.length;
+
+    onUpdate(newValue);
+    showSuggestions = false;
+    providerTriggerMode = 'curly';
+    activeProvider = provider;
+    searchStart = newCursorPos;
+
+    setTimeout(() => {
+      if (inputElement) {
+        inputElement.focus();
+        inputElement.setSelectionRange(newCursorPos, newCursorPos);
+      }
+      activateProviderEntries(provider, '', 'curly', searchStart);
     }, 0);
   }
 
@@ -180,12 +366,18 @@
       const selected = suggestions[selectedIndex];
       if (selected.kind === 'emoji') {
         insertEmoji(selected.emoji, selected.name);
+      } else if (selected.kind === 'provider') {
+        insertProviderValue(selected.provider, selected.name);
+      } else if (selected.kind === 'provider-type') {
+        insertProviderTemplate(selected.provider);
       } else {
-        insertService(selected.name);
+        return;
       }
     } else if (event.key === 'Escape') {
       event.preventDefault();
       showSuggestions = false;
+      providerTriggerMode = null;
+      activeProvider = null;
     }
   }
 
@@ -196,18 +388,45 @@
       const relatedTarget = event.relatedTarget as HTMLElement;
       if (!relatedTarget || !relatedTarget.closest('.autocomplete-suggestions')) {
         showSuggestions = false;
+        providerTriggerMode = null;
+        activeProvider = null;
       }
     }, 200);
   }
 
-  function getServiceSourceLabel(source: ServiceSource): string {
+  function getSourceLabel(source?: ServiceSource): string {
     switch (source) {
       case 'embedded':
         return 'Embedded';
       case 'both':
         return 'Embedded + Custom';
-      default:
+      case 'user':
         return 'Custom';
+      default:
+        return '';
+    }
+  }
+
+  function getProviderLabel(provider: string): string {
+    if (providerSuggestionMap[provider]?.displayName) {
+      return providerSuggestionMap[provider].displayName as string;
+    }
+    if (provider === 'service') {
+      return 'Service';
+    }
+    return provider.charAt(0).toUpperCase() + provider.slice(1);
+  }
+
+  function getProviderSymbol(provider: string): string {
+    switch (provider) {
+      case 'service':
+        return '$';
+      case 'env':
+        return 'ENV';
+      case 'time':
+        return '⏱';
+      default:
+        return provider.slice(0, 3).toUpperCase();
     }
   }
 </script>
@@ -248,25 +467,44 @@
             e.preventDefault();
             if (suggestion.kind === 'emoji') {
               insertEmoji(suggestion.emoji, suggestion.name);
-            } else {
-              insertService(suggestion.name);
+            } else if (suggestion.kind === 'provider') {
+              insertProviderValue(suggestion.provider, suggestion.name);
+            } else if (suggestion.kind === 'provider-type') {
+              insertProviderTemplate(suggestion.provider);
             }
           }}
         >
           {#if suggestion.kind === 'emoji'}
             <span class="emoji-icon">{suggestion.emoji}</span>
             <span class="emoji-name">:{suggestion.name}:</span>
-          {:else}
-            <div class="service-suggestion">
-              <div class="service-symbol">$</div>
-              <div class="service-details">
-                <div class="service-name">{suggestion.name}</div>
-                <div class="service-type">{getServiceSourceLabel(suggestion.source)}</div>
+          {:else if suggestion.kind === 'provider'}
+            <div class="provider-suggestion">
+              <div class="provider-symbol">{getProviderSymbol(suggestion.provider)}</div>
+              <div class="provider-details">
+                <div class="provider-name">{suggestion.name}</div>
+                <div class="provider-meta">
+                  <span class="provider-type">{getProviderLabel(suggestion.provider)}</span>
+                  {#if getSourceLabel(suggestion.source)}
+                    <span class="provider-source">{getSourceLabel(suggestion.source)}</span>
+                  {/if}
+                </div>
                 {#if suggestion.description}
-                  <div class="service-description">{suggestion.description}</div>
+                  <div class="provider-description">{suggestion.description}</div>
                 {/if}
               </div>
             </div>
+          {:else if suggestion.kind === 'provider-type'}
+            <div class="provider-type-suggestion">
+              <div class="provider-symbol">{getProviderSymbol(suggestion.provider)}</div>
+              <div class="provider-details">
+                <div class="provider-name">{suggestion.displayName}</div>
+                <div class="provider-meta">
+                  <span class="provider-type">Select provider</span>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div class="info-suggestion">{suggestion.message}</div>
           {/if}
         </button>
       {/each}
@@ -353,49 +591,72 @@
     color: #4ec9b0;
   }
 
-  .service-suggestion {
+  .provider-suggestion,
+  .provider-type-suggestion {
     display: flex;
     align-items: center;
     gap: 8px;
     width: 100%;
   }
 
-  .service-symbol {
-    width: 24px;
+  .provider-symbol {
+    min-width: 28px;
     height: 24px;
-    border-radius: 50%;
+    border-radius: 12px;
     background-color: #353535;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     font-weight: bold;
     color: #9cdcfe;
     flex-shrink: 0;
+    padding: 0 8px;
+    font-size: 11px;
   }
 
-  .service-details {
+  .provider-details {
     display: flex;
     flex-direction: column;
     flex: 1;
   }
 
-  .service-name {
+  .provider-name {
     font-size: 13px;
     color: #fff;
   }
 
-  .service-type {
+  .provider-meta {
     font-size: 11px;
     color: #888;
+    display: flex;
+    gap: 6px;
+    align-items: center;
   }
 
-  .service-description {
+  .provider-type {
+    font-weight: 600;
+    color: #9cdcfe;
+  }
+
+  .provider-source {
+    font-size: 10px;
+    color: #aaaaaa;
+  }
+
+  .provider-description {
     font-size: 11px;
     color: #aaaaaa;
     margin-top: 2px;
   }
 
-  .autocomplete-suggestion.selected .service-name {
+  .info-suggestion {
+    font-size: 11px;
+    color: #bbbbbb;
+    padding: 4px 8px;
+    font-style: italic;
+  }
+
+  .autocomplete-suggestion.selected .provider-name {
     color: #4ec9b0;
   }
 </style>

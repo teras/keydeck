@@ -50,16 +50,64 @@
   // Supported image extensions for icon upload
   const VALID_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'];
 
+  type ServiceSource = 'embedded' | 'user' | 'both';
+
   interface ServiceEntry {
     name: string;
     description?: string;
+    source?: ServiceSource;
   }
 
   interface ServiceAutocompleteOption {
     name: string;
-    source: 'embedded' | 'user' | 'both';
+    source: ServiceSource;
     description?: string;
   }
+
+  interface ProviderSuggestionGroup {
+    provider: string;
+    displayName?: string;
+    entries: ServiceEntry[];
+    insertTemplate?: (name: string) => string;
+  }
+
+  const DEFAULT_ENV_VARS = ['HOME', 'PATH', 'USER', 'SHELL', 'PWD', 'LANG', 'TERM'];
+  const TIME_FORMAT_SUGGESTIONS: ServiceEntry[] = [
+    { name: '%H:%M', description: '24h time (HH:MM)' },
+    { name: '%I:%M %p', description: '12h time (HH:MM AM/PM)' },
+    { name: '%Y-%m-%d', description: 'Date (YYYY-MM-DD)' },
+    { name: '%d/%m/%Y', description: 'Date (DD/MM/YYYY)' },
+    { name: '%a %b %d', description: 'Weekday + Month + Day' },
+    { name: '%H:%M:%S', description: 'Time with seconds' }
+  ];
+
+  let cachedEnvVars: string[] | null = null;
+  let envVarPromise: Promise<string[]> | null = null;
+
+  async function fetchEnvVars(): Promise<string[]> {
+    if (cachedEnvVars) return cachedEnvVars;
+    if (!envVarPromise) {
+      envVarPromise = invoke<string[]>('list_env_vars')
+        .then(vars => {
+          cachedEnvVars = vars.sort();
+          return cachedEnvVars;
+        })
+        .catch(() => {
+          cachedEnvVars = DEFAULT_ENV_VARS;
+          return cachedEnvVars;
+        })
+        .finally(() => {
+          envVarPromise = null;
+        });
+    }
+    return envVarPromise;
+  }
+
+  let envVarSuggestions = $state<ServiceEntry[]>(DEFAULT_ENV_VARS.map(name => ({
+    name,
+    description: 'Environment variable'
+  })));
+  const timePatternSuggestions = TIME_FORMAT_SUGGESTIONS;
 
   function extractServiceEntries(source: any): ServiceEntry[] {
     if (!source) {
@@ -144,6 +192,40 @@
     return mergeServiceEntries(embeddedEntries, customEntries);
   });
 
+  let providerSuggestionMap = $derived.by(() => {
+    const map: Record<string, ProviderSuggestionGroup> = {};
+
+    map.service = {
+      provider: 'service',
+      displayName: 'Service',
+      entries: serviceAutocompleteOptions.map(option => ({
+        name: option.name,
+        description: option.description,
+        source: option.source,
+      })),
+    };
+
+    if (envVarSuggestions.length > 0) {
+      map.env = {
+        provider: 'env',
+        displayName: 'Environment',
+        entries: envVarSuggestions,
+        insertTemplate: (name) => `\${env:${name}}`,
+      };
+    }
+
+    if (timePatternSuggestions.length > 0) {
+      map.time = {
+        provider: 'time',
+        displayName: 'Time Format',
+        entries: timePatternSuggestions,
+        insertTemplate: (fmt) => `\${time:${fmt}}`,
+      };
+    }
+
+    return map;
+  });
+
   // Application browser state
   let showAppBrowser = $state(false);
   let availableApps = $state<{name: string; icon_path: string; icon_data_url?: string}[]>([]);
@@ -164,6 +246,7 @@
   // Setup Tauri file drop listeners
   onMount(async () => {
     const window = getCurrentWindow();
+    loadEnvVarSuggestions();
 
     // Listen for file drop events
     unlistenFileDropHover = await window.onDragDropEvent((event) => {
@@ -183,6 +266,19 @@
   onDestroy(() => {
     if (unlistenFileDropHover) unlistenFileDropHover();
   });
+
+  async function loadEnvVarSuggestions() {
+    try {
+      const vars = await fetchEnvVars();
+      envVarSuggestions = vars.map(name => ({
+        name,
+        description: 'Environment variable'
+      }));
+    } catch (e) {
+      console.warn('Failed to load environment variables for autocomplete:', e);
+      envVarSuggestions = DEFAULT_ENV_VARS.map(name => ({ name, description: 'Environment variable' }));
+    }
+  }
 
   async function handleTauriFileDrop(paths: string[]) {
     // Filter for image files
@@ -1106,13 +1202,14 @@
     <label class="stacked-label">
       <span>Text</span>
       <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-        <TextAutocomplete
-          value={getTextValue()}
-          onUpdate={(newValue) => updateText(newValue)}
-          placeholder="Button label"
-          disabled={isReadOnly}
-          serviceSuggestions={serviceAutocompleteOptions}
-        />
+      <TextAutocomplete
+        value={getTextValue()}
+        onUpdate={(newValue) => updateText(newValue)}
+        placeholder="Button label"
+        disabled={isReadOnly}
+        serviceSuggestions={providerSuggestionMap.service?.entries ?? serviceAutocompleteOptions}
+        providerSuggestionMap={providerSuggestionMap}
+      />
       </div>
     </label>
   </div>
