@@ -12,7 +12,7 @@
     deviceSerial: string;
   }
 
-  let { config, pageName, deviceSerial }: Props = $props();
+  let { config = $bindable(), pageName, deviceSerial }: Props = $props();
 
   let pageGroup = $derived(config.page_groups?.[deviceSerial] || config.page_groups?.default);
   let page = $derived(pageGroup?.[pageName]);
@@ -79,6 +79,10 @@
     page.on_tick.splice(index, 1);
     config[groupKey][pageName].on_tick = page.on_tick;
   }
+
+  const pageFieldIds = {
+    windowName: 'page-window-name',
+  };
 </script>
 
 <div class="page-editor">
@@ -86,8 +90,9 @@
 
   <div class="section">
     <div class="form-group">
-      <label>Window Name</label>
+      <label for={pageFieldIds.windowName}>Window Name</label>
       <input
+        id={pageFieldIds.windowName}
         type="text"
         value={page?.window_name || ""}
         oninput={(e) => updateWindowName(e.currentTarget.value)}
@@ -97,7 +102,7 @@
     </div>
 
     <div class="form-group">
-      <label>Inherits Templates</label>
+      <span class="field-label">Inherits Templates</span>
       <TemplateSelector
         {config}
         selectedTemplates={getSelectedTemplates()}
@@ -219,6 +224,13 @@
   }
 
   label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .field-label {
     font-size: 12px;
     font-weight: 600;
     color: #888;

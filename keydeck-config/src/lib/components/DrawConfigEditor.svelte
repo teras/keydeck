@@ -19,6 +19,34 @@
 
   let isExpanded = $state(initiallyOpen);
 
+  const componentUid = Math.random().toString(36).slice(2, 8);
+
+  function fieldId(name: string): string {
+    return `draw-${componentUid}-${name}`;
+  }
+
+  const fieldIds = {
+    type: fieldId('type'),
+    value: fieldId('value'),
+    colorMode: fieldId('color-mode'),
+    singleColor: fieldId('single-color'),
+    padding: fieldId('padding'),
+    direction: fieldId('direction'),
+    segments: fieldId('segments'),
+    barSpacing: fieldId('bar-spacing'),
+  };
+
+  function toggleExpanded() {
+    isExpanded = !isExpanded;
+  }
+
+  function handleHeaderKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleExpanded();
+    }
+  }
+
   // Update isExpanded when initiallyOpen changes
   $effect(() => {
     isExpanded = initiallyOpen;
@@ -43,7 +71,13 @@
 </script>
 
 <div class="draw-config-editor" class:readonly={disabled} class:reference={isReference} class:inherited={isInherited}>
-  <div class="graphics-header" onclick={() => isExpanded = !isExpanded}>
+  <div
+    class="graphics-header"
+    role="button"
+    tabindex="0"
+    onclick={toggleExpanded}
+    onkeydown={handleHeaderKeyDown}
+  >
     <span class="graphics-summary">{summary}</span>
     <div class="graphics-controls">
       {#if onRemove && !disabled}
@@ -57,22 +91,24 @@
     <div class="graphics-body">
       <!-- Graphic Type -->
       <div class="form-row">
-        <label>Type</label>
-    <select
-      value={drawConfig.type || 'gauge'}
-      onchange={(e) => updateDraw({ type: e.currentTarget.value })}
-      disabled={disabled}
-    >
-      <option value="gauge">Gauge</option>
-      <option value="bar">Bar</option>
-      <option value="multi_bar">Multi-Bar</option>
-    </select>
-  </div>
+        <label for={fieldIds.type}>Type</label>
+        <select
+          id={fieldIds.type}
+          value={drawConfig.type || 'gauge'}
+          onchange={(e) => updateDraw({ type: e.currentTarget.value })}
+          disabled={disabled}
+        >
+          <option value="gauge">Gauge</option>
+          <option value="bar">Bar</option>
+          <option value="multi_bar">Multi-Bar</option>
+        </select>
+      </div>
 
   <!-- Value (data source) -->
   <div class="form-row">
-    <label>Value</label>
+    <label for={fieldIds.value}>Value</label>
     <input
+      id={fieldIds.value}
       type="text"
       value={drawConfig.value || ''}
       oninput={(e) => updateDraw({ value: e.currentTarget.value })}
@@ -84,11 +120,12 @@
 
   <!-- Range [min, max] -->
   <div class="form-row">
-    <label>Range [min, max]</label>
-    <div class="range-inputs">
-      <input
-        type="number"
-        value={drawConfig.range?.[0] ?? 0}
+    <label class="stacked-label">
+      <span>Range [min, max]</span>
+      <div class="range-inputs">
+        <input
+          type="number"
+          value={drawConfig.range?.[0] ?? 0}
         oninput={(e) => {
           const range = drawConfig.range || [0, 100];
           updateDraw({ range: [parseFloat(e.currentTarget.value), range[1]] });
@@ -109,13 +146,15 @@
         step="any"
         disabled={disabled}
       />
-    </div>
+      </div>
+    </label>
   </div>
 
   <!-- Color (single) or Color Map (gradient) -->
   <div class="form-row">
-    <label>Color Mode</label>
+    <label for={fieldIds.colorMode}>Color Mode</label>
     <select
+      id={fieldIds.colorMode}
       value={drawConfig.color_map ? 'gradient' : 'solid'}
       onchange={(e) => {
         if (e.currentTarget.value === 'solid') {
@@ -137,7 +176,7 @@
     <!-- Color Map Editor -->
     <div class="form-row">
       <div class="color-map-header">
-        <label>Color Gradient Map</label>
+        <span class="field-label">Color Gradient Map</span>
         {#if !disabled}
           <button
             class="add-btn"
@@ -205,19 +244,22 @@
   {:else}
     <!-- Single Color -->
     <div class="form-row">
-      <label>Color</label>
-      <ColorField
-        value={drawConfig.color || '#00ff00'}
-        onUpdate={(newColor) => updateDraw({ color: newColor })}
-        disabled={disabled}
-      />
+      <label class="stacked-label">
+        <span>Color</span>
+        <ColorField
+          value={drawConfig.color || '#00ff00'}
+          onUpdate={(newColor) => updateDraw({ color: newColor })}
+          disabled={disabled}
+        />
+      </label>
     </div>
   {/if}
 
   <!-- Optional: Position [x, y] -->
   <div class="form-row">
-    <label>Position [x, y]</label>
-    <div class="position-inputs">
+    <label class="stacked-label">
+      <span>Position [x, y]</span>
+      <div class="position-inputs">
       <input
         type="number"
         value={drawConfig.position?.[0] ?? ''}
@@ -249,14 +291,16 @@
         placeholder="Y"
         disabled={disabled}
       />
-    </div>
+      </div>
+    </label>
     <p class="field-help">Position from top-left corner. Leave empty for centered.</p>
   </div>
 
   <!-- Optional: Size [W × H] -->
   <div class="form-row">
-    <label>Size [W × H] (pixels)</label>
-    <div class="dimension-inputs">
+    <label class="stacked-label">
+      <span>Size [W × H] (pixels)</span>
+      <div class="dimension-inputs">
       <input
         type="number"
         value={drawConfig.width ?? ''}
@@ -288,14 +332,16 @@
         min="1"
         disabled={disabled}
       />
-    </div>
+      </div>
+    </label>
     <p class="field-help">Graphic dimensions. Leave empty for auto-sizing (button size - 2*padding).</p>
   </div>
 
   <!-- Optional: Padding -->
   <div class="form-row">
-    <label>Padding (pixels)</label>
+    <label for={fieldIds.padding}>Padding (pixels)</label>
     <input
+      id={fieldIds.padding}
       type="number"
       value={drawConfig.padding ?? ''}
       oninput={(e) => {
@@ -315,8 +361,9 @@
   <!-- Optional: Direction (for bar and multi_bar types) -->
   {#if drawConfig.type === 'bar' || drawConfig.type === 'multi_bar'}
     <div class="form-row">
-      <label>Direction</label>
+      <label for={fieldIds.direction}>Direction</label>
       <select
+        id={fieldIds.direction}
         value={drawConfig.direction || ''}
         onchange={(e) => {
           const val = e.currentTarget.value;
@@ -341,8 +388,9 @@
   <!-- Optional: Segments (for bar and multi_bar types) -->
   {#if drawConfig.type === 'bar' || drawConfig.type === 'multi_bar'}
     <div class="form-row">
-      <label>Segments</label>
+      <label for={fieldIds.segments}>Segments</label>
       <input
+        id={fieldIds.segments}
         type="number"
         value={drawConfig.segments ?? ''}
         oninput={(e) => {
@@ -364,8 +412,9 @@
   <!-- Optional: Bar Spacing (for multi_bar type) -->
   {#if drawConfig.type === 'multi_bar'}
     <div class="form-row">
-      <label>Bar Spacing (pixels)</label>
+      <label for={fieldIds.barSpacing}>Bar Spacing (pixels)</label>
       <input
+        id={fieldIds.barSpacing}
         type="number"
         value={drawConfig.bar_spacing ?? ''}
         oninput={(e) => {
@@ -485,6 +534,26 @@
   }
 
   .form-row label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .stacked-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stacked-label > span {
+    font-size: 11px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .field-label {
     font-size: 11px;
     font-weight: 600;
     color: #888;

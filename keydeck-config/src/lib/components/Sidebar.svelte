@@ -25,7 +25,7 @@
     onServiceSelected: (serviceName: string | null) => void;
     onMacroSelected: (macroName: string | null) => void;
     onButtonDefSelected: (buttonName: string | null) => void;
-    openTab?: (tab: Tab) => void;
+    openTab?: (register: (tab: Tab) => void) => void;
   }
 
   export type SidebarTab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null;
@@ -44,7 +44,7 @@
     onServiceSelected,
     onMacroSelected,
     onButtonDefSelected,
-    openTab
+    openTab: registerOpenTab
   }: Props = $props();
 
   type Tab = 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null;
@@ -80,8 +80,8 @@
   }
 
   // Expose openTabOnly to parent via openTab callback
-  if (openTab) {
-    openTab(openTabOnly as any);
+  if (registerOpenTab) {
+    registerOpenTab(openTabOnly);
   }
 </script>
 

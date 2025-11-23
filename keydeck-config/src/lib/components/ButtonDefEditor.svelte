@@ -10,7 +10,7 @@
     buttonDefName: string;
   }
 
-  let { config, buttonDefName }: Props = $props();
+  let { config = $bindable(), buttonDefName }: Props = $props();
 
   // Create a virtual config that ButtonEditor can work with
   // We'll create a fake template with a single button that mirrors the button definition

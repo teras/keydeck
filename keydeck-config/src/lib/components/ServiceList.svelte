@@ -3,6 +3,7 @@
 
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { autoFocus } from '$lib/utils/autoFocus';
 
   interface Props {
     config: any;
@@ -172,7 +173,7 @@
             }}
             onblur={() => renameService(service)}
             onmousedown={(e) => e.stopPropagation()}
-            autofocus
+            use:autoFocus
           />
         {:else}
           <button
@@ -206,8 +207,6 @@
 </div>
 
 <style>
-  .service-list {
-  }
 
   .header {
     display: flex;

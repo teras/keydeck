@@ -174,10 +174,30 @@
       unlisten();
     }
   });
+
+  function handleOverlayKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClose();
+    }
+  }
+
+  function handleOverlayClick(event: MouseEvent) {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  }
 </script>
 
-<div class="log-viewer-overlay" onclick={onClose}>
-  <div class="log-viewer" onclick={(e) => e.stopPropagation()}>
+<div
+  class="log-viewer-overlay"
+  role="dialog"
+  aria-modal="true"
+  tabindex="0"
+  onclick={handleOverlayClick}
+  onkeydown={handleOverlayKeyDown}
+>
+  <div class="log-viewer">
     <!-- Header -->
     <div class="header">
       <div class="title">

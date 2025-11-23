@@ -16,6 +16,7 @@
   import TemplateEditor from "../lib/components/TemplateEditor.svelte";
   import ActionEditor from "../lib/components/ActionEditor.svelte";
   import HelperButtons from "../lib/components/HelperButtons.svelte";
+  import { autoFocus } from '$lib/utils/autoFocus';
 
   interface DeviceInfo {
     device_id: string;
@@ -55,8 +56,11 @@
   let isRightPanelOpen = $state<boolean>(true);
   let rightPanelWidth = $state<number>(300);
   let isResizingRightPanel = $state<boolean>(false);
+  const MIN_RIGHT_PANEL_WIDTH = 200;
+  const MAX_RIGHT_PANEL_WIDTH = 600;
   let sidebarToggleTab: ((tab: 'pages' | 'templates' | 'services' | 'macros' | 'buttons' | 'device' | 'global' | null) => void) | null = null;
   let isEditMode = $state<boolean>(true); // true = edit (pencil), false = play mode
+  let activePageName = $derived(currentPage || currentTemplate || '');
 
   // Parameter management state
   let showAddParam = $state<boolean>(false);
@@ -66,6 +70,11 @@
   let renameParamName = $state<string>("");
   let lastAddedParam = $state<string | null>(null);
   let paramNameInput = $state<HTMLInputElement | undefined>();
+  const serviceFieldIds = {
+    command: 'service-command',
+    interval: 'service-interval',
+    timeout: 'service-timeout',
+  };
 
   function setError(message: string) {
     error = message;
@@ -783,8 +792,7 @@
       const handleMouseMove = (event: MouseEvent) => {
         const deltaX = resizeStartX - event.clientX;
         const newWidth = resizeStartWidth + deltaX;
-        // Min width: 200px, Max width: 600px
-        rightPanelWidth = Math.max(200, Math.min(600, newWidth));
+        rightPanelWidth = Math.max(MIN_RIGHT_PANEL_WIDTH, Math.min(MAX_RIGHT_PANEL_WIDTH, newWidth));
       };
 
       const handleMouseUp = () => {
@@ -804,6 +812,16 @@
       };
     }
   });
+
+  function handleResizeHandleKeyDown(event: KeyboardEvent) {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      rightPanelWidth = Math.min(MAX_RIGHT_PANEL_WIDTH, rightPanelWidth + 20);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      rightPanelWidth = Math.max(MIN_RIGHT_PANEL_WIDTH, rightPanelWidth - 20);
+    }
+  }
 </script>
 
 <TitleBar
@@ -852,11 +870,11 @@
           <ButtonGrid
             device={selectedDevice}
             config={config}
-            currentPage={currentPage || currentTemplate}
+            currentPage={activePageName}
             selectedButton={selectedButton}
             onButtonSelected={handleButtonSelected}
             isTemplate={!!currentTemplate}
-            pageName={currentPage || currentTemplate}
+            pageName={activePageName}
             onPageTitleClicked={handlePageTitleClicked}
             onDeviceSelected={handleDeviceSelected}
             onRefresh={reloadConfig}
@@ -902,19 +920,20 @@
     <!-- Right Sidebar: Button/Page/Template Config (full height) -->
     <aside class="properties-panel" class:closed={!isRightPanelOpen} style="width: {isRightPanelOpen ? rightPanelWidth : 0}px;">
       {#if isRightPanelOpen}
-        <div
+        <button
+          type="button"
           class="resize-handle"
-          role="separator"
           aria-label="Resize properties panel"
           onmousedown={startResizeRightPanel}
-        ></div>
+          onkeydown={handleResizeHandleKeyDown}
+        ></button>
       {/if}
       <div class="properties-content">
       {#if selectedButton !== null && selectedDevice && config}
         <ButtonEditor
           bind:config={config}
           currentPage={currentPage}
-          currentTemplate={currentTemplate}
+          currentTemplate={currentTemplate || undefined}
           buttonIndex={selectedButton}
           deviceSerial={selectedDevice.serial}
           isTemplate={!!currentTemplate}
@@ -927,16 +946,18 @@
           <h2>Service: {currentService}</h2>
           <div class="service-config">
             <div class="form-group">
-              <label>Command</label>
+              <label for={serviceFieldIds.command}>Command</label>
               <textarea
+                id={serviceFieldIds.command}
                 bind:value={config.services[currentService].exec}
                 rows="3"
                 placeholder='echo "your data"'
               ></textarea>
             </div>
             <div class="form-group">
-              <label>Interval (seconds) <span style="color: #666; font-weight: normal; font-style: italic;">(optional)</span></label>
+              <label for={serviceFieldIds.interval}>Interval (seconds) <span style="color: #666; font-weight: normal; font-style: italic;">(optional)</span></label>
               <input
+                id={serviceFieldIds.interval}
                 type="number"
                 bind:value={config.services[currentService].interval}
                 min="0.1"
@@ -946,8 +967,9 @@
               <p class="help">How often to run the command (leave empty for default 1s interval)</p>
             </div>
             <div class="form-group">
-              <label>Timeout (seconds) <span style="color: #666; font-weight: normal; font-style: italic;">(optional)</span></label>
+              <label for={serviceFieldIds.timeout}>Timeout (seconds) <span style="color: #666; font-weight: normal; font-style: italic;">(optional)</span></label>
               <input
+                id={serviceFieldIds.timeout}
                 type="number"
                 bind:value={config.services[currentService].timeout}
                 min="1"
@@ -959,11 +981,12 @@
           </div>
         </div>
       {:else if currentMacro && config}
+        {@const macroName = currentMacro as string}
         <div class="editor-panel">
           <h2>Macro: {currentMacro}</h2>
           <p class="help">Macros contain reusable action sequences with optional parameters</p>
 
-          {#if config.macros[currentMacro]}
+          {#if config.macros[macroName]}
             <!-- Macro Parameters -->
             <div class="macro-section">
               <div class="section-header">
@@ -988,22 +1011,22 @@
               <div class="separator"></div>
 
               <div class="params-list">
-                {#if config.macros[currentMacro].params && Object.keys(config.macros[currentMacro].params).length > 0}
-                  {#each Object.entries(config.macros[currentMacro].params) as [paramName, paramValue]}
+                {#if config.macros[macroName].params && Object.keys(config.macros[macroName].params).length > 0}
+                  {#each Object.entries(config.macros[macroName].params) as [paramName, paramValue]}
                     <div class="param-row">
                       {#if renamingParam === paramName}
                         <input
                           type="text"
                           bind:value={renameParamName}
                           class="rename-param-input"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') renameParam(paramName);
-                            if (e.key === 'Escape') { renameParamName = ""; renamingParam = null; }
-                          }}
-                          onblur={() => renameParam(paramName)}
-                          onmousedown={(e) => e.stopPropagation()}
-                          autofocus
-                        />
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter') renameParam(paramName);
+                        if (e.key === 'Escape') { renameParamName = ""; renamingParam = null; }
+                      }}
+                      onblur={() => renameParam(paramName)}
+                      onmousedown={(e) => e.stopPropagation()}
+                      use:autoFocus
+                    />
                       {:else}
                         <div class="param-item">
                           <div class="param-info">
@@ -1013,7 +1036,7 @@
                               value={paramValue}
                               data-param-name={paramName}
                               oninput={(e) => {
-                                config.macros[currentMacro].params[paramName] = e.currentTarget.value;
+                                config.macros[macroName].params[paramName] = e.currentTarget.value;
                               }}
                               placeholder="Default value"
                               class="param-value"
@@ -1048,30 +1071,30 @@
 
             <!-- Macro Actions -->
             <div class="form-group">
-              <div class="actions-header">
-                <label>Actions</label>
-                <button class="add-btn" onclick={() => {
-                  if (!config.macros[currentMacro].actions) {
-                    config.macros[currentMacro].actions = [];
-                  }
-                  config.macros[currentMacro].actions.push({ jump: "" });
-                }}>+</button>
-              </div>
-              <div class="actions-list">
-                {#if config.macros[currentMacro].actions && config.macros[currentMacro].actions.length > 0}
-                  {#each config.macros[currentMacro].actions as action, i (currentMacro + '-' + i)}
-                    <ActionEditor
-                      {action}
-                      index={i}
-                      {config}
-                      deviceSerial={selectedDevice?.serial}
-                      onUpdate={(newAction) => {
-                        config.macros[currentMacro].actions[i] = newAction;
+                <div class="actions-header">
+                  <h4>Actions</h4>
+                  <button class="add-btn" onclick={() => {
+                    if (!config.macros[macroName].actions) {
+                      config.macros[macroName].actions = [];
+                    }
+                    config.macros[macroName].actions.push({ jump: "" });
+                  }}>+</button>
+                </div>
+                <div class="actions-list">
+                  {#if config.macros[macroName].actions && config.macros[macroName].actions.length > 0}
+                    {#each config.macros[macroName].actions as action, i (currentMacro + '-' + i)}
+                      <ActionEditor
+                        {action}
+                        index={i}
+                        {config}
+                        deviceSerial={selectedDevice?.serial}
+                        onUpdate={(newAction) => {
+                        config.macros[macroName].actions[i] = newAction;
                       }}
-                      onDelete={() => {
-                        config.macros[currentMacro].actions.splice(i, 1);
+                        onDelete={() => {
+                        config.macros[macroName].actions.splice(i, 1);
                       }}
-                    />
+                      />
                   {/each}
                 {:else}
                   <p class="empty">No actions configured</p>

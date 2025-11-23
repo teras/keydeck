@@ -150,19 +150,25 @@
     // Listen for clicks outside the menu
     document.addEventListener('click', handleClickOutside);
   });
+
+  function handleStatusIndicatorKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleDaemonMenu();
+    }
+  }
 </script>
 
 <div class="helper-buttons">
   <div class="left-controls">
-    <a
+    <button
+      type="button"
       class="helper-link home-link"
       onclick={onHomeClick}
       title="Jump to main page"
-      role="button"
-      tabindex="0"
     >
       🏠 Home
-    </a>
+    </button>
 
     <div class="mode-toggle-container">
       <button
@@ -192,6 +198,7 @@
       onclick={toggleDaemonMenu}
       role="button"
       tabindex="0"
+      onkeydown={handleStatusIndicatorKeyDown}
       title={daemonStatus.running
         ? `Daemon running (PID: ${daemonStatus.pid})\nLast checked: ${formatTimestamp(daemonStatus.timestamp)}\nClick for options`
         : `Daemon not running\nLast checked: ${formatTimestamp(daemonStatus.timestamp)}\nClick for options`

@@ -46,12 +46,23 @@
   function stopPropagation(e: MouseEvent) {
     e.stopPropagation();
   }
+
+  function handleKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleDoubleClick();
+    }
+  }
 </script>
 
 <div
   class="titlebar"
+  role="button"
+  aria-label="Window controls"
+  tabindex="0"
   onmousedown={startDrag}
   ondblclick={handleDoubleClick}
+  onkeydown={handleKeyDown}
 >
   <div
     class="titlebar-title"
@@ -85,17 +96,17 @@
   </div>
 
   <div class="titlebar-buttons">
-    <button class="titlebar-button" onclick={minimizeWindow} onmousedown={stopPropagation}>
+    <button class="titlebar-button" onclick={minimizeWindow} onmousedown={stopPropagation} aria-label="Minimize window">
       <svg width="12" height="12" viewBox="0 0 12 12">
         <rect y="5" width="12" height="1" fill="currentColor"/>
       </svg>
     </button>
-    <button class="titlebar-button" onclick={maximizeWindow} onmousedown={stopPropagation}>
+    <button class="titlebar-button" onclick={maximizeWindow} onmousedown={stopPropagation} aria-label="Maximize window">
       <svg width="12" height="12" viewBox="0 0 12 12">
         <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1" fill="none"/>
       </svg>
     </button>
-    <button class="titlebar-button titlebar-close" onclick={closeWindow} onmousedown={stopPropagation}>
+    <button class="titlebar-button titlebar-close" onclick={closeWindow} onmousedown={stopPropagation} aria-label="Close window">
       <svg width="12" height="12" viewBox="0 0 12 12">
         <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1"/>
         <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1"/>
