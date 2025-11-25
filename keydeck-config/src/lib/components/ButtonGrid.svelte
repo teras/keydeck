@@ -1042,16 +1042,4 @@
       0 0 3px var(--outline-color);
   }
 
-  .lcd-strip {
-    width: 100%;
-    padding: 20px;
-    text-align: center;
-    margin-top: auto;
-  }
-
-  .lcd-strip p {
-    margin: 0;
-    font-size: 13px;
-    color: #888;
-  }
 </style>
