@@ -3,7 +3,6 @@
 
 <script lang="ts">
   import { ask, message } from '@tauri-apps/plugin-dialog';
-  import { autoFocus } from '$lib/utils/autoFocus';
 
   interface Props {
     config: any;
@@ -310,7 +309,7 @@
 
   <div class="separator"></div>
 
-  <div class="pages" role="list">
+  <div class="pages">
     {#each pages as page}
       <div
         class="page-item-wrapper"
@@ -321,18 +320,15 @@
         ondragleave={handleDragLeave}
         ondrop={(e) => handleDrop(e, page)}
         ondragenter={(e) => e.preventDefault()}
-        role="listitem"
       >
-        <button
-          type="button"
+        <span
           class="drag-handle"
           draggable={!renamingPage}
           ondragstart={(e) => handleDragStart(e, page)}
           ondragend={handleDragEnd}
-          aria-label="Drag to reorder page"
         >
           ⋮⋮
-        </button>
+        </span>
         {#if renamingPage === page}
           <input
             type="text"
@@ -344,7 +340,7 @@
             }}
             onblur={() => renamePage(page)}
             onmousedown={(e) => e.stopPropagation()}
-            use:autoFocus
+            autofocus
           />
         {:else}
           <button
@@ -378,6 +374,8 @@
 </div>
 
 <style>
+  .page-list {
+  }
 
   .header {
     display: flex;
@@ -516,8 +514,6 @@
     color: #666;
     font-size: 12px;
     user-select: none;
-    background: none;
-    border: none;
   }
 
   .drag-handle:active {

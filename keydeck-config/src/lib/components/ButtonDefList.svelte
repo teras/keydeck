@@ -3,7 +3,6 @@
 
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
-  import { tick } from 'svelte';
 
   interface Props {
     config: any;
@@ -20,7 +19,6 @@
   let buttonNameInput = $state<HTMLInputElement | undefined>();
   let renameButtonName = $state("");
   let renamingButton = $state<string | null>(null);
-  let renameInputRef = $state<HTMLInputElement | undefined>();
 
   function toggleAddButton() {
     showAddButton = !showAddButton;
@@ -95,7 +93,6 @@
     config.buttons[newName] = JSON.parse(JSON.stringify(original));
     onButtonDefSelected(newName);
     showButtonMenu = null;
-    tick().then(() => renameInputRef?.focus());
   }
 
   function startRename(buttonName: string) {
@@ -166,7 +163,6 @@
         {#if renamingButton === button}
           <input
             type="text"
-            bind:this={renameInputRef}
             bind:value={renameButtonName}
             class="rename-input"
             onkeydown={(e) => {
@@ -175,6 +171,7 @@
             }}
             onblur={() => renameButton(button)}
             onmousedown={(e) => e.stopPropagation()}
+            autofocus
           />
         {:else}
           <button
@@ -208,6 +205,8 @@
 </div>
 
 <style>
+  .button-list {
+  }
 
   .header {
     display: flex;

@@ -67,35 +67,6 @@
 
   let isExpanded = $state(initiallyOpen);
 
-  function fieldId(name: string): string {
-    return `action-${depth}-${index}-${name}`;
-  }
-
-  const fieldIds = {
-    actionType: fieldId('action-type'),
-    execCommand: fieldId('exec-command'),
-    jumpPage: fieldId('jump-page'),
-    focusWindow: fieldId('focus-window'),
-    waitForType: fieldId('wait-for-type'),
-    waitForTimeout: fieldId('wait-for-timeout'),
-    textValue: fieldId('text-value'),
-    waitTime: fieldId('wait-time'),
-    macroName: fieldId('macro-name'),
-    refreshButtons: fieldId('refresh-buttons'),
-  };
-
-  function toggleExpansion() {
-    isExpanded = !isExpanded;
-    if (onToggle) onToggle();
-  }
-
-  function handleHeaderKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      toggleExpansion();
-    }
-  }
-
   // Update isExpanded when initiallyOpen changes
   $effect(() => {
     isExpanded = initiallyOpen;
@@ -204,13 +175,10 @@
 </script>
 
 <div class="action-editor" class:reference={isReference} class:inherited={isInherited} style="--depth: {depth}">
-  <div
-    class="action-header"
-    role="button"
-    tabindex="0"
-    onclick={toggleExpansion}
-    onkeydown={handleHeaderKeyDown}
-  >
+  <div class="action-header" onclick={() => {
+    isExpanded = !isExpanded;
+    if (onToggle) onToggle();
+  }}>
     <span class="action-index">#{index + 1}</span>
     <span class="action-summary">{actionSummary}</span>
     <div class="action-controls">
@@ -224,13 +192,8 @@
   {#if isExpanded}
     <div class="action-body">
       <div class="form-row">
-        <label for={fieldIds.actionType}>Action Type</label>
-        <select
-          id={fieldIds.actionType}
-          bind:value={actionType}
-          onchange={() => changeActionType(actionType)}
-          disabled={disabled}
-        >
+        <label>Action Type</label>
+        <select bind:value={actionType} onchange={() => changeActionType(actionType)} disabled={disabled}>
           <option value="jump">Jump to Page</option>
           <option value="auto_jump">Auto Jump</option>
           <option value="focus">Focus Window</option>
@@ -252,9 +215,8 @@
 
       {#if actionType === 'exec'}
         <div class="form-row">
-          <label for={fieldIds.execCommand}>Command</label>
+          <label>Command</label>
           <input
-            id={fieldIds.execCommand}
             type="text"
             value={action.exec || ''}
             oninput={(e) => onUpdate({ ...action, exec: e.currentTarget.value })}
@@ -276,10 +238,9 @@
 
       {:else if actionType === 'jump'}
         <div class="form-row">
-          <label for={fieldIds.jumpPage}>Page Name</label>
+          <label>Page Name</label>
           {#if availablePages.length > 0}
             <select
-              id={fieldIds.jumpPage}
               value={action.jump || ''}
               onchange={(e) => onUpdate({ ...action, jump: e.currentTarget.value })}
               disabled={disabled}
@@ -291,7 +252,6 @@
             </select>
           {:else}
             <input
-              id={fieldIds.jumpPage}
               type="text"
               value={action.jump || ''}
               oninput={(e) => onUpdate({ ...action, jump: e.currentTarget.value })}
@@ -303,9 +263,8 @@
 
       {:else if actionType === 'focus'}
         <div class="form-row">
-          <label for={fieldIds.focusWindow}>Window Name</label>
+          <label>Window Name</label>
           <input
-            id={fieldIds.focusWindow}
             type="text"
             value={action.focus || ''}
             oninput={(e) => onUpdate({ ...action, focus: e.currentTarget.value })}
@@ -316,9 +275,8 @@
 
       {:else if actionType === 'wait_for'}
         <div class="form-row">
-          <label for={fieldIds.waitForType}>Event Type</label>
+          <label>Event Type</label>
           <select
-            id={fieldIds.waitForType}
             value={action.wait_for || ''}
             onchange={(e) => onUpdate({ ...action, wait_for: e.currentTarget.value })}
             disabled={disabled}
@@ -334,9 +292,8 @@
           </select>
         </div>
         <div class="form-row">
-          <label for={fieldIds.waitForTimeout}>Timeout (seconds)</label>
+          <label>Timeout (seconds)</label>
           <input
-            id={fieldIds.waitForTimeout}
             type="number"
             value={action.timeout !== undefined ? action.timeout : ''}
             oninput={(e) => {
@@ -358,21 +315,18 @@
 
       {:else if actionType === 'key'}
         <div class="form-row">
-          <label class="stacked-label">
-            <span>Keyboard Shortcut</span>
-            <KeyRecorder
-              value={action.key || ''}
-              onUpdate={(newKey) => onUpdate({ ...action, key: newKey })}
-              disabled={disabled}
-            />
-          </label>
+          <label>Keyboard Shortcut</label>
+          <KeyRecorder
+            value={action.key || ''}
+            onUpdate={(newKey) => onUpdate({ ...action, key: newKey })}
+            disabled={disabled}
+          />
         </div>
 
       {:else if actionType === 'text'}
         <div class="form-row">
-          <label for={fieldIds.textValue}>Text to Type</label>
+          <label>Text to Type</label>
           <input
-            id={fieldIds.textValue}
             type="text"
             value={action.text || ''}
             oninput={(e) => onUpdate({ ...action, text: e.currentTarget.value })}
@@ -383,9 +337,8 @@
 
       {:else if actionType === 'wait'}
         <div class="form-row">
-          <label for={fieldIds.waitTime}>Wait Time (seconds)</label>
+          <label>Wait Time (seconds)</label>
           <input
-            id={fieldIds.waitTime}
             type="number"
             value={action.wait || 0.5}
             oninput={(e) => onUpdate({ ...action, wait: parseFloat(e.currentTarget.value) })}
@@ -397,10 +350,9 @@
 
       {:else if actionType === 'macro'}
         <div class="form-row">
-          <label for={fieldIds.macroName}>Macro Name</label>
+          <label>Macro Name</label>
           {#if availableMacros.length > 0}
             <select
-              id={fieldIds.macroName}
               value={typeof action.macro === 'string' ? action.macro : (action.macro?.name || '')}
               onchange={(e) => {
                 const macroName = e.currentTarget.value;
@@ -422,7 +374,6 @@
             </select>
           {:else}
             <input
-              id={fieldIds.macroName}
               type="text"
               value={typeof action.macro === 'string' ? action.macro : (action.macro?.name || '')}
               oninput={(e) => onUpdate({ ...action, macro: e.currentTarget.value })}
@@ -437,7 +388,7 @@
           {@const macroParams = getMacroParams(macroName)}
           {#if macroParams.length > 0}
             <div class="param-section">
-              <span class="param-section-label">Parameters</span>
+              <label class="param-section-label">Parameters</label>
               <div class="param-list">
                 {#each macroParams as paramName}
                   <div class="param-item">
@@ -474,9 +425,8 @@
 
       {:else if actionType === 'refresh'}
         <div class="form-row">
-          <label for={fieldIds.refreshButtons}>Button(s) to Refresh</label>
+          <label>Button(s) to Refresh</label>
           <input
-            id={fieldIds.refreshButtons}
             type="text"
             value={action.refresh || ''}
             oninput={(e) => {
@@ -499,7 +449,7 @@
         <div class="nested-actions">
           <div class="nested-section">
             <div class="nested-header">
-              <span class="nested-label">Try Actions</span>
+              <label class="nested-label">Try Actions</label>
               {#if !disabled}
                 <button class="btn-add-nested" onclick={() => {
                   if (!action.try) action.try = [];
@@ -538,7 +488,7 @@
 
           <div class="nested-section">
             <div class="nested-header">
-              <span class="nested-label">Else Actions</span>
+              <label class="nested-label">Else Actions</label>
               {#if !disabled}
                 <button class="btn-add-nested" onclick={() => {
                   if (!action.else) action.else = [];
@@ -580,7 +530,7 @@
         <div class="nested-actions">
           <div class="nested-section">
             <div class="nested-header">
-              <span class="nested-label">And Actions (all must succeed)</span>
+              <label class="nested-label">And Actions (all must succeed)</label>
               {#if !disabled}
                 <button class="btn-add-nested" onclick={() => {
                   if (!action.and) action.and = [];
@@ -622,7 +572,7 @@
         <div class="nested-actions">
           <div class="nested-section">
             <div class="nested-header">
-              <span class="nested-label">Or Actions (any must succeed)</span>
+              <label class="nested-label">Or Actions (any must succeed)</label>
               {#if !disabled}
                 <button class="btn-add-nested" onclick={() => {
                   if (!action.or) action.or = [];
@@ -663,7 +613,7 @@
       {:else if actionType === 'not'}
         <div class="nested-actions">
           <div class="nested-section">
-            <span class="nested-label">Not Action (invert result):</span>
+            <label class="nested-label">Not Action (invert result):</label>
             <div class="nested-list">
               {#if action.not}
                 <ActionEditor
@@ -811,18 +761,6 @@
   .form-row.checkbox input[type="checkbox"] {
     width: auto;
     margin: 0;
-  }
-
-  .stacked-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-weight: 400;
-    color: #cccccc;
-  }
-
-  .stacked-label > span {
-    font-weight: 600;
   }
 
   .param-section {

@@ -11,7 +11,7 @@
     templateName: string;
   }
 
-  let { config = $bindable(), templateName }: Props = $props();
+  let { config, templateName }: Props = $props();
 
   let template = $derived(config.templates?.[templateName] || {});
   let openActionIndex = $state<number>(-1);
@@ -78,7 +78,7 @@
     <h4>Template Settings</h4>
 
     <div class="form-group">
-      <span class="field-label">Inherits From</span>
+      <label>Inherits From</label>
       <TemplateSelector
         {config}
         selectedTemplates={getSelectedTemplates()}
@@ -200,7 +200,7 @@
     margin-bottom: 16px;
   }
 
-  .field-label {
+  label {
     font-size: 12px;
     font-weight: 600;
     color: #888;

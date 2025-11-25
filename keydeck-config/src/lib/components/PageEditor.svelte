@@ -13,7 +13,7 @@
     deviceSerial: string;
   }
 
-  let { config = $bindable(), pageName, deviceSerial }: Props = $props();
+  let { config, pageName, deviceSerial }: Props = $props();
 
   let pageGroup = $derived(config.page_groups?.[deviceSerial] || config.page_groups?.default);
   let page = $derived(pageGroup?.[pageName]);
@@ -80,11 +80,6 @@
     page.on_tick.splice(index, 1);
     config[groupKey][pageName].on_tick = page.on_tick;
   }
-
-  const pageFieldIds = {
-    windowName: 'page-window-name',
-  };
-
   let windowClasses = $state<string[]>([]);
   let windowListLoading = $state(false);
   let windowListError = $state<string | null>(null);
@@ -151,11 +146,10 @@
 
   <div class="section">
     <div class="form-group">
-      <label for={pageFieldIds.windowName}>Window Name</label>
+      <label>Window Name</label>
       <div class="window-input-container">
         <div class="window-input-row">
           <input
-            id={pageFieldIds.windowName}
             type="text"
             bind:this={windowNameInput}
             value={page?.window_name || ""}
@@ -204,7 +198,7 @@
     </div>
 
     <div class="form-group">
-      <span class="field-label">Inherits Templates</span>
+      <label>Inherits Templates</label>
       <TemplateSelector
         {config}
         selectedTemplates={getSelectedTemplates()}
@@ -326,13 +320,6 @@
   }
 
   label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-  }
-
-  .field-label {
     font-size: 12px;
     font-weight: 600;
     color: #888;

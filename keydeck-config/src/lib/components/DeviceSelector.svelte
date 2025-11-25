@@ -66,7 +66,7 @@
       if (devices.length > 0) {
         // Check if previously selected device still exists
         const deviceExists = selectedDeviceId && devices.some(d => d.device_id === selectedDeviceId);
-        const deviceToSelect = deviceExists && selectedDeviceId ? selectedDeviceId : devices[0].device_id;
+        const deviceToSelect = deviceExists ? selectedDeviceId : devices[0].device_id;
         await selectDevice(deviceToSelect);
       } else {
         // No devices available, clear selection

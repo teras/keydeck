@@ -40,7 +40,7 @@
     isTemplate?: boolean;
     pageName?: string;
     onPageTitleClicked?: () => void;
-    onDeviceSelected?: (device: DeviceInfo | null) => void;
+    onDeviceSelected?: (device: DeviceInfo) => void;
     onRefresh?: () => void;
     isEditMode?: boolean;
     onHomeClick?: () => void;
@@ -742,22 +742,15 @@
     <div class="center-content">
       {#if pageName}
         <div class="page-info">
-          <h2 class="page-title">
-            {#if onPageTitleClicked}
-              <button
-                type="button"
-                class="page-title-button"
-                onclick={() => onPageTitleClicked?.()}
-              >
-                <span class="page-icon">{isTemplate ? '🏗️' : '🗂️'}</span>
-                {pageName}
-              </button>
-            {:else}
-              <span class="page-title-text">
-                <span class="page-icon">{isTemplate ? '🏗️' : '🗂️'}</span>
-                {pageName}
-              </span>
-            {/if}
+          <h2
+            class="page-title"
+            class:clickable={!!onPageTitleClicked}
+            onclick={() => onPageTitleClicked?.()}
+            role={onPageTitleClicked ? "button" : undefined}
+            tabindex={onPageTitleClicked ? 0 : undefined}
+          >
+            <span class="page-icon">{isTemplate ? '🏗️' : '🗂️'}</span>
+            {pageName}
           </h2>
         </div>
       {/if}
@@ -858,29 +851,22 @@
     font-size: 18px;
     color: #cccccc;
     font-weight: 500;
-  }
-
-  .page-title-button,
-  .page-title-text {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 12px;
+    transition: color 0.2s;
   }
 
-  .page-title-button {
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
+  .page-title.clickable {
     cursor: pointer;
-    padding: 0;
+    user-select: none;
   }
 
-  .page-title-button:hover {
+  .page-title.clickable:hover {
     color: #5b9bd5;
   }
 
-  .page-title-button:active {
+  .page-title.clickable:active {
     color: #4a8ac2;
   }
 
@@ -1056,4 +1042,16 @@
       0 0 3px var(--outline-color);
   }
 
+  .lcd-strip {
+    width: 100%;
+    padding: 20px;
+    text-align: center;
+    margin-top: auto;
+  }
+
+  .lcd-strip p {
+    margin: 0;
+    font-size: 13px;
+    color: #888;
+  }
 </style>

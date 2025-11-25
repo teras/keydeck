@@ -117,19 +117,6 @@
     if (!preview) return [];
     return preview[activeTab];
   }
-
-  function handleDialogKeyDown(event: KeyboardEvent) {
-    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      closeDialog();
-    }
-  }
-
-  function handleDialogOverlayClick(event: MouseEvent) {
-    if (event.target === event.currentTarget) {
-      closeDialog();
-    }
-  }
 </script>
 
 <button class="cleanup-button" onclick={openPreview} disabled={loading}>
@@ -137,15 +124,8 @@
 </button>
 
 {#if showDialog}
-  <div
-    class="dialog-overlay"
-    role="dialog"
-    aria-modal="true"
-    tabindex="0"
-    onclick={handleDialogOverlayClick}
-    onkeydown={handleDialogKeyDown}
-  >
-    <div class="dialog">
+  <div class="dialog-overlay" onclick={closeDialog}>
+    <div class="dialog" onclick={(e) => e.stopPropagation()}>
       <div class="dialog-header">
         <h3>Icon Cleanup Preview</h3>
         <button class="close-btn" onclick={closeDialog}>✕</button>

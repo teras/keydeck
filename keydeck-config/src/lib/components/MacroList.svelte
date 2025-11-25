@@ -3,7 +3,6 @@
 
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
-  import { autoFocus } from '$lib/utils/autoFocus';
 
   interface Props {
     config: any;
@@ -172,7 +171,7 @@
             }}
             onblur={() => renameMacro(macro)}
             onmousedown={(e) => e.stopPropagation()}
-            use:autoFocus
+            autofocus
           />
         {:else}
           <button
@@ -206,6 +205,8 @@
 </div>
 
 <style>
+  .macro-list {
+  }
 
   .header {
     display: flex;

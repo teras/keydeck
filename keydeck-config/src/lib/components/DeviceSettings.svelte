@@ -51,12 +51,6 @@
   function updateBrightness(value: number) {
     config.brightness = value;
   }
-
-  const deviceFieldIds = {
-    mainPage: 'device-main-page',
-    restoreMode: 'device-restore-mode',
-    brightness: 'device-brightness',
-  };
 </script>
 
 <div class="device-settings">
@@ -68,9 +62,8 @@
 
   <div class="settings-content">
     <div class="form-group">
-      <label for={deviceFieldIds.mainPage}>Main Page</label>
+      <label>Main Page</label>
       <select
-        id={deviceFieldIds.mainPage}
         value={pageGroup?.main_page || ""}
         onchange={(e) => updateMainPage(e.currentTarget.value)}
       >
@@ -83,9 +76,8 @@
     </div>
 
     <div class="form-group">
-      <label for={deviceFieldIds.restoreMode}>Restore Mode</label>
+      <label>Restore Mode</label>
       <select
-        id={deviceFieldIds.restoreMode}
         value={pageGroup?.restore_mode || "main"}
         onchange={(e) => updateRestoreMode(e.currentTarget.value)}
       >
@@ -97,9 +89,8 @@
     </div>
 
     <div class="form-group">
-      <label for={deviceFieldIds.brightness}>Brightness ({config.brightness}%)</label>
+      <label>Brightness ({config.brightness}%)</label>
       <input
-        id={deviceFieldIds.brightness}
         type="range"
         min="0"
         max="100"
@@ -113,6 +104,8 @@
 </div>
 
 <style>
+  .device-settings {
+  }
 
   .header {
     display: flex;

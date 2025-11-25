@@ -3,7 +3,6 @@
 
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
-  import { autoFocus } from '$lib/utils/autoFocus';
   import ColorPicker from './ColorPicker.svelte';
   import CleanUpIcons from './CleanUpIcons.svelte';
 
@@ -28,10 +27,6 @@
   let renameColorName = $state("");
   let lastAddedColor = $state<string | null>(null);
   let colorNameInput = $state<HTMLInputElement | undefined>();
-  const globalFieldIds = {
-    tickTime: 'global-tick-time',
-  };
-  let colorEntries = $derived.by(() => Object.entries(config.colors || {}) as Array<[string, string]>);
 
   // Protected icons management
   let showAddProtectedIcon = $state(false);
@@ -214,9 +209,8 @@
 
   <div class="settings-content">
     <div class="form-group">
-      <label for={globalFieldIds.tickTime}>Tick Time (seconds)</label>
+      <label>Tick Time (seconds)</label>
       <input
-        id={globalFieldIds.tickTime}
         type="number"
         min="1"
         max="60"
@@ -247,31 +241,31 @@
       </div>
     {/if}
 
-    {#if colorEntries.length > 0}
+    {#if config.colors && Object.keys(config.colors).length > 0}
       <div class="color-list">
-        {#each colorEntries as [name, color]}
+        {#each Object.entries(config.colors) as [name, color]}
           <div class="color-row">
             <div class="color-item">
               <div class="color-info">
                 {#if renamingColor === name}
-                <input
-                  type="text"
-                  bind:value={renameColorName}
-                  class="rename-color-input"
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') renameColor(name);
-                    if (e.key === 'Escape') { renameColorName = ""; renamingColor = null; }
-                  }}
-                  onblur={() => renameColor(name)}
-                  onmousedown={(e) => e.stopPropagation()}
-                  use:autoFocus
-                />
+                  <input
+                    type="text"
+                    bind:value={renameColorName}
+                    class="rename-color-input"
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') renameColor(name);
+                      if (e.key === 'Escape') { renameColorName = ""; renamingColor = null; }
+                    }}
+                    onblur={() => renameColor(name)}
+                    onmousedown={(e) => e.stopPropagation()}
+                    autofocus
+                  />
                 {:else}
                   <span class="color-name">{name}</span>
                 {/if}
                 <ColorPicker
                   value={color}
-                  onUpdate={(value: string) => updateColorFromText(name, value)}
+                  onUpdate={(value) => updateColorFromText(name, value)}
                   dataColorName={name}
                 />
               </div>
@@ -353,6 +347,8 @@
 </div>
 
 <style>
+  .global-settings {
+  }
 
   .header {
     display: flex;

@@ -28,7 +28,7 @@
     onOpenGlobalSettings?: () => void;
   }
 
-  let { config = $bindable(), currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, isButtonDef = false, onNavigateToTemplate, onNavigateToButtonDef, onOpenGlobalSettings }: Props = $props();
+  let { config, currentPage, currentTemplate, buttonIndex, deviceSerial, isTemplate = false, customTitle, isButtonDef = false, onNavigateToTemplate, onNavigateToButtonDef, onOpenGlobalSettings }: Props = $props();
 
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
@@ -355,10 +355,8 @@
     // Set button to reference
     if (isTemplate && template) {
       template[buttonKey] = buttonDefName;
-      if (currentTemplate && config.templates && config.templates[currentTemplate]) {
-        config.templates[currentTemplate][buttonKey] = buttonDefName;
-        config.templates = { ...config.templates };
-      }
+      config.templates[currentTemplate][buttonKey] = buttonDefName;
+      config.templates = { ...config.templates };
     } else if (page) {
       const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
       page[buttonKey] = buttonDefName;
@@ -433,9 +431,7 @@
   let pageGroup = $derived(config.page_groups?.[deviceSerial] || config.page_groups?.default);
   // Pages are flattened, so currentPage is directly under pageGroup
   let page = $derived(pageGroup?.[currentPage]);
-  let template = $derived(
-    isTemplate && currentTemplate ? config.templates?.[currentTemplate] : null
-  );
+  let template = $derived(isTemplate ? config.templates?.[currentTemplate] : null);
 
   // Get button config including inherited configurations
   let buttonConfig = $derived.by(() => {
@@ -591,11 +587,8 @@
 
   // Check if button has local configuration (State 1 or 2)
   let hasLocalConfig = $derived.by(() => {
-    if (isTemplate) {
-      if (!currentTemplate || !config.templates || !config.templates[currentTemplate]) {
-        return false;
-      }
-      return Object.prototype.hasOwnProperty.call(config.templates[currentTemplate], buttonKey);
+    if (isTemplate && currentTemplate && config.templates?.[currentTemplate]) {
+      return config.templates[currentTemplate].hasOwnProperty(buttonKey);
     } else if (!isTemplate && currentPage) {
       const groupKey = config.page_groups?.[deviceSerial] ? deviceSerial : 'default';
       return config.page_groups?.[groupKey]?.[currentPage]?.hasOwnProperty(buttonKey) || false;
@@ -617,11 +610,9 @@
           text: "",
           actions: []
         };
-        if (currentTemplate && config.templates && config.templates[currentTemplate]) {
-          config.templates[currentTemplate][buttonKey] = template[buttonKey];
-          // Trigger reactivity by reassigning the templates object
-          config.templates = { ...config.templates };
-        }
+        config.templates[currentTemplate][buttonKey] = template[buttonKey];
+        // Trigger reactivity by reassigning the templates object
+        config.templates = { ...config.templates };
       }
     } else if (page) {
       // For pages, ensure button exists on page as an object
@@ -684,9 +675,7 @@
     if (isTemplate && template) {
       // Update template
       template[buttonKey] = newConfig;
-      if (currentTemplate && config.templates && config.templates[currentTemplate]) {
-        config.templates[currentTemplate][buttonKey] = newConfig;
-      }
+      config.templates[currentTemplate][buttonKey] = newConfig;
     } else if (page) {
       // Update page
       const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
@@ -1010,7 +999,7 @@
     );
 
     if (confirmed) {
-      if (isTemplate && currentTemplate && config.templates && config.templates[currentTemplate]) {
+      if (isTemplate && currentTemplate) {
         // Delete from template
         delete config.templates[currentTemplate][buttonKey];
         // Trigger reactivity by creating a new object
@@ -1086,10 +1075,8 @@
       // Set button to reference
       if (isTemplate && template) {
         template[buttonKey] = trimmedName;
-        if (currentTemplate && config.templates && config.templates[currentTemplate]) {
-          config.templates[currentTemplate][buttonKey] = trimmedName;
-          config.templates = { ...config.templates };
-        }
+        config.templates[currentTemplate][buttonKey] = trimmedName;
+        config.templates = { ...config.templates };
       } else if (page) {
         const groupKey = config.page_groups[deviceSerial] ? deviceSerial : 'default';
         page[buttonKey] = trimmedName;
@@ -1199,9 +1186,8 @@
   {/if}
 
   <div class="form-group">
-    <label class="stacked-label">
-      <span>Text</span>
-      <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+    <label>Text</label>
+    <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
       <TextAutocomplete
         value={getTextValue()}
         onUpdate={(newValue) => updateText(newValue)}
@@ -1210,20 +1196,17 @@
         serviceSuggestions={providerSuggestionMap.service?.entries ?? serviceAutocompleteOptions}
         providerSuggestionMap={providerSuggestionMap}
       />
-      </div>
-    </label>
+    </div>
   </div>
 
   <div class="form-group">
-    <div class="field-label">Icon</div>
+    <label>Icon</label>
     <div
       class="icon-selector-row"
       bind:this={iconDropZoneRef}
       ondragenter={handleDragEnter}
       ondragover={handleDragOver}
       ondragleave={handleDragLeave}
-      role="region"
-      aria-label="Icon selection and upload area"
     >
       <button class="icon-search-btn" onclick={openIconSearchDialog} title="Search for application icons" disabled={isReadOnly}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1350,7 +1333,7 @@
 
   <div class="form-group">
     <div class="actions-header">
-      <span class="field-label">Actions</span>
+      <label>Actions</label>
       {#if !isReadOnly}
         <button class="add-btn" onclick={addAction}>+</button>
       {/if}
@@ -1379,102 +1362,94 @@
   </div>
 
   <div class="form-group">
-    <label class="stacked-label">
-      <span>Text Color</span>
-      <ColorField
-        value={getDetailedConfig()?.text_color || ""}
-        placeholder="0xRRGGBB"
-        onUpdate={updateTextColor}
-        readonly={isReadOnly}
-        reference={buttonDefReference !== null}
-        inherited={inheritedSource !== null}
-      />
-    </label>
+    <label>Text Color</label>
+    <ColorField
+      value={getDetailedConfig()?.text_color || ""}
+      placeholder="0xRRGGBB"
+      onUpdate={updateTextColor}
+      readonly={isReadOnly}
+      reference={buttonDefReference !== null}
+      inherited={inheritedSource !== null}
+    />
   </div>
 
   <div class="form-group">
-    <label class="stacked-label">
-      <span>Background</span>
-      <ColorField
-        value={getDetailedConfig()?.background || ""}
-        placeholder="0xRRGGBB"
-        onUpdate={updateBackground}
-        readonly={isReadOnly}
-        reference={buttonDefReference !== null}
-        inherited={inheritedSource !== null}
-      />
-    </label>
+    <label>Background</label>
+    <ColorField
+      value={getDetailedConfig()?.background || ""}
+      placeholder="0xRRGGBB"
+      onUpdate={updateBackground}
+      readonly={isReadOnly}
+      reference={buttonDefReference !== null}
+      inherited={inheritedSource !== null}
+    />
   </div>
 
   <div class="form-group">
-    <label class="stacked-label">
-      <span>Outline</span>
-      <ColorField
-        value={getDetailedConfig()?.outline || ""}
-        placeholder="0xRRGGBB"
-        onUpdate={updateOutline}
-        readonly={isReadOnly}
-        reference={buttonDefReference !== null}
-        inherited={inheritedSource !== null}
-      />
-    </label>
+    <label>Outline</label>
+    <ColorField
+      value={getDetailedConfig()?.outline || ""}
+      placeholder="0xRRGGBB"
+      onUpdate={updateOutline}
+      readonly={isReadOnly}
+      reference={buttonDefReference !== null}
+      inherited={inheritedSource !== null}
+    />
   </div>
 
   <div class="form-group">
-    <label class="stacked-label">
-      <span>Font Size</span>
-      <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
-        <input
-          type="text"
-          inputmode="decimal"
-          value={getFontSize() ?? ""}
-          oninput={(e) => {
-            const input = e.currentTarget;
-            let value = input.value;
+    <label>Font Size</label>
+    <div class="input-container" class:readonly={isReadOnly} class:reference={buttonDefReference !== null} class:inherited={inheritedSource !== null}>
+      <input
+        type="text"
+        inputmode="decimal"
+        value={getFontSize() ?? ""}
+        oninput={(e) => {
+          const input = e.currentTarget;
+          let value = input.value;
 
-            // Remove any non-numeric characters except the first decimal point
-            let cleaned = '';
-            let hasDecimal = false;
-            for (let i = 0; i < value.length; i++) {
-              const char = value[i];
-              if (char >= '0' && char <= '9') {
-                cleaned += char;
-              } else if (char === '.' && !hasDecimal) {
-                cleaned += char;
-                hasDecimal = true;
-              }
-              // Skip any other characters (including extra dots)
+          // Remove any non-numeric characters except the first decimal point
+          let cleaned = '';
+          let hasDecimal = false;
+          for (let i = 0; i < value.length; i++) {
+            const char = value[i];
+            if (char >= '0' && char <= '9') {
+              cleaned += char;
+            } else if (char === '.' && !hasDecimal) {
+              cleaned += char;
+              hasDecimal = true;
             }
+            // Skip any other characters (including extra dots)
+          }
 
-            // Update input if value changed
-            if (cleaned !== value) {
-              const cursorPos = input.selectionStart || 0;
-              input.value = cleaned;
-              // Try to maintain cursor position
-              const newPos = Math.min(cursorPos, cleaned.length);
-              input.setSelectionRange(newPos, newPos);
-            }
+          // Update input if value changed
+          if (cleaned !== value) {
+            const cursorPos = input.selectionStart || 0;
+            input.value = cleaned;
+            // Try to maintain cursor position
+            const newPos = Math.min(cursorPos, cleaned.length);
+            input.setSelectionRange(newPos, newPos);
+          }
 
-            updateFontSize(cleaned);
-          }}
-          onblur={(e) => {
-            // On blur, revalidate and clean up the value
-            const value = e.currentTarget.value;
-            const fontSize = value ? parseFloat(value) : undefined;
-            if (fontSize && fontSize > 0 && isFinite(fontSize)) {
-              // Valid value - ensure it's displayed correctly
-              e.currentTarget.value = fontSize.toString();
-            } else if (value) {
-              // Invalid value - clear it
-              e.currentTarget.value = "";
-              updateFontSize("");
-            }
-          }}
-          placeholder="Auto (leave empty for automatic)"
-          disabled={isReadOnly}
-        />
-      </div>
-    </label>
+          updateFontSize(cleaned);
+        }}
+        onblur={(e) => {
+          // On blur, revalidate and clean up the value
+          const value = e.currentTarget.value;
+          const fontSize = value ? parseFloat(value) : undefined;
+          if (fontSize && fontSize > 0 && isFinite(fontSize)) {
+            // Valid value - ensure it's displayed correctly
+            e.currentTarget.value = fontSize.toString();
+          } else if (value) {
+            // Invalid value - clear it
+            e.currentTarget.value = "";
+            updateFontSize("");
+          }
+        }}
+        placeholder="Auto (leave empty for automatic)"
+        disabled={isReadOnly}
+      />
+    </div>
     <p class="help">
       Font size in points. Leave empty for automatic sizing based on canvas dimensions.
     </p>
@@ -1504,7 +1479,7 @@
   <!-- Graphics Rendering (DrawConfig) -->
   <div class="form-group">
     <div class="actions-header">
-      <span class="field-label">Graphics Rendering</span>
+      <label>Graphics Rendering</label>
       {#if !isReadOnly}
         <button class="add-btn" onclick={addGraphic}>+</button>
       {/if}
@@ -1652,26 +1627,6 @@
   }
 
   label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-  }
-
-  .stacked-label {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .stacked-label > span {
-    font-size: 12px;
-    font-weight: 600;
-    color: #888;
-    text-transform: uppercase;
-  }
-
-  .field-label {
     font-size: 12px;
     font-weight: 600;
     color: #888;
