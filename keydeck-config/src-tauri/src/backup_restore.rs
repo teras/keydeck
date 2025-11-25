@@ -26,12 +26,11 @@ pub fn backup_config_directory(zip_path: &str) -> Result<(), String> {
     }
 
     // Create zip file
-    let file = File::create(zip_path)
-        .map_err(|e| format!("Failed to create zip file: {}", e))?;
+    let file = File::create(zip_path).map_err(|e| format!("Failed to create zip file: {}", e))?;
     let mut zip = ZipWriter::new(file);
 
-    let options: FileOptions<()> = FileOptions::default()
-        .compression_method(CompressionMethod::Deflated);
+    let options: FileOptions<()> =
+        FileOptions::default().compression_method(CompressionMethod::Deflated);
 
     // Walk through the config directory
     for entry in WalkDir::new(&config_dir)
@@ -40,7 +39,8 @@ pub fn backup_config_directory(zip_path: &str) -> Result<(), String> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        let relative_path = path.strip_prefix(&config_dir)
+        let relative_path = path
+            .strip_prefix(&config_dir)
             .map_err(|e| format!("Failed to get relative path: {}", e))?;
 
         // Skip the root directory itself
@@ -55,7 +55,8 @@ pub fn backup_config_directory(zip_path: &str) -> Result<(), String> {
             // Skip timestamped config backup files (config.TIMESTAMP.yaml)
             if filename_str.starts_with("config.")
                 && filename_str.ends_with(".yaml")
-                && filename_str != "config.yaml" {
+                && filename_str != "config.yaml"
+            {
                 continue;
             }
 
@@ -68,16 +69,17 @@ pub fn backup_config_directory(zip_path: &str) -> Result<(), String> {
         let name = relative_path.to_string_lossy().to_string();
 
         // Check if it's a symlink
-        let metadata = fs::symlink_metadata(path)
-            .map_err(|e| format!("Failed to read metadata: {}", e))?;
+        let metadata =
+            fs::symlink_metadata(path).map_err(|e| format!("Failed to read metadata: {}", e))?;
 
         if metadata.is_symlink() {
             // Store symlink as symlink in ZIP
-            let target = fs::read_link(path)
-                .map_err(|e| format!("Failed to read symlink target: {}", e))?;
+            let target =
+                fs::read_link(path).map_err(|e| format!("Failed to read symlink target: {}", e))?;
 
             // Convert target to string to preserve it exactly as-is
-            let target_str = target.to_str()
+            let target_str = target
+                .to_str()
                 .ok_or_else(|| format!("Invalid symlink target path encoding"))?;
 
             // Use add_symlink to manually write the symlink with exact target
@@ -88,8 +90,7 @@ pub fn backup_config_directory(zip_path: &str) -> Result<(), String> {
             zip.start_file(&name, options)
                 .map_err(|e| format!("Failed to start file in zip: {}", e))?;
 
-            let mut f = File::open(path)
-                .map_err(|e| format!("Failed to open file: {}", e))?;
+            let mut f = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
             let mut buffer = Vec::new();
             f.read_to_end(&mut buffer)
                 .map_err(|e| format!("Failed to read file: {}", e))?;
@@ -128,14 +129,14 @@ pub fn restore_config_directory(zip_path: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to create config directory: {}", e))?;
 
     // Open zip file
-    let file = File::open(zip_path)
-        .map_err(|e| format!("Failed to open zip file: {}", e))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("Failed to read zip archive: {}", e))?;
+    let file = File::open(zip_path).map_err(|e| format!("Failed to open zip file: {}", e))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Failed to read zip archive: {}", e))?;
 
     // Extract all files
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
+        let mut file = archive
+            .by_index(i)
             .map_err(|e| format!("Failed to access file in zip: {}", e))?;
 
         let outpath = config_dir.join(file.name());
@@ -206,12 +207,13 @@ pub fn restore_config_directory(zip_path: &str) -> Result<(), String> {
             }
 
             // Extract file
-            let mut outfile = File::create(&outpath)
-                .map_err(|e| format!("Failed to create file: {}", e))?;
+            let mut outfile =
+                File::create(&outpath).map_err(|e| format!("Failed to create file: {}", e))?;
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer)
                 .map_err(|e| format!("Failed to read from zip: {}", e))?;
-            outfile.write_all(&buffer)
+            outfile
+                .write_all(&buffer)
                 .map_err(|e| format!("Failed to write file: {}", e))?;
         }
     }
@@ -222,8 +224,8 @@ pub fn restore_config_directory(zip_path: &str) -> Result<(), String> {
 /// Gets the keydeck config directory path (~/.config/keydeck/)
 /// Returns the path without requiring it to exist (will be created if needed)
 fn get_config_dir_path() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     let config_dir = Path::new(&home).join(".config").join("keydeck");
 
     Ok(config_dir)

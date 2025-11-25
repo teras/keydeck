@@ -120,8 +120,8 @@ fn scan_directory_for_shortcuts(
 /// Parse a .lnk shortcut file and extract application info
 fn parse_shortcut(lnk_path: &Path) -> Result<AppInfo, String> {
     // Parse the .lnk file using the lnk crate
-    let shortcut = lnk::ShellLink::open(lnk_path)
-        .map_err(|e| format!("Failed to parse shortcut: {}", e))?;
+    let shortcut =
+        lnk::ShellLink::open(lnk_path).map_err(|e| format!("Failed to parse shortcut: {}", e))?;
 
     // Get the target path
     let target_path = shortcut
@@ -145,7 +145,11 @@ fn parse_shortcut(lnk_path: &Path) -> Result<AppInfo, String> {
         .unwrap_or_else(|| target_path.to_string());
 
     // Clean up icon path (remove icon index if present, e.g., "app.exe,0")
-    let icon_path = icon_path.split(',').next().unwrap_or(&icon_path).to_string();
+    let icon_path = icon_path
+        .split(',')
+        .next()
+        .unwrap_or(&icon_path)
+        .to_string();
 
     Ok(AppInfo {
         name: app_name,
@@ -163,8 +167,7 @@ pub fn copy_app_icon(
     let sanitized_name = sanitize_filename(&app_name);
 
     // Ensure icon directory exists
-    fs::create_dir_all(&icon_dir)
-        .map_err(|e| format!("Failed to create icon directory: {}", e))?;
+    fs::create_dir_all(&icon_dir).map_err(|e| format!("Failed to create icon directory: {}", e))?;
 
     // Check if source icon file exists
     let source_path = PathBuf::from(&icon_path);
@@ -214,8 +217,8 @@ fn is_pe_file(path: &Path) -> bool {
 /// Extract icon from a PE file (.exe or .dll) and save as PNG
 fn extract_icon_from_pe(source_path: &Path, output_path: &Path) -> Result<(), String> {
     // Read the PE file
-    let exe_data = fs::read(source_path)
-        .map_err(|e| format!("Failed to read executable: {}", e))?;
+    let exe_data =
+        fs::read(source_path).map_err(|e| format!("Failed to read executable: {}", e))?;
 
     // Extract icon using exeico crate
     let icons = exeico::get_icos(&exe_data)
@@ -229,8 +232,7 @@ fn extract_icon_from_pe(source_path: &Path, output_path: &Path) -> Result<(), St
     let icon_data = &icons[0];
 
     // Save as PNG (exeico returns PNG data)
-    fs::write(output_path, icon_data)
-        .map_err(|e| format!("Failed to write icon file: {}", e))?;
+    fs::write(output_path, icon_data).map_err(|e| format!("Failed to write icon file: {}", e))?;
 
     Ok(())
 }

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
+use image::GenericImageView;
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::process::Command;
-use image::GenericImageView;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppInfo {
@@ -75,7 +75,11 @@ fn scan_desktop_files() -> Result<Vec<AppInfo>, String> {
     let apps: Vec<AppInfo> = desktop_files
         .par_iter()
         .filter_map(|path| parse_desktop_file(path))
-        .map(|(name, icon_path)| AppInfo { name, icon_path, icon_data_url: None })
+        .map(|(name, icon_path)| AppInfo {
+            name,
+            icon_path,
+            icon_data_url: None,
+        })
         .collect();
 
     // Sort by name
@@ -143,8 +147,8 @@ fn parse_desktop_file(path: &Path) -> Option<(String, String)> {
 
 /// Get or create cache directory for normalized icons
 fn get_cache_icons_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     let cache_dir = PathBuf::from(home).join(".cache/keydeck/icons");
 
     if !cache_dir.exists() {
@@ -162,15 +166,20 @@ fn cache_and_normalize_icon(source_path: &Path) -> Result<PathBuf, String> {
     let cache_dir = get_cache_icons_dir()?;
 
     // Convert source path to safe filename: /usr/share/icons/audacity.xpm -> _usr_share_icons_audacity.xpm.png
-    let safe_name = source_path.to_string_lossy()
+    let safe_name = source_path
+        .to_string_lossy()
         .replace('/', "_")
         .replace('\\', "_");
     let cache_path = cache_dir.join(format!("{}.png", safe_name));
 
     // Check if cache is valid (exists and is newer than source)
     if cache_path.exists() {
-        if let (Ok(source_meta), Ok(cache_meta)) = (fs::metadata(source_path), fs::metadata(&cache_path)) {
-            if let (Ok(source_mtime), Ok(cache_mtime)) = (source_meta.modified(), cache_meta.modified()) {
+        if let (Ok(source_meta), Ok(cache_meta)) =
+            (fs::metadata(source_path), fs::metadata(&cache_path))
+        {
+            if let (Ok(source_mtime), Ok(cache_mtime)) =
+                (source_meta.modified(), cache_meta.modified())
+            {
                 if cache_mtime >= source_mtime {
                     // Cache is valid, return cached path
                     return Ok(cache_path);
@@ -180,7 +189,8 @@ fn cache_and_normalize_icon(source_path: &Path) -> Result<PathBuf, String> {
     }
 
     // Cache miss or invalid - need to regenerate
-    let ext = source_path.extension()
+    let ext = source_path
+        .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_lowercase());
 
@@ -200,8 +210,7 @@ fn normalize_svg_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathB
     use resvg::usvg;
 
     // Read SVG file
-    let svg_data = fs::read(source_path)
-        .map_err(|e| format!("Failed to read SVG: {}", e))?;
+    let svg_data = fs::read(source_path).map_err(|e| format!("Failed to read SVG: {}", e))?;
 
     // Parse SVG
     let options = usvg::Options::default();
@@ -215,13 +224,18 @@ fn normalize_svg_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathB
     let height = (size.height() * scale) as u32;
 
     // Render to pixmap
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
-        .ok_or("Failed to create pixmap")?;
+    let mut pixmap =
+        resvg::tiny_skia::Pixmap::new(width, height).ok_or("Failed to create pixmap")?;
 
-    resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
 
     // Save as PNG
-    pixmap.save_png(cache_path)
+    pixmap
+        .save_png(cache_path)
         .map_err(|e| format!("Failed to save PNG: {}", e))?;
 
     Ok(cache_path.to_path_buf())
@@ -230,8 +244,7 @@ fn normalize_svg_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathB
 /// Normalize raster images (PNG/JPG/GIF/BMP/WebP) to 256x256 PNG
 fn normalize_raster_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathBuf, String> {
     // Load image with the image crate
-    let img = image::open(source_path)
-        .map_err(|e| format!("Failed to load image: {}", e))?;
+    let img = image::open(source_path).map_err(|e| format!("Failed to load image: {}", e))?;
 
     // Get current dimensions
     let (width, height) = img.dimensions();
@@ -267,7 +280,10 @@ fn is_imagemagick_available() -> bool {
 fn normalize_xpm_to_cache(source_path: &Path, cache_path: &Path) -> Result<PathBuf, String> {
     // Check if convert is available first
     if !is_imagemagick_available() {
-        return Err("ImageMagick 'convert' command not found. Please install ImageMagick to use XPM icons.".to_string());
+        return Err(
+            "ImageMagick 'convert' command not found. Please install ImageMagick to use XPM icons."
+                .to_string(),
+        );
     }
 
     // Use ImageMagick to convert and resize in one step
@@ -318,7 +334,10 @@ fn resolve_icon_path(icon_field: &str) -> Option<String> {
     for theme_dir in icon_theme_dirs {
         for size in &sizes {
             for ext in &extensions {
-                let icon_path = theme_dir.join(size).join("apps").join(format!("{}.{}", icon_name, ext));
+                let icon_path = theme_dir
+                    .join(size)
+                    .join("apps")
+                    .join(format!("{}.{}", icon_name, ext));
                 if icon_path.exists() {
                     return convert_if_needed(&icon_path);
                 }
@@ -343,7 +362,11 @@ fn convert_if_needed(path: &Path) -> Option<String> {
 }
 
 /// Copy app icon to keydeck icons directory
-pub fn copy_app_icon(app_name: String, icon_path: String, icon_dir: String) -> Result<String, String> {
+pub fn copy_app_icon(
+    app_name: String,
+    icon_path: String,
+    icon_dir: String,
+) -> Result<String, String> {
     let source = PathBuf::from(&icon_path);
 
     if !source.exists() {
@@ -351,14 +374,18 @@ pub fn copy_app_icon(app_name: String, icon_path: String, icon_dir: String) -> R
     }
 
     // Get extension
-    let ext = source.extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("png");
+    let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("png");
 
     // Sanitize app name for filename (replace spaces and special chars with underscores)
     let sanitized_name = app_name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .to_lowercase();
 
@@ -375,8 +402,7 @@ pub fn copy_app_icon(app_name: String, icon_path: String, icon_dir: String) -> R
     }
 
     // Copy the file
-    fs::copy(&source, &dest)
-        .map_err(|e| format!("Failed to copy icon: {}", e))?;
+    fs::copy(&source, &dest).map_err(|e| format!("Failed to copy icon: {}", e))?;
 
     Ok(filename)
 }

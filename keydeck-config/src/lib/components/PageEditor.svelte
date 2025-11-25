@@ -2,6 +2,7 @@
 <!-- Copyright (C) 2025 Panayotis Katsaloulis -->
 
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import ActionEditor from './ActionEditor.svelte';
   import TemplateSelector from './TemplateSelector.svelte';
   import TriStateCheckbox from './TriStateCheckbox.svelte';
@@ -83,6 +84,66 @@
   const pageFieldIds = {
     windowName: 'page-window-name',
   };
+
+  let windowClasses = $state<string[]>([]);
+  let windowListLoading = $state(false);
+  let windowListError = $state<string | null>(null);
+  let lastWindowRefresh = $state<Date | null>(null);
+  let windowDropdownOpen = $state(false);
+  let windowNameInput: HTMLInputElement | null = null;
+
+  async function refreshWindowClasses() {
+    windowListLoading = true;
+    windowListError = null;
+    try {
+      const result = await invoke<string[]>("list_window_classes");
+      windowClasses = result || [];
+      lastWindowRefresh = new Date();
+    } catch (err) {
+      if (err instanceof Error) {
+        windowListError = err.message;
+      } else if (typeof err === "string") {
+        windowListError = err;
+      } else {
+        windowListError = "Failed to load window classes";
+      }
+      windowClasses = [];
+    } finally {
+      windowListLoading = false;
+    }
+  }
+
+  async function toggleWindowDropdown() {
+    if (windowDropdownOpen) {
+      windowDropdownOpen = false;
+      return;
+    }
+
+    windowDropdownOpen = true;
+    await refreshWindowClasses();
+  }
+
+  function selectWindowClass(value: string) {
+    if (windowNameInput) {
+      windowNameInput.value = value;
+    }
+    updateWindowName(value);
+    windowDropdownOpen = false;
+  }
+
+  $effect(() => {
+    if (!windowDropdownOpen) return;
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.window-input-container')) {
+        windowDropdownOpen = false;
+      }
+    };
+
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  });
 </script>
 
 <div class="page-editor">
@@ -91,14 +152,55 @@
   <div class="section">
     <div class="form-group">
       <label for={pageFieldIds.windowName}>Window Name</label>
-      <input
-        id={pageFieldIds.windowName}
-        type="text"
-        value={page?.window_name || ""}
-        oninput={(e) => updateWindowName(e.currentTarget.value)}
-        placeholder="window name pattern"
-      />
-      <p class="help">Page will be activated when a window matching this name is focused</p>
+      <div class="window-input-container">
+        <div class="window-input-row">
+          <input
+            id={pageFieldIds.windowName}
+            type="text"
+            bind:this={windowNameInput}
+            value={page?.window_name || ""}
+            oninput={(e) => updateWindowName(e.currentTarget.value)}
+            placeholder="window class (or title substring)"
+          />
+          <button
+            type="button"
+            class="dropdown-window-btn"
+            title={windowDropdownOpen ? "Hide window list" : "Show window list"}
+            onclick={toggleWindowDropdown}
+            aria-expanded={windowDropdownOpen}
+          >
+            ▾
+          </button>
+        </div>
+        {#if windowDropdownOpen}
+          <div class="window-dropdown">
+            {#if windowListLoading}
+              <p class="dropdown-help">Loading windows…</p>
+            {:else if windowListError}
+              <div class="dropdown-error">
+                <p>Window list unavailable: {windowListError}</p>
+                <button type="button" onclick={refreshWindowClasses}>Retry</button>
+              </div>
+            {:else if windowClasses.length === 0}
+              <p class="dropdown-help">No matching windows detected.</p>
+            {:else}
+              <div class="window-options">
+                {#each windowClasses as className}
+                  <button type="button" class="window-option" onclick={() => selectWindowClass(className)}>
+                    {className}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+      <p class="help">
+        Page will be activated when a window matching this name is focused.
+        {#if lastWindowRefresh}
+          Last updated {lastWindowRefresh.toLocaleTimeString()}.
+        {/if}
+      </p>
     </div>
 
     <div class="form-group">
@@ -238,12 +340,13 @@
   }
 
   input {
-    padding: 8px;
+    padding: 6px 8px;
     background-color: #3c3c3c;
     color: #cccccc;
     border: 1px solid #555;
     border-radius: 4px;
     font-size: 13px;
+    min-height: 34px;
   }
 
   input:focus {
@@ -283,5 +386,112 @@
 
   button:hover {
     background-color: #1177bb;
+  }
+
+  .window-input-container {
+    position: relative;
+    width: 100%;
+  }
+
+  .window-input-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 34px;
+    background-color: #3c3c3c;
+    border: 1px solid #555;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .window-input-row:focus-within {
+    border-color: #0e639c;
+  }
+
+  .window-input-row input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 0 10px;
+    height: 100%;
+    color: #cccccc;
+  }
+
+  .window-input-row input:focus {
+    outline: none;
+  }
+
+  .dropdown-window-btn {
+    flex: 0 0 32px;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    border: none;
+    border-left: 1px solid #4a4a4a;
+    background-color: #3c3c3c;
+    color: #bbbbbb;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .dropdown-window-btn:hover {
+    background-color: #4a4a4a;
+  }
+
+  .window-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background-color: #2b2b2b;
+    max-height: 220px;
+    overflow: hidden;
+    z-index: 20;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  }
+
+  .window-options {
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  .window-option {
+    width: 100%;
+    padding: 6px 10px;
+    background: none;
+    color: #ccc;
+    border: none;
+    text-align: left;
+    border-bottom: 1px solid #333;
+    font-size: 12px;
+  }
+
+  .window-option:last-child {
+    border-bottom: none;
+  }
+
+  .window-option:hover {
+    background-color: #2b2b2b;
+  }
+
+  .dropdown-help,
+  .dropdown-error {
+    margin: 0;
+    padding: 10px;
+    font-size: 12px;
+    color: #bbb;
+  }
+
+  .dropdown-error {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #ff9c9c;
   }
 </style>

@@ -19,8 +19,9 @@ struct DaemonStatus {
     timestamp: i64,
 }
 
-mod icon_extractor;
 mod backup_restore;
+mod icon_extractor;
+mod windows;
 
 #[cfg(target_os = "linux")]
 mod linux_icon_finder;
@@ -29,7 +30,7 @@ mod linux_icon_finder;
 mod windows_icon_finder;
 
 // Re-export keydeck types and functions for frontend
-pub use keydeck_types::{DeviceInfo, KeyDeckConf, get_icon_dir, DEFAULT_ICON_DIR_REL};
+pub use keydeck_types::{get_icon_dir, DeviceInfo, KeyDeckConf, DEFAULT_ICON_DIR_REL};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DeviceListItem {
@@ -50,7 +51,10 @@ fn list_devices() -> Result<Vec<DeviceListItem>, String> {
         .map_err(|e| format!("Failed to execute keydeck: {}", e))?;
 
     if !output.status.success() {
-        return Err(format!("keydeck --list failed: {}", String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "keydeck --list failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -88,13 +92,15 @@ fn get_device_info(device_id: String) -> Result<DeviceInfo, String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        return Err(format!("keydeck --info failed.\nStderr: {}\nStdout: {}", stderr, stdout));
+        return Err(format!(
+            "keydeck --info failed.\nStderr: {}\nStdout: {}",
+            stderr, stdout
+        ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    serde_yaml_ng::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse device info: {}", e))
+    serde_yaml_ng::from_str(&stdout).map_err(|e| format!("Failed to parse device info: {}", e))
 }
 
 /// Load keydeck configuration from a file path (or default ~/.config/keydeck.yaml if path is None)
@@ -121,14 +127,18 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
         return Ok(KeyDeckConf::default());
     }
 
-    serde_yaml_ng::from_str(&content)
-        .map_err(|e| format!("Failed to parse config: {}", e))
+    serde_yaml_ng::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
 }
 
 /// List environment variable names available to the frontend for autocomplete
 #[tauri::command]
 fn list_env_vars() -> Vec<String> {
     std::env::vars().map(|(name, _)| name).collect()
+}
+
+#[tauri::command]
+fn list_window_classes() -> Result<Vec<String>, String> {
+    windows::list_window_classes()
 }
 
 /// Save keydeck configuration to ~/.config/keydeck/config.yaml atomically with timestamped backup
@@ -150,8 +160,7 @@ fn save_config(config: KeyDeckConf) -> Result<(), String> {
 
     // Step 1: Write to temporary file
     let temp_path = config_dir.join("config.tmp.yaml");
-    fs::write(&temp_path, &yaml)
-        .map_err(|e| format!("Failed to write temp config file: {}", e))?;
+    fs::write(&temp_path, &yaml).map_err(|e| format!("Failed to write temp config file: {}", e))?;
 
     // Step 2: If current config exists, create timestamped backup
     if config_path.exists() {
@@ -159,10 +168,12 @@ fn save_config(config: KeyDeckConf) -> Result<(), String> {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let backup_name = format!("config.{}.yaml",
+        let backup_name = format!(
+            "config.{}.yaml",
             chrono::DateTime::from_timestamp(timestamp as i64, 0)
                 .unwrap()
-                .format("%Y%m%d_%H%M%S"));
+                .format("%Y%m%d_%H%M%S")
+        );
         let backup_path = config_dir.join(&backup_name);
 
         fs::copy(&config_path, &backup_path)
@@ -184,26 +195,23 @@ fn cleanup_old_backups(config_dir: &PathBuf) -> Result<(), String> {
     use std::fs;
 
     // Read all backup files
-    let entries = fs::read_dir(config_dir)
-        .map_err(|e| format!("Failed to read config directory: {}", e))?;
+    let entries =
+        fs::read_dir(config_dir).map_err(|e| format!("Failed to read config directory: {}", e))?;
 
     let mut backups: Vec<_> = entries
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry.file_name()
-                .to_string_lossy()
-                .starts_with("config.") &&
-            entry.file_name()
-                .to_string_lossy()
-                .ends_with(".yaml") &&
-            entry.file_name() != "config.yaml" &&
-            entry.file_name() != "config.tmp.yaml"
+            entry.file_name().to_string_lossy().starts_with("config.")
+                && entry.file_name().to_string_lossy().ends_with(".yaml")
+                && entry.file_name() != "config.yaml"
+                && entry.file_name() != "config.tmp.yaml"
         })
         .collect();
 
     // Sort by modification time (newest first)
     backups.sort_by_key(|entry| {
-        entry.metadata()
+        entry
+            .metadata()
             .and_then(|m| m.modified())
             .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
     });
@@ -347,7 +355,8 @@ fn should_show_service_prompt() -> bool {
 fn increment_service_prompt_count() -> Result<(), String> {
     use std::fs;
 
-    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     let config_dir = PathBuf::from(&home).join(".config/keydeck");
     let counter_file = config_dir.join(".service_prompt_count");
 
@@ -374,7 +383,8 @@ fn increment_service_prompt_count() -> Result<(), String> {
 fn set_service_prompt_count(count: u32) -> Result<(), String> {
     use std::fs;
 
-    let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
     let config_dir = PathBuf::from(&home).join(".config/keydeck");
     let counter_file = config_dir.join(".service_prompt_count");
 
@@ -401,10 +411,12 @@ fn reload_keydeck() -> Result<(), String> {
         return Err("keydeck server is not running (no lock file found)".to_string());
     }
 
-    let pid_str = fs::read_to_string(&lock_path)
-        .map_err(|e| format!("Failed to read lock file: {}", e))?;
+    let pid_str =
+        fs::read_to_string(&lock_path).map_err(|e| format!("Failed to read lock file: {}", e))?;
 
-    let pid: i32 = pid_str.trim().parse()
+    let pid: i32 = pid_str
+        .trim()
+        .parse()
         .map_err(|e| format!("Invalid PID in lock file: {}", e))?;
 
     // Send SIGHUP signal
@@ -432,7 +444,13 @@ fn get_service_failure_details() -> String {
         if status == "failed" {
             // Get detailed status information
             if let Ok(detail_output) = Command::new("systemctl")
-                .args(&["--user", "status", "keydeck.service", "--lines=10", "--no-pager"])
+                .args(&[
+                    "--user",
+                    "status",
+                    "keydeck.service",
+                    "--lines=10",
+                    "--no-pager",
+                ])
                 .output()
             {
                 let detail = String::from_utf8_lossy(&detail_output.stdout);
@@ -463,14 +481,15 @@ fn get_service_failure_details() -> String {
 /// Start keydeck daemon as systemd service
 #[tauri::command]
 async fn start_daemon_service() -> Result<(), String> {
-    use std::process::Command;
     use std::fs;
     use std::io::Write;
+    use std::process::Command;
 
     // Run blocking operations in a background thread
     tokio::task::spawn_blocking(move || {
         // Check if service file exists, create it if not
-        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let home =
+            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
         let service_dir = PathBuf::from(&home).join(".config/systemd/user");
         let service_file = service_dir.join("keydeck.service");
 
@@ -540,7 +559,9 @@ async fn start_daemon_service() -> Result<(), String> {
             .output()
             .map_err(|e| format!("Failed to check service status: {}", e))?;
 
-        let status = String::from_utf8_lossy(&check_output.stdout).trim().to_string();
+        let status = String::from_utf8_lossy(&check_output.stdout)
+            .trim()
+            .to_string();
 
         if status != "active" {
             // Service didn't start successfully, get detailed error
@@ -576,12 +597,13 @@ fn stop_daemon_service() -> Result<(), String> {
 /// Reinstall keydeck daemon service (stops, removes old service file, creates fresh one)
 #[tauri::command]
 async fn reinstall_daemon_service() -> Result<(), String> {
-    use std::process::Command;
     use std::fs;
+    use std::process::Command;
 
     // Run blocking operations in a background thread
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let home =
+            std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
         let service_file = PathBuf::from(&home).join(".config/systemd/user/keydeck.service");
 
         // Stop and disable the old service (ignore errors if it's not running)
@@ -630,7 +652,8 @@ fn get_image_path(filename: String) -> Result<String, String> {
         return Err(format!("Image not found: {}", image_path.display()));
     }
 
-    image_path.to_str()
+    image_path
+        .to_str()
         .ok_or_else(|| "Invalid path encoding".to_string())
         .map(|s| s.to_string())
 }
@@ -669,7 +692,9 @@ fn list_icons() -> Result<Vec<IconInfo>, String> {
                         if let Some(filename) = path.file_name() {
                             if let Some(filename_str) = filename.to_str() {
                                 // Convert to data URL
-                                if let Ok(data_url) = get_icon_data_url(path.to_string_lossy().to_string()) {
+                                if let Ok(data_url) =
+                                    get_icon_data_url(path.to_string_lossy().to_string())
+                                {
                                     icons.push(IconInfo {
                                         filename: filename_str.to_string(),
                                         data_url,
@@ -760,11 +785,9 @@ fn ensure_default_icon_dir() -> Result<String, String> {
 #[tauri::command]
 async fn list_applications() -> Result<Vec<linux_icon_finder::AppInfo>, String> {
     // Run the blocking operation on a background thread
-    let apps = tokio::task::spawn_blocking(|| {
-        linux_icon_finder::find_applications()
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))??;
+    let apps = tokio::task::spawn_blocking(|| linux_icon_finder::find_applications())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))??;
 
     // Convert icon paths to base64 data URLs
     let apps_with_data_urls: Vec<linux_icon_finder::AppInfo> = apps
@@ -797,11 +820,9 @@ fn select_app_icon(app_name: String, icon_path: String) -> Result<String, String
 #[tauri::command]
 async fn list_applications() -> Result<Vec<windows_icon_finder::AppInfo>, String> {
     // Run the blocking operation on a background thread
-    tokio::task::spawn_blocking(|| {
-        windows_icon_finder::find_applications()
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    tokio::task::spawn_blocking(|| windows_icon_finder::find_applications())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
 }
 
 /// Select and copy an application icon to the keydeck icons directory (Windows only)
@@ -956,13 +977,19 @@ fn collect_used_icons(config: &KeyDeckConf, used_icons: &mut std::collections::H
     }
 }
 
-fn collect_icons_from_page(page: &keydeck_types::Page, used_icons: &mut std::collections::HashSet<String>) {
+fn collect_icons_from_page(
+    page: &keydeck_types::Page,
+    used_icons: &mut std::collections::HashSet<String>,
+) {
     for button_config in page.buttons.values() {
         collect_icons_from_button_config(button_config, used_icons);
     }
 }
 
-fn collect_icons_from_button_config(button_config: &keydeck_types::ButtonConfig, used_icons: &mut std::collections::HashSet<String>) {
+fn collect_icons_from_button_config(
+    button_config: &keydeck_types::ButtonConfig,
+    used_icons: &mut std::collections::HashSet<String>,
+) {
     match button_config {
         keydeck_types::ButtonConfig::Template(_) => {
             // Template references are resolved at runtime, can't determine icons here
@@ -996,8 +1023,8 @@ fn extract_icon_from_exe(file_path: String) -> Result<String, String> {
 /// This bypasses Tauri's asset protocol restrictions for system icons
 #[tauri::command]
 fn get_icon_data_url(file_path: String) -> Result<String, String> {
+    use base64::{engine::general_purpose, Engine as _};
     use std::fs;
-    use base64::{Engine as _, engine::general_purpose};
 
     let path = PathBuf::from(&file_path);
 
@@ -1006,11 +1033,15 @@ fn get_icon_data_url(file_path: String) -> Result<String, String> {
     }
 
     // Read the file
-    let data = fs::read(&path)
-        .map_err(|e| format!("Failed to read icon file: {}", e))?;
+    let data = fs::read(&path).map_err(|e| format!("Failed to read icon file: {}", e))?;
 
     // Determine MIME type from extension
-    let mime_type = match path.extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()).as_deref() {
+    let mime_type = match path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_lowercase())
+        .as_deref()
+    {
         Some("png") => "image/png",
         Some("jpg") | Some("jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
@@ -1031,8 +1062,8 @@ fn get_icon_data_url(file_path: String) -> Result<String, String> {
 /// Fetches last 500 lines of history, then streams new entries
 #[tauri::command]
 async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
-    use std::process::{Command, Stdio};
     use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
 
     // Spawn thread to handle log streaming after a small delay
     // This ensures the frontend listener is ready
@@ -1042,7 +1073,14 @@ async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
 
         // First, get historical logs (last 200 lines)
         let history_output = Command::new("journalctl")
-            .args(["--user", "-u", "keydeck.service", "-n", "200", "--output=json"])
+            .args([
+                "--user",
+                "-u",
+                "keydeck.service",
+                "-n",
+                "200",
+                "--output=json",
+            ])
             .output();
 
         match history_output {
@@ -1057,7 +1095,10 @@ async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
                 }
             }
             Ok(output) => {
-                eprintln!("Failed to fetch history: {}", String::from_utf8_lossy(&output.stderr));
+                eprintln!(
+                    "Failed to fetch history: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
             Err(e) => {
                 eprintln!("Failed to execute journalctl: {}", e);
@@ -1107,27 +1148,37 @@ fn upload_custom_icon(file_path: String, suggested_name: Option<String>) -> Resu
     let icon_dir = PathBuf::from(get_icon_dir());
 
     // Ensure icon directory exists
-    fs::create_dir_all(&icon_dir)
-        .map_err(|e| format!("Failed to create icon directory: {}", e))?;
+    fs::create_dir_all(&icon_dir).map_err(|e| format!("Failed to create icon directory: {}", e))?;
 
     // Get extension from source file
-    let ext = source.extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("png");
+    let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("png");
 
     // Determine base filename
     let base_name = if let Some(name) = suggested_name {
         // Use suggested name, sanitized
         name.chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>()
     } else {
         // Use original filename without extension
-        source.file_stem()
+        source
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("custom_icon")
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect::<String>()
     };
 
@@ -1144,8 +1195,7 @@ fn upload_custom_icon(file_path: String, suggested_name: Option<String>) -> Resu
     }
 
     // Copy the file
-    fs::copy(&source, &dest)
-        .map_err(|e| format!("Failed to copy icon: {}", e))?;
+    fs::copy(&source, &dest).map_err(|e| format!("Failed to copy icon: {}", e))?;
 
     Ok(filename)
 }
@@ -1204,6 +1254,7 @@ pub fn run() {
             stop_daemon_service,
             reinstall_daemon_service,
             list_env_vars,
+            list_window_classes,
             reload_keydeck,
             backup_config_directory,
             restore_config_directory,
