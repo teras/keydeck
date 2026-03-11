@@ -10,8 +10,8 @@ include!(concat!(env!("OUT_DIR"), "/embedded_devices.rs"));
 
 /// Get the user's device directory path
 fn get_user_devices_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME environment variable not set".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
 
     Ok(PathBuf::from(home).join(".config/keydeck/devices"))
 }
@@ -89,10 +89,7 @@ fn extract_embedded_devices() -> Result<(), String> {
 pub fn initialize_device_registry() -> Result<Vec<String>, String> {
     // Extract embedded device files to user directory
     if let Err(e) = extract_embedded_devices() {
-        error_log!(
-            "Warning: Failed to extract embedded device files: {}",
-            e
-        );
+        error_log!("Warning: Failed to extract embedded device files: {}", e);
         error_log!("Device registry will only search system paths");
     }
 

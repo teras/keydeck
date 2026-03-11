@@ -28,7 +28,12 @@ pub fn new_services_state() -> ServicesState {
 /// * `config` - Service configuration (command, interval, timeout)
 /// * `state` - Shared state HashMap for storing results
 /// * `still_active` - Flag to stop the service thread gracefully
-pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState, still_active: Arc<AtomicBool>) {
+pub fn spawn_service(
+    name: String,
+    config: ServiceConfig,
+    state: ServicesState,
+    still_active: Arc<AtomicBool>,
+) {
     verbose_log!("Spawning service thread for '{}'", name);
 
     thread::spawn(move || {
@@ -67,7 +72,7 @@ pub fn spawn_service(name: String, config: ServiceConfig, state: ServicesState, 
 /// Executes a bash command with an optional timeout.
 /// Returns stdout on success, or error message on failure/timeout.
 fn execute_with_timeout(command: &str, timeout_secs: Option<f64>) -> Result<String, String> {
-    let mut child = Command::new("bash")
+    let child = Command::new("bash")
         .arg("-c")
         .arg(command)
         .stdout(Stdio::piped())
@@ -78,14 +83,18 @@ fn execute_with_timeout(command: &str, timeout_secs: Option<f64>) -> Result<Stri
     match timeout_secs {
         None => {
             // No timeout - just wait directly (no helper thread!)
-            let output = child.wait_with_output()
+            let output = child
+                .wait_with_output()
                 .map_err(|e| format!("Failed to wait for command: {}", e))?;
 
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 Ok(stdout)
             } else {
-                Err(format!("Command failed with exit code: {}", output.status.code().unwrap_or(-1)))
+                Err(format!(
+                    "Command failed with exit code: {}",
+                    output.status.code().unwrap_or(-1)
+                ))
             }
         }
         Some(timeout) => {
@@ -109,12 +118,13 @@ fn execute_with_timeout(command: &str, timeout_secs: Option<f64>) -> Result<Stri
                         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                         Ok(stdout)
                     } else {
-                        Err(format!("Command failed with exit code: {}", output.status.code().unwrap_or(-1)))
+                        Err(format!(
+                            "Command failed with exit code: {}",
+                            output.status.code().unwrap_or(-1)
+                        ))
                     }
                 }
-                Ok(Err(e)) => {
-                    Err(format!("Failed to wait for command: {}", e))
-                }
+                Ok(Err(e)) => Err(format!("Failed to wait for command: {}", e)),
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     // Timeout exceeded, kill process using kill command
                     // This is simpler than using libc and works cross-platform
@@ -167,7 +177,12 @@ pub fn ensure_service_started(
         }
 
         // Spawn service thread
-        spawn_service(name.to_string(), config.clone(), state.clone(), still_active.clone());
+        spawn_service(
+            name.to_string(),
+            config.clone(),
+            state.clone(),
+            still_active.clone(),
+        );
         true
     } else {
         // Service not defined in config
@@ -179,5 +194,8 @@ pub fn ensure_service_started(
 /// Returns ERROR_INDICATOR if service not found or not started.
 pub fn get_service_value(name: &str, state: &ServicesState) -> String {
     let state_lock = state.read().unwrap();
-    state_lock.get(name).cloned().unwrap_or_else(|| ERROR_INDICATOR.to_string())
+    state_lock
+        .get(name)
+        .cloned()
+        .unwrap_or_else(|| ERROR_INDICATOR.to_string())
 }

@@ -25,9 +25,7 @@ impl arg::AppendAll for PrepareForSleep {
 
 impl arg::ReadAll for PrepareForSleep {
     fn read(i: &mut arg::Iter) -> Result<Self, arg::TypeMismatchError> {
-        Ok(PrepareForSleep {
-            start: i.read()?,
-        })
+        Ok(PrepareForSleep { start: i.read()? })
     }
 }
 
@@ -35,7 +33,11 @@ impl SignalArgs for PrepareForSleep {
     const NAME: &'static str = "PrepareForSleep";
     const INTERFACE: &'static str = "org.freedesktop.login1.Manager";
 }
-pub fn listener_sleep(tx: &Sender<DeviceEvent>, still_active: &Arc<AtomicBool>, should_reset: &Arc<AtomicBool>) {
+pub fn listener_sleep(
+    tx: &Sender<DeviceEvent>,
+    still_active: &Arc<AtomicBool>,
+    should_reset: &Arc<AtomicBool>,
+) {
     let tx = tx.clone();
     let still_active = still_active.clone();
     let should_reset = should_reset.clone();
@@ -48,19 +50,22 @@ pub fn listener_sleep(tx: &Sender<DeviceEvent>, still_active: &Arc<AtomicBool>, 
             }
         };
         let proxy = conn.with_proxy(
-            "org.freedesktop.login1", // Destination
+            "org.freedesktop.login1",  // Destination
             "/org/freedesktop/login1", // Object path
             Duration::from_millis(5000),
         );
 
         // Register signal handler and store token for cleanup
-        let signal_token = match proxy.match_signal(move |p: PrepareForSleep, _: &Connection, _: &dbus::Message| {
-            tx.send(DeviceEvent::Sleep { sleep: p.start }).expect("Error sending sleep event");
-            if p.start {
-                should_reset.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-            true
-        }) {
+        let signal_token = match proxy.match_signal(
+            move |p: PrepareForSleep, _: &Connection, _: &dbus::Message| {
+                tx.send(DeviceEvent::Sleep { sleep: p.start })
+                    .expect("Error sending sleep event");
+                if p.start {
+                    should_reset.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+                true
+            },
+        ) {
             Ok(token) => token,
             Err(e) => {
                 error_log!("Failed to register sleep signal handler: {}", e);
@@ -70,10 +75,11 @@ pub fn listener_sleep(tx: &Sender<DeviceEvent>, still_active: &Arc<AtomicBool>, 
 
         // Main event loop
         while still_active.load(std::sync::atomic::Ordering::Relaxed) {
-            conn.process(Duration::from_millis(1000)).unwrap_or_else(|e| {
-                error_log!("Failed to process D-Bus messages: {}", e);
-                false
-            });
+            conn.process(Duration::from_millis(1000))
+                .unwrap_or_else(|e| {
+                    error_log!("Failed to process D-Bus messages: {}", e);
+                    false
+                });
         }
 
         // Clean up signal handler before exiting

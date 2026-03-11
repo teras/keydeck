@@ -12,20 +12,21 @@ pub static DEBUG: AtomicBool = AtomicBool::new(false);
 #[macro_use]
 pub mod utils;
 
-pub mod pages;
 pub mod device_info;
-pub mod dynamic_detection;
-pub mod text_renderer;
 pub mod device_trait;
+pub mod dynamic_detection;
 pub mod elgato_device;
 pub mod mirajazz_device;
+pub mod pages;
+pub mod system_info;
+pub mod text_renderer;
 
 // Re-export types from keydeck-types
 pub use keydeck_types::{
-    KeyDeckConf, Pages, Page, Button, ButtonConfig, Action, TextConfig, DrawConfig,
-    ServiceConfig, Macro, MacroCall, FocusChangeRestorePolicy, GraphicType, Direction,
-    ColorMapEntry, RefreshTarget, DeviceInfo, ButtonLayout, ButtonImage, LcdStrip,
-    DEFAULT_ICON_DIR_REL, get_icon_dir, get_icon_dir_path,
+    get_icon_dir, get_icon_dir_path, Action, Button, ButtonConfig, ButtonImage, ButtonLayout,
+    ColorMapEntry, DeviceInfo, Direction, DrawConfig, FocusChangeRestorePolicy, GraphicType,
+    KeyDeckConf, LcdStrip, Macro, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig,
+    DEFAULT_ICON_DIR_REL,
 };
 
 // Re-export backend-specific loader

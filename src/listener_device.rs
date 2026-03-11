@@ -10,7 +10,11 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 
-pub fn listener_device(tx: &Sender<DeviceEvent>, active: &Arc<AtomicBool>, should_reset: &Arc<AtomicBool>) {
+pub fn listener_device(
+    tx: &Sender<DeviceEvent>,
+    active: &Arc<AtomicBool>,
+    should_reset: &Arc<AtomicBool>,
+) {
     let active = active.clone();
     let should_reset = should_reset.clone();
     let tx = tx.clone();

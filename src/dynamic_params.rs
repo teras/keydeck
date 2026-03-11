@@ -3,6 +3,7 @@
 
 use crate::pages::ServiceConfig;
 use crate::services::{ensure_service_started, get_service_value, ServicesState};
+use crate::system_info::get_system_value;
 use chrono::Local;
 use indexmap::IndexMap;
 use regex::Regex;
@@ -15,10 +16,11 @@ use std::sync::Arc;
 pub const ERROR_INDICATOR: &str = "⚠";
 
 /// Evaluates all dynamic parameters in a string and returns a map of parameter -> value.
-/// Supports three provider types:
+/// Supports four provider types:
 /// - ${time:FORMAT} - Current time using strftime format
 /// - ${env:VAR} - Environment variable
 /// - ${service:NAME} - Cached service value
+/// - ${system:METRIC} - Built-in system metrics (CPU, RAM, temperatures)
 ///
 /// On error, returns ERROR_INDICATOR for that parameter.
 pub fn evaluate_dynamic_params(
@@ -33,14 +35,17 @@ pub fn evaluate_dynamic_params(
     let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
 
     for cap in re.captures_iter(text) {
-        let content = &cap[1];     // e.g., "time:%H:%M"
+        let content = &cap[1]; // e.g., "time:%H:%M"
 
         // Parse provider type and argument
         let value = if let Some((provider, arg)) = content.split_once(':') {
             match provider {
                 "time" => evaluate_time_provider(arg),
                 "env" => evaluate_env_provider(arg),
-                "service" => evaluate_service_provider(arg, services_config, services_state, services_active),
+                "service" => {
+                    evaluate_service_provider(arg, services_config, services_state, services_active)
+                }
+                "system" => evaluate_system_provider(arg),
                 _ => {
                     // Unknown provider
                     ERROR_INDICATOR.to_string()
@@ -97,6 +102,14 @@ fn evaluate_service_provider(
     get_service_value(service_name, services_state)
 }
 
+/// Evaluates ${system:METRIC} provider
+fn evaluate_system_provider(metric: &str) -> String {
+    match get_system_value(metric) {
+        Ok(value) => value,
+        Err(_) => ERROR_INDICATOR.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,5 +144,11 @@ mod tests {
         assert!(params.contains_key("time:%H:%M"));
         assert!(params.contains_key("env:USER_TEST"));
         assert_eq!(params.get("env:USER_TEST").unwrap(), "testuser");
+    }
+
+    #[test]
+    fn test_system_provider_invalid_metric() {
+        let result = evaluate_system_provider("doesnotexist");
+        assert_eq!(result, "⚠");
     }
 }

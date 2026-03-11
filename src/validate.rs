@@ -112,10 +112,18 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
     if let Some(templates) = &conf.templates {
         for (template_name, template) in templates {
             if template.window_name.is_some() {
-                eprintln!("Error: Template '{}' has 'window_name' field", template_name);
+                eprintln!(
+                    "Error: Template '{}' has 'window_name' field",
+                    template_name
+                );
                 eprintln!("The 'window_name' field is only valid in pages, not templates.");
-                eprintln!("Templates are never directly displayed, so window matching doesn't apply.");
-                eprintln!("\nPlease remove the 'window_name' field from template '{}'", template_name);
+                eprintln!(
+                    "Templates are never directly displayed, so window matching doesn't apply."
+                );
+                eprintln!(
+                    "\nPlease remove the 'window_name' field from template '{}'",
+                    template_name
+                );
                 return false;
             }
         }
@@ -130,12 +138,14 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
 
                 for template_name in template_names {
                     let mut visited = Vec::new();
-                    match KeyDeckConfLoader::resolve_template_recursive(template_name, templates_map, &mut visited) {
+                    match KeyDeckConfLoader::resolve_template_recursive(
+                        template_name,
+                        templates_map,
+                        &mut visited,
+                    ) {
                         Ok((resolved_buttons, resolved_on_tick, resolved_lock)) => {
                             for (button_name, button_config) in resolved_buttons {
-                                page.buttons
-                                    .entry(button_name)
-                                    .or_insert(button_config);
+                                page.buttons.entry(button_name).or_insert(button_config);
                             }
                             if page.on_tick.is_none() && resolved_on_tick.is_some() {
                                 page.on_tick = resolved_on_tick;
@@ -213,7 +223,9 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
     if json_output {
         // Output as JSON
         match serde_json::to_string_pretty(&result) {
-            Ok(json) => { println!("{}", json); },  // JSON output - no prefix
+            Ok(json) => {
+                println!("{}", json);
+            } // JSON output - no prefix
             Err(e) => {
                 eprintln!("Error serializing validation results to JSON: {}", e);
                 return false;
@@ -246,7 +258,8 @@ fn validate_macro_syntax(conf: &KeyDeckConf, result: &mut ValidationResult) {
         verbose_log!("  Checking macro '{}'", macro_name);
 
         // Check if macro has default parameters defined
-        let default_params: HashSet<String> = macro_def.params
+        let default_params: HashSet<String> = macro_def
+            .params
             .as_ref()
             .map(|p| p.keys().cloned().collect())
             .unwrap_or_default();
@@ -258,8 +271,10 @@ fn validate_macro_syntax(conf: &KeyDeckConf, result: &mut ValidationResult) {
         // Check for undefined parameters (used but not in defaults)
         for param in &used_params {
             if !default_params.contains(param) {
-                let msg = format!("Macro '{}' uses parameter '{}' but doesn't define a default value",
-                         macro_name, param);
+                let msg = format!(
+                    "Macro '{}' uses parameter '{}' but doesn't define a default value",
+                    macro_name, param
+                );
                 warn_log!("{}", msg);
                 result.warnings.push(ValidationWarning {
                     category: "macro".to_string(),
@@ -271,7 +286,11 @@ fn validate_macro_syntax(conf: &KeyDeckConf, result: &mut ValidationResult) {
 }
 
 /// Helper to scan YAML value recursively for parameter references like ${param}
-fn scan_yaml_for_params(value: &serde_yaml_ng::Value, pattern: &regex::Regex, params: &mut HashSet<String>) {
+fn scan_yaml_for_params(
+    value: &serde_yaml_ng::Value,
+    pattern: &regex::Regex,
+    params: &mut HashSet<String>,
+) {
     match value {
         serde_yaml_ng::Value::String(s) => {
             for cap in pattern.captures_iter(s) {
@@ -325,7 +344,8 @@ fn validate_services(conf: &KeyDeckConf, result: &mut ValidationResult) {
                         Ok(Some(status)) => {
                             if status.success() {
                                 let output = child.wait_with_output().unwrap();
-                                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                let stdout =
+                                    String::from_utf8_lossy(&output.stdout).trim().to_string();
                                 verbose_log!("    ✓ Success: {}", stdout);
                                 result.services_tested.push(ServiceTestResult {
                                     name: service_name.clone(),
@@ -334,7 +354,10 @@ fn validate_services(conf: &KeyDeckConf, result: &mut ValidationResult) {
                                     error: None,
                                 });
                             } else {
-                                let msg = format!("Service '{}' exited with status: {}", service_name, status);
+                                let msg = format!(
+                                    "Service '{}' exited with status: {}",
+                                    service_name, status
+                                );
                                 eprintln!("Error: {}", msg);
                                 result.errors.push(ValidationError {
                                     category: "service".to_string(),
@@ -354,25 +377,29 @@ fn validate_services(conf: &KeyDeckConf, result: &mut ValidationResult) {
                             if let Some(timeout_val) = timeout {
                                 if start.elapsed().as_secs_f64() > timeout_val {
                                     let _ = child.kill();
-                                    let msg = format!("Service '{}' timed out after {}s", service_name, timeout_val);
+                                    let msg = format!(
+                                        "Service '{}' timed out after {}s",
+                                        service_name, timeout_val
+                                    );
                                     eprintln!("Error: {}", msg);
-                                result.errors.push(ValidationError {
-                                    category: "service".to_string(),
-                                    message: msg.clone(),
-                                });
-                                result.services_tested.push(ServiceTestResult {
-                                    name: service_name.clone(),
-                                    success: false,
-                                    output: None,
-                                    error: Some(msg),
-                                });
+                                    result.errors.push(ValidationError {
+                                        category: "service".to_string(),
+                                        message: msg.clone(),
+                                    });
+                                    result.services_tested.push(ServiceTestResult {
+                                        name: service_name.clone(),
+                                        success: false,
+                                        output: None,
+                                        error: Some(msg),
+                                    });
                                     break;
                                 }
                             }
                             std::thread::sleep(std::time::Duration::from_millis(100));
                         }
                         Err(e) => {
-                            let msg = format!("Failed to wait for service '{}': {}", service_name, e);
+                            let msg =
+                                format!("Failed to wait for service '{}': {}", service_name, e);
                             eprintln!("Error: {}", msg);
                             result.errors.push(ValidationError {
                                 category: "service".to_string(),
@@ -430,7 +457,10 @@ fn validate_button_def_references(conf: &KeyDeckConf, result: &mut ValidationRes
     for button_def_name in referenced_button_defs {
         if let Some(button_defs_map) = button_defs {
             if !button_defs_map.contains_key(&button_def_name) {
-                let msg = format!("Button definition '{}' is referenced but not defined", button_def_name);
+                let msg = format!(
+                    "Button definition '{}' is referenced but not defined",
+                    button_def_name
+                );
                 eprintln!("Error: {}", msg);
                 result.errors.push(ValidationError {
                     category: "button_definition".to_string(),
@@ -438,7 +468,10 @@ fn validate_button_def_references(conf: &KeyDeckConf, result: &mut ValidationRes
                 });
             }
         } else {
-            let msg = format!("Button definition '{}' is referenced but no button definitions exist", button_def_name);
+            let msg = format!(
+                "Button definition '{}' is referenced but no button definitions exist",
+                button_def_name
+            );
             eprintln!("Error: {}", msg);
             result.errors.push(ValidationError {
                 category: "button_definition".to_string(),
@@ -482,7 +515,11 @@ fn validate_icon_files(conf: &KeyDeckConf, result: &mut ValidationResult, json_o
     for icon_file in &referenced_icons {
         let icon_path = PathBuf::from(&image_dir).join(icon_file);
         if !icon_path.exists() {
-            let msg = format!("Icon file '{}' not found at path: {}", icon_file, icon_path.display());
+            let msg = format!(
+                "Icon file '{}' not found at path: {}",
+                icon_file,
+                icon_path.display()
+            );
             eprintln!("Error: {}", msg);
             result.errors.push(ValidationError {
                 category: "icon".to_string(),
@@ -566,7 +603,7 @@ fn validate_page_references(conf: &KeyDeckConf, result: &mut ValidationResult, j
                             button_key,
                             &page_group.pages,
                             result,
-                            json_output
+                            json_output,
                         );
                     }
                 }
@@ -581,7 +618,7 @@ fn validate_page_references(conf: &KeyDeckConf, result: &mut ValidationResult, j
                     "on_tick",
                     &page_group.pages,
                     result,
-                    json_output
+                    json_output,
                 );
             }
         }
@@ -602,7 +639,7 @@ fn validate_actions_page_refs(
     location: &str,
     available_pages: &indexmap::IndexMap<String, crate::pages::Page>,
     result: &mut ValidationResult,
-    json_output: bool
+    json_output: bool,
 ) {
     for action in actions {
         match action {
@@ -625,11 +662,30 @@ fn validate_actions_page_refs(
                     });
                 }
             }
-            crate::pages::Action::Try { try_actions, else_actions } => {
+            crate::pages::Action::Try {
+                try_actions,
+                else_actions,
+            } => {
                 // Recursively validate try and else blocks
-                validate_actions_page_refs(try_actions, group_name, page_name, location, available_pages, result, json_output);
+                validate_actions_page_refs(
+                    try_actions,
+                    group_name,
+                    page_name,
+                    location,
+                    available_pages,
+                    result,
+                    json_output,
+                );
                 if let Some(else_acts) = else_actions {
-                    validate_actions_page_refs(else_acts, group_name, page_name, location, available_pages, result, json_output);
+                    validate_actions_page_refs(
+                        else_acts,
+                        group_name,
+                        page_name,
+                        location,
+                        available_pages,
+                        result,
+                        json_output,
+                    );
                 }
             }
             _ => {} // Other actions don't reference pages

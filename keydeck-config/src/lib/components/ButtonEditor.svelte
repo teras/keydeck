@@ -223,6 +223,20 @@
       };
     }
 
+    map.system = {
+      provider: 'system',
+      displayName: 'System Metric',
+      entries: [
+        { name: 'cpumax', description: 'Highest CPU core usage (%)' },
+        { name: 'cpuavg', description: 'Average CPU usage (%)' },
+        { name: 'ram', description: 'Used RAM (%)' },
+        { name: 'tempcpu', description: 'CPU temperature (°C)' },
+        { name: 'tempgpu', description: 'GPU temperature (°C, when available)' },
+        { name: 'tempnvme', description: 'NVMe temperature (°C, when available)' },
+      ],
+      insertTemplate: (name) => `\${system:${name}}`,
+    };
+
     return map;
   });
 

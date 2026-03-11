@@ -7,7 +7,7 @@ use hidapi::HidApi;
 use image::DynamicImage;
 use mirajazz_json::{
     device::Device,
-    registry::{DeviceDefinition, DeviceRegistry, ImageMode, Rotation, Mirror},
+    registry::{DeviceDefinition, DeviceRegistry, ImageMode, Mirror, Rotation},
     state::DeviceStateReader,
 };
 use std::cell::RefCell;
@@ -21,14 +21,15 @@ static REGISTRY: OnceLock<Option<DeviceRegistry>> = OnceLock::new();
 /// Paths are searched in order, with later paths overriding earlier ones.
 /// Should be called once at startup before creating any devices.
 pub fn init_registry(paths: &[String]) -> Result<(), String> {
-    verbose_log!("Initializing Mirajazz device registry with {} search paths:", paths.len());
+    verbose_log!(
+        "Initializing Mirajazz device registry with {} search paths:",
+        paths.len()
+    );
     for (i, path) in paths.iter().enumerate() {
         verbose_log!("  [{}] {}", i, path);
     }
 
-    REGISTRY.get_or_init(|| {
-        DeviceRegistry::load_from_paths(paths).ok()
-    });
+    REGISTRY.get_or_init(|| DeviceRegistry::load_from_paths(paths).ok());
 
     if REGISTRY.get().and_then(|r| r.as_ref()).is_none() {
         return Err("Failed to load device registry from any provided path".to_string());
@@ -73,21 +74,25 @@ impl MirajazzDevice {
         usb_serial: String,
         device_id: String,
     ) -> Result<Self, DeviceError> {
-        let registry = get_registry()
-            .ok_or_else(|| DeviceError::LibraryError(
-                "Mirajazz device registry not loaded".to_string()
-            ))?;
+        let registry = get_registry().ok_or_else(|| {
+            DeviceError::LibraryError("Mirajazz device registry not loaded".to_string())
+        })?;
 
-        let device_def = registry
-            .find_by_vid_pid(vid, pid)
-            .ok_or_else(|| DeviceError::UnsupportedOperation(
-                format!("Device {:04X}:{:04X} not found in registry", vid, pid)
-            ))?;
+        let device_def = registry.find_by_vid_pid(vid, pid).ok_or_else(|| {
+            DeviceError::UnsupportedOperation(format!(
+                "Device {:04X}:{:04X} not found in registry",
+                vid, pid
+            ))
+        })?;
 
         // Generate unique serial if force_serial is enabled
         let serial = if device_def.quirks.force_serial {
             let generated = format!("{}-{:04X}{:04X}", usb_serial, vid, pid);
-            verbose_log!("Generated serial for device (USB serial was '{}'): {}", usb_serial, generated);
+            verbose_log!(
+                "Generated serial for device (USB serial was '{}'): {}",
+                usb_serial,
+                generated
+            );
             generated
         } else {
             usb_serial
@@ -126,28 +131,35 @@ impl MirajazzDevice {
     }
 
     fn get_device(&self) -> Arc<Device> {
-        self.device.borrow_mut().get_or_insert_with(|| {
-            Arc::new(
-                Device::connect(
-                    &self.hid_api,
-                    self.vid,
-                    self.pid,
-                    &self.serial,
-                    self.device_def.protocol.protocol_version >= 2, // is_v2
-                    self.device_def.protocol.protocol_version >= 3, // supports_both_states
-                    self.device_def.layout.key_count(),
-                    self.device_def.layout.encoder_count,
+        self.device
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                Arc::new(
+                    Device::connect(
+                        &self.hid_api,
+                        self.vid,
+                        self.pid,
+                        &self.serial,
+                        self.device_def.protocol.protocol_version >= 2, // is_v2
+                        self.device_def.protocol.protocol_version >= 3, // supports_both_states
+                        self.device_def.layout.key_count(),
+                        self.device_def.layout.encoder_count,
+                    )
+                    .unwrap_or_else(|e| {
+                        error_log!(
+                            "Failed to connect to Mirajazz device '{}': {}",
+                            self.serial,
+                            e
+                        );
+                        error_log!("This may be due to:");
+                        error_log!("  - Device was unplugged");
+                        error_log!("  - Insufficient USB permissions");
+                        error_log!("  - Device busy/in use by another process");
+                        panic!("Cannot continue without device connection");
+                    }),
                 )
-                .unwrap_or_else(|e| {
-                    error_log!("Failed to connect to Mirajazz device '{}': {}", self.serial, e);
-                    error_log!("This may be due to:");
-                    error_log!("  - Device was unplugged");
-                    error_log!("  - Insufficient USB permissions");
-                    error_log!("  - Device busy/in use by another process");
-                    panic!("Cannot continue without device connection");
-                }),
-            )
-        }).clone()
+            })
+            .clone()
     }
 
     fn get_reader_arc(&self) -> Arc<DeviceStateReader> {
@@ -156,7 +168,11 @@ impl MirajazzDevice {
             *self.reader.borrow_mut() = Some(device.get_reader());
         }
 
-        self.reader.borrow().as_ref().expect("Reader should be initialized").clone()
+        self.reader
+            .borrow()
+            .as_ref()
+            .expect("Reader should be initialized")
+            .clone()
     }
 
     /// Convert mirajazz ImageFormat from registry definition
@@ -168,7 +184,10 @@ impl MirajazzDevice {
                 ImageMode::BMP => mirajazz_json::types::ImageMode::BMP,
                 ImageMode::JPEG => mirajazz_json::types::ImageMode::JPEG,
             },
-            size: (button_format.size[0] as usize, button_format.size[1] as usize),
+            size: (
+                button_format.size[0] as usize,
+                button_format.size[1] as usize,
+            ),
             rotation: match button_format.rotation {
                 Rotation::Rot0 => mirajazz_json::types::ImageRotation::Rot0,
                 Rotation::Rot90 => mirajazz_json::types::ImageRotation::Rot90,
@@ -193,18 +212,23 @@ impl MirajazzDevice {
 impl KeydeckDevice for MirajazzDevice {
     fn serial_number(&self) -> Result<String, DeviceError> {
         let device = self.get_device();
-        device.serial_number()
+        device
+            .serial_number()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to get serial number: {}", e)))
     }
 
     fn firmware_version(&self) -> Result<String, DeviceError> {
         let device = self.get_device();
-        device.firmware_version()
-            .map_err(|e| DeviceError::LibraryError(format!("Failed to get firmware version: {}", e)))
+        device.firmware_version().map_err(|e| {
+            DeviceError::LibraryError(format!("Failed to get firmware version: {}", e))
+        })
     }
 
     fn manufacturer(&self) -> String {
-        self.device_def.info.manufacturer.clone()
+        self.device_def
+            .info
+            .manufacturer
+            .clone()
             .unwrap_or_else(|| "Unknown".to_string())
     }
 
@@ -236,15 +260,24 @@ impl KeydeckDevice for MirajazzDevice {
 
     fn reset(&self) -> Result<(), DeviceError> {
         let device = self.get_device();
-        verbose_log!("Resetting device '{}' (set brightness 100% and clear all images)", self.serial);
-        device.reset()
+        verbose_log!(
+            "Resetting device '{}' (set brightness 100% and clear all images)",
+            self.serial
+        );
+        device
+            .reset()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to reset: {}", e)))
     }
 
     fn set_brightness(&self, brightness: u8) -> Result<(), DeviceError> {
         let device = self.get_device();
-        verbose_log!("Setting brightness {} on device '{}'", brightness, self.serial);
-        device.set_brightness(brightness)
+        verbose_log!(
+            "Setting brightness {} on device '{}'",
+            brightness,
+            self.serial
+        );
+        device
+            .set_brightness(brightness)
             .map_err(|e| DeviceError::LibraryError(format!("Failed to set brightness: {}", e)))
     }
 
@@ -253,8 +286,13 @@ impl KeydeckDevice for MirajazzDevice {
         let mapped_idx = self.map_button_index(button_idx);
         let format = self.get_image_format_for_button(mapped_idx);
 
-        verbose_log!("Setting button image on device '{}' to button {}", self.serial, button_idx);
-        device.set_button_image(mapped_idx, format, image)
+        verbose_log!(
+            "Setting button image on device '{}' to button {}",
+            self.serial,
+            button_idx
+        );
+        device
+            .set_button_image(mapped_idx, format, image)
             .map_err(|e| DeviceError::LibraryError(format!("Failed to set button image: {}", e)))
     }
 
@@ -262,29 +300,37 @@ impl KeydeckDevice for MirajazzDevice {
         let device = self.get_device();
         let mapped_idx = self.map_button_index(button_idx);
 
-        verbose_log!("Clearing button image on device '{}' from button {}", self.serial, button_idx);
-        device.clear_button_image(mapped_idx)
+        verbose_log!(
+            "Clearing button image on device '{}' from button {}",
+            self.serial,
+            button_idx
+        );
+        device
+            .clear_button_image(mapped_idx)
             .map_err(|e| DeviceError::LibraryError(format!("Failed to clear button image: {}", e)))
     }
 
     fn clear_all_button_images(&self) -> Result<(), DeviceError> {
         let device = self.get_device();
         verbose_log!("Cleared all button images on device '{}'", self.serial);
-        device.clear_all_button_images()
-            .map_err(|e| DeviceError::LibraryError(format!("Failed to clear all button images: {}", e)))
+        device.clear_all_button_images().map_err(|e| {
+            DeviceError::LibraryError(format!("Failed to clear all button images: {}", e))
+        })
     }
 
     fn flush(&self) -> Result<(), DeviceError> {
         let device = self.get_device();
         verbose_log!("Flushing device '{}'", self.serial);
-        device.flush()
+        device
+            .flush()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to flush: {}", e)))
     }
 
     fn sleep(&self) -> Result<(), DeviceError> {
         let device = self.get_device();
         verbose_log!("Putting device '{}' to sleep", self.serial);
-        device.sleep()
+        device
+            .sleep()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to sleep device: {}", e)))
     }
 
@@ -304,7 +350,8 @@ impl KeydeckDevice for MirajazzDevice {
     fn shutdown(&self) -> Result<(), DeviceError> {
         let device = self.get_device();
         verbose_log!("Shutting down device '{}'", self.serial);
-        device.shutdown()
+        device
+            .shutdown()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to shutdown: {}", e)))
     }
 }
@@ -326,20 +373,25 @@ impl DeviceReader for MirajazzDeviceReader {
         // Create the process_input closure that converts HID data to DeviceInput
         // key = button index from USB report (device native index), state = button state (0 or 1)
         let button_count = self.device_def.layout.key_count();
-        let updates = self.reader.read(timeout, move |key, state| {
-            // Device reports button indices starting from 1, so subtract 1 to get 0-indexed
-            // This quirk is documented in legacy opendeck-akp153 plugin
-            let key_0indexed = if key > 0 { key - 1 } else { 0 };
+        let updates = self
+            .reader
+            .read(timeout, move |key, state| {
+                // Device reports button indices starting from 1, so subtract 1 to get 0-indexed
+                // This quirk is documented in legacy opendeck-akp153 plugin
+                let key_0indexed = if key > 0 { key - 1 } else { 0 };
 
-            // Build button state vector for all buttons using DEVICE NATIVE indices
-            // The vector index represents the device button position
-            // Mapping to opendeck logical indices happens later when processing events
-            let mut buttons = vec![false; button_count];
-            if key_0indexed < button_count as u8 {
-                buttons[key_0indexed as usize] = state != 0;
-            }
-            Ok(DeviceInput::ButtonStateChange(buttons))
-        }).map_err(|e| DeviceError::LibraryError(format!("Failed to read device state: {}", e)))?;
+                // Build button state vector for all buttons using DEVICE NATIVE indices
+                // The vector index represents the device button position
+                // Mapping to opendeck logical indices happens later when processing events
+                let mut buttons = vec![false; button_count];
+                if key_0indexed < button_count as u8 {
+                    buttons[key_0indexed as usize] = state != 0;
+                }
+                Ok(DeviceInput::ButtonStateChange(buttons))
+            })
+            .map_err(|e| {
+                DeviceError::LibraryError(format!("Failed to read device state: {}", e))
+            })?;
 
         if !updates.is_empty() {
             verbose_log!("Received {} updates from mirajazz device", updates.len());
@@ -347,27 +399,40 @@ impl DeviceReader for MirajazzDeviceReader {
 
         // Convert mirajazz DeviceStateUpdate to keydeck DeviceStateUpdate
         // Map button indices from device native order to opendeck logical order
-        let keydeck_updates: Vec<DeviceStateUpdate> = updates.iter().filter_map(|update| {
-            use mirajazz_json::state::DeviceStateUpdate as MirajazzUpdate;
-            match update {
-                MirajazzUpdate::ButtonDown(device_idx) => {
-                    let opendeck_idx = self.device_def.device_to_opendeck_button(*device_idx);
-                    verbose_log!("Button down: device idx {} -> opendeck idx {}", device_idx, opendeck_idx);
-                    Some(DeviceStateUpdate::ButtonDown(opendeck_idx))
+        let keydeck_updates: Vec<DeviceStateUpdate> = updates
+            .iter()
+            .filter_map(|update| {
+                use mirajazz_json::state::DeviceStateUpdate as MirajazzUpdate;
+                match update {
+                    MirajazzUpdate::ButtonDown(device_idx) => {
+                        let opendeck_idx = self.device_def.device_to_opendeck_button(*device_idx);
+                        verbose_log!(
+                            "Button down: device idx {} -> opendeck idx {}",
+                            device_idx,
+                            opendeck_idx
+                        );
+                        Some(DeviceStateUpdate::ButtonDown(opendeck_idx))
+                    }
+                    MirajazzUpdate::ButtonUp(device_idx) => {
+                        let opendeck_idx = self.device_def.device_to_opendeck_button(*device_idx);
+                        verbose_log!(
+                            "Button up: device idx {} -> opendeck idx {}",
+                            device_idx,
+                            opendeck_idx
+                        );
+                        Some(DeviceStateUpdate::ButtonUp(opendeck_idx))
+                    }
+                    MirajazzUpdate::EncoderDown(idx) => Some(DeviceStateUpdate::EncoderDown(*idx)),
+                    MirajazzUpdate::EncoderUp(idx) => Some(DeviceStateUpdate::EncoderUp(*idx)),
+                    MirajazzUpdate::EncoderTwist(encoder, ticks) => {
+                        Some(DeviceStateUpdate::EncoderTwist {
+                            encoder: *encoder,
+                            ticks: *ticks,
+                        })
+                    }
                 }
-                MirajazzUpdate::ButtonUp(device_idx) => {
-                    let opendeck_idx = self.device_def.device_to_opendeck_button(*device_idx);
-                    verbose_log!("Button up: device idx {} -> opendeck idx {}", device_idx, opendeck_idx);
-                    Some(DeviceStateUpdate::ButtonUp(opendeck_idx))
-                }
-                MirajazzUpdate::EncoderDown(idx) => Some(DeviceStateUpdate::EncoderDown(*idx)),
-                MirajazzUpdate::EncoderUp(idx) => Some(DeviceStateUpdate::EncoderUp(*idx)),
-                MirajazzUpdate::EncoderTwist(encoder, ticks) => Some(DeviceStateUpdate::EncoderTwist {
-                    encoder: *encoder,
-                    ticks: *ticks,
-                }),
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(keydeck_updates)
     }

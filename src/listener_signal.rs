@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use crate::{event::DeviceEvent, error_log};
+use crate::{error_log, event::DeviceEvent};
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 use std::sync::mpsc::Sender;

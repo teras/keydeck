@@ -28,18 +28,28 @@ impl KeyDeckConfLoader {
         template_name: &str,
         templates: &IndexMap<String, Page>,
         visited: &mut Vec<String>,
-    ) -> Result<(HashMap<String, ButtonConfig>, Option<Vec<Action>>, Option<bool>), String> {
+    ) -> Result<
+        (
+            HashMap<String, ButtonConfig>,
+            Option<Vec<Action>>,
+            Option<bool>,
+        ),
+        String,
+    > {
         // Check for circular inheritance
         if visited.contains(&template_name.to_string()) {
             visited.push(template_name.to_string());
             let cycle_path = visited.join(" → ");
-            return Err(format!("Circular template inheritance detected: {}", cycle_path));
+            return Err(format!(
+                "Circular template inheritance detected: {}",
+                cycle_path
+            ));
         }
 
         // Get the template
-        let template = templates.get(template_name).ok_or_else(|| {
-            format!("Template '{}' not found", template_name)
-        })?;
+        let template = templates
+            .get(template_name)
+            .ok_or_else(|| format!("Template '{}' not found", template_name))?;
 
         // Mark as visited for cycle detection
         visited.push(template_name.to_string());
@@ -51,11 +61,8 @@ impl KeyDeckConfLoader {
         // First, recursively resolve parent templates
         if let Some(parent_templates) = &template.inherits {
             for parent_name in parent_templates {
-                let (parent_buttons, parent_on_tick, parent_lock) = Self::resolve_template_recursive(
-                    parent_name,
-                    templates,
-                    visited,
-                )?;
+                let (parent_buttons, parent_on_tick, parent_lock) =
+                    Self::resolve_template_recursive(parent_name, templates, visited)?;
                 // Merge parent buttons (later parents override earlier ones)
                 merged_buttons.extend(parent_buttons);
                 // on_tick is overridden by later parents (not merged)
@@ -95,13 +102,19 @@ impl KeyDeckConfLoader {
         if !path.exists() {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).unwrap_or_else(|e| {
-                    eprintln!("Error: Failed to create config directory at {}", parent.display());
+                    eprintln!(
+                        "Error: Failed to create config directory at {}",
+                        parent.display()
+                    );
                     eprintln!("Reason: {}", e);
                     std::process::exit(1);
                 });
             }
             fs::write(&path, "").unwrap_or_else(|e| {
-                eprintln!("Error: Failed to create empty config file at {}", path.display());
+                eprintln!(
+                    "Error: Failed to create empty config file at {}",
+                    path.display()
+                );
                 eprintln!("Reason: {}", e);
                 std::process::exit(1);
             });
@@ -141,10 +154,18 @@ impl KeyDeckConfLoader {
         if let Some(templates) = &conf.templates {
             for (template_name, template) in templates {
                 if template.window_name.is_some() {
-                    eprintln!("Error: Template '{}' has 'window_name' field", template_name);
+                    eprintln!(
+                        "Error: Template '{}' has 'window_name' field",
+                        template_name
+                    );
                     eprintln!("The 'window_name' field is only valid in pages, not templates.");
-                    eprintln!("Templates are never directly displayed, so window matching doesn't apply.");
-                    eprintln!("\nPlease remove the 'window_name' field from template '{}'", template_name);
+                    eprintln!(
+                        "Templates are never directly displayed, so window matching doesn't apply."
+                    );
+                    eprintln!(
+                        "\nPlease remove the 'window_name' field from template '{}'",
+                        template_name
+                    );
                     eprintln!("Config file: {}", path.display());
                     std::process::exit(1);
                 }
@@ -161,13 +182,15 @@ impl KeyDeckConfLoader {
 
                     for template_name in template_names {
                         let mut visited = Vec::new();
-                        match Self::resolve_template_recursive(template_name, templates_map, &mut visited) {
+                        match Self::resolve_template_recursive(
+                            template_name,
+                            templates_map,
+                            &mut visited,
+                        ) {
                             Ok((resolved_buttons, resolved_on_tick, resolved_lock)) => {
                                 // Merge resolved buttons into page (page buttons take priority)
                                 for (button_name, button_config) in resolved_buttons {
-                                    page.buttons
-                                        .entry(button_name)
-                                        .or_insert(button_config);
+                                    page.buttons.entry(button_name).or_insert(button_config);
                                 }
                                 // Merge on_tick (page's on_tick takes priority over template's)
                                 if page.on_tick.is_none() && resolved_on_tick.is_some() {
@@ -179,8 +202,13 @@ impl KeyDeckConfLoader {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("Error resolving templates for page '{}': {}", page_name, e);
-                                eprintln!("\nPlease check your template inheritance configuration.");
+                                eprintln!(
+                                    "Error resolving templates for page '{}': {}",
+                                    page_name, e
+                                );
+                                eprintln!(
+                                    "\nPlease check your template inheritance configuration."
+                                );
                                 std::process::exit(1);
                             }
                         }

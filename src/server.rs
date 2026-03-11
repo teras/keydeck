@@ -53,7 +53,10 @@ fn initialize_device(
 ) {
     if let Some(device) = find_device_by_serial(sn) {
         verbose_log!("Looking for configuration for device serial: '{}'", sn);
-        verbose_log!("Available page groups: {:?}", conf_pages.keys().collect::<Vec<_>>());
+        verbose_log!(
+            "Available page groups: {:?}",
+            conf_pages.keys().collect::<Vec<_>>()
+        );
 
         let pages_arc = if let Some(page) = conf_pages.get(sn) {
             verbose_log!("Found specific configuration for device {}", sn);
@@ -152,7 +155,11 @@ pub fn start_server() {
                     device.encoder_up(encoder_id);
                 }
             }
-            DeviceEvent::EncoderTwist { sn, encoder_id, value } => {
+            DeviceEvent::EncoderTwist {
+                sn,
+                encoder_id,
+                value,
+            } => {
                 if let Some(device) = devices.get(&sn) {
                     device.encoder_twist(encoder_id, value);
                 }
@@ -182,7 +189,10 @@ pub fn start_server() {
                     device.touch_screen_swipe(start, end);
                 }
             }
-            ref message @ DeviceEvent::FocusChanges { ref class, ref title } => {
+            ref message @ DeviceEvent::FocusChanges {
+                ref class,
+                ref title,
+            } => {
                 current_class = class.clone();
                 current_title = title.clone();
                 // Dispatch wait event first
@@ -209,9 +219,30 @@ pub fn start_server() {
                     // Check if we have a saved page for this device (from reload)
                     let initial_page = saved_pages.remove(sn).clone();
                     if initial_page.is_some() {
-                        verbose_log!("Restoring device {} to page '{}'", sn, initial_page.as_ref().unwrap());
+                        verbose_log!(
+                            "Restoring device {} to page '{}'",
+                            sn,
+                            initial_page.as_ref().unwrap()
+                        );
                     }
-                    initialize_device(sn, &conf_pages, &conf_colors, &conf_buttons, &conf_macros, &conf_services, &services_state, &services_active, icon_dir.as_ref(), &tx, &time_manager, &current_class, &current_title, conf_brightness, &mut devices, initial_page);
+                    initialize_device(
+                        sn,
+                        &conf_pages,
+                        &conf_colors,
+                        &conf_buttons,
+                        &conf_macros,
+                        &conf_services,
+                        &services_state,
+                        &services_active,
+                        icon_dir.as_ref(),
+                        &tx,
+                        &time_manager,
+                        &current_class,
+                        &current_title,
+                        conf_brightness,
+                        &mut devices,
+                        initial_page,
+                    );
                 }
             }
             ref message @ DeviceEvent::RemovedDevice { ref sn } => {
@@ -248,7 +279,10 @@ pub fn start_server() {
                 services_active = Arc::new(AtomicBool::new(true));
 
                 // Update all connected devices with new configuration
-                info_log!("Updating {} device(s) with new configuration...", devices.len());
+                info_log!(
+                    "Updating {} device(s) with new configuration...",
+                    devices.len()
+                );
                 for (sn, device) in devices.iter_mut() {
                     verbose_log!("Reloading device {}", sn);
 
@@ -274,7 +308,7 @@ pub fn start_server() {
                         conf_services.clone(),
                         services_state.clone(),
                         services_active.clone(),
-                        conf_brightness
+                        conf_brightness,
                     );
                 }
 
@@ -315,9 +349,12 @@ pub fn start_server() {
             DeviceEvent::SetBrightness { sn, brightness } => {
                 if let Some(device) = devices.get(&sn) {
                     verbose_log!("Setting brightness to {} for device {}", brightness, sn);
-                    device.get_hardware().set_brightness(brightness).unwrap_or_else(|e| {
-                        error_log!("Error while setting brightness on device {}: {}", sn, e)
-                    });
+                    device
+                        .get_hardware()
+                        .set_brightness(brightness)
+                        .unwrap_or_else(|e| {
+                            error_log!("Error while setting brightness on device {}: {}", sn, e)
+                        });
                 }
             }
         }

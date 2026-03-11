@@ -27,120 +27,129 @@ const KEY_EVENT_DELAY_MS: u64 = 5;
 #[strum(serialize_all = "lowercase")] // Converts to lowercase for matching
 enum Keys {
     #[strum(serialize = "esc", serialize = "escape")]
-    Esc = 0xff1b,                // XK_Escape
-    #[strum(serialize = "ctrl", serialize = "lctrl", serialize = "control", serialize = "lcontrol")]
-    LCtrl = 0xffe3,              // XK_Control_L
+    Esc = 0xff1b, // XK_Escape
+    #[strum(
+        serialize = "ctrl",
+        serialize = "lctrl",
+        serialize = "control",
+        serialize = "lcontrol"
+    )]
+    LCtrl = 0xffe3, // XK_Control_L
     #[strum(serialize = "rctrl", serialize = "rcontrol")]
-    RCtrl = 0xffe4,              // XK_Control_R
+    RCtrl = 0xffe4, // XK_Control_R
     #[strum(serialize = "alt", serialize = "lalt")]
-    LAlt = 0xffe9,               // XK_Alt_L
-    RAlt = 0xffea,               // XK_Alt_R
+    LAlt = 0xffe9, // XK_Alt_L
+    RAlt = 0xffea, // XK_Alt_R
     #[strum(serialize = "shift", serialize = "lshift")]
-    LShift = 0xffe1,             // XK_Shift_L
-    RShift = 0xffe2,             // XK_Shift_R
+    LShift = 0xffe1, // XK_Shift_L
+    RShift = 0xffe2, // XK_Shift_R
     #[strum(serialize = "super", serialize = "lsuper")]
-    LSuper = 0xffeb,             // XK_Super_L
-    RSuper = 0xffec,             // XK_Super_R
-    AltGr = 0xfe03,              // XK_ISO_Level3_Shift
-    F1 = 0xffbe,                 // XK_F1
-    F2 = 0xffbf,                 // XK_F2
-    F3 = 0xffc0,                 // XK_F3
-    F4 = 0xffc1,                 // XK_F4
-    F5 = 0xffc2,                 // XK_F5
-    F6 = 0xffc3,                 // XK_F6
-    F7 = 0xffc4,                 // XK_F7
-    F8 = 0xffc5,                 // XK_F8
-    F9 = 0xffc6,                 // XK_F9
-    F10 = 0xffc7,                // XK_F10
-    F11 = 0xffc8,                // XK_F11
-    F12 = 0xffc9,                // XK_F12
-    NumLock = 0xff7f,            // XK_Num_Lock
-    ScrollLock = 0xff14,         // XK_Scroll_Lock
-    CapsLock = 0xffe5,           // XK_Caps_Lock
-    Insert = 0xff63,             // XK_Insert
-    Delete = 0xffff,             // XK_Delete
-    Home = 0xff50,               // XK_Home
-    End = 0xff57,                // XK_End
-    PageUp = 0xff55,             // XK_Page_Up
-    PageDown = 0xff56,           // XK_Page_Down
-    PrintScreen = 0xff61,        // XK_Print
-    Pause = 0xff13,              // XK_Pause
-    Menu = 0xff67,               // XK_Menu
-    Space = 0x0020,              // XK_space
-    Tab = 0xff09,                // XK_Tab
-    Backspace = 0xff08,          // XK_BackSpace
-    Enter = 0xff0d,              // XK_Return
-    ArrowUp = 0xff52,            // XK_Up
-    ArrowDown = 0xff54,          // XK_Down
-    ArrowLeft = 0xff51,          // XK_Left
-    ArrowRight = 0xff53,         // XK_Right
+    LSuper = 0xffeb, // XK_Super_L
+    RSuper = 0xffec, // XK_Super_R
+    AltGr = 0xfe03, // XK_ISO_Level3_Shift
+    F1 = 0xffbe,   // XK_F1
+    F2 = 0xffbf,   // XK_F2
+    F3 = 0xffc0,   // XK_F3
+    F4 = 0xffc1,   // XK_F4
+    F5 = 0xffc2,   // XK_F5
+    F6 = 0xffc3,   // XK_F6
+    F7 = 0xffc4,   // XK_F7
+    F8 = 0xffc5,   // XK_F8
+    F9 = 0xffc6,   // XK_F9
+    F10 = 0xffc7,  // XK_F10
+    F11 = 0xffc8,  // XK_F11
+    F12 = 0xffc9,  // XK_F12
+    NumLock = 0xff7f, // XK_Num_Lock
+    ScrollLock = 0xff14, // XK_Scroll_Lock
+    CapsLock = 0xffe5, // XK_Caps_Lock
+    Insert = 0xff63, // XK_Insert
+    Delete = 0xffff, // XK_Delete
+    Home = 0xff50, // XK_Home
+    End = 0xff57,  // XK_End
+    PageUp = 0xff55, // XK_Page_Up
+    PageDown = 0xff56, // XK_Page_Down
+    PrintScreen = 0xff61, // XK_Print
+    Pause = 0xff13, // XK_Pause
+    Menu = 0xff67, // XK_Menu
+    Space = 0x0020, // XK_space
+    Tab = 0xff09,  // XK_Tab
+    Backspace = 0xff08, // XK_BackSpace
+    Enter = 0xff0d, // XK_Return
+    ArrowUp = 0xff52, // XK_Up
+    ArrowDown = 0xff54, // XK_Down
+    ArrowLeft = 0xff51, // XK_Left
+    ArrowRight = 0xff53, // XK_Right
     // Media keys
     #[strum(serialize = "volumeup", serialize = "audiovolumeup")]
-    VolumeUp = 0x1008ff13,       // XF86XK_AudioRaiseVolume
+    VolumeUp = 0x1008ff13, // XF86XK_AudioRaiseVolume
     #[strum(serialize = "volumedown", serialize = "audiovolumedown")]
-    VolumeDown = 0x1008ff11,     // XF86XK_AudioLowerVolume
+    VolumeDown = 0x1008ff11, // XF86XK_AudioLowerVolume
     #[strum(serialize = "volumemute", serialize = "audiovolumemute")]
-    VolumeMute = 0x1008ff12,     // XF86XK_AudioMute
+    VolumeMute = 0x1008ff12, // XF86XK_AudioMute
     #[strum(serialize = "micmute", serialize = "audiomicmute")]
-    MicMute = 0x1008ffb2,        // XF86XK_AudioMicMute
+    MicMute = 0x1008ffb2, // XF86XK_AudioMicMute
     #[strum(serialize = "mediaplaypause", serialize = "playpause")]
     MediaPlayPause = 0x1008ff14, // XF86XK_AudioPlay
-    MediaStop = 0x1008ff15,      // XF86XK_AudioStop
+    MediaStop = 0x1008ff15, // XF86XK_AudioStop
     #[strum(serialize = "medianext", serialize = "nexttrack")]
-    MediaNext = 0x1008ff17,      // XF86XK_AudioNext
-    #[strum(serialize = "mediaprev", serialize = "prevtrack", serialize = "mediatrackprevious")]
-    MediaPrev = 0x1008ff16,      // XF86XK_AudioPrev
+    MediaNext = 0x1008ff17, // XF86XK_AudioNext
+    #[strum(
+        serialize = "mediaprev",
+        serialize = "prevtrack",
+        serialize = "mediatrackprevious"
+    )]
+    MediaPrev = 0x1008ff16, // XF86XK_AudioPrev
     // Brightness keys
     #[strum(serialize = "brightnessup", serialize = "monbrightnessup")]
-    BrightnessUp = 0x1008ff02,   // XF86XK_MonBrightnessUp
+    BrightnessUp = 0x1008ff02, // XF86XK_MonBrightnessUp
     #[strum(serialize = "brightnessdown", serialize = "monbrightnessdown")]
     BrightnessDown = 0x1008ff03, // XF86XK_MonBrightnessDown
     // Browser keys
-    BrowserBack = 0x1008ff26,    // XF86XK_Back
-    BrowserForward = 0x1008ff27, // XF86XK_Forward
-    BrowserRefresh = 0x1008ff29, // XF86XK_Reload
-    BrowserHome = 0x1008ff18,    // XF86XK_HomePage
-    BrowserSearch = 0x1008ff1b,  // XF86XK_Search
+    BrowserBack = 0x1008ff26,      // XF86XK_Back
+    BrowserForward = 0x1008ff27,   // XF86XK_Forward
+    BrowserRefresh = 0x1008ff29,   // XF86XK_Reload
+    BrowserHome = 0x1008ff18,      // XF86XK_HomePage
+    BrowserSearch = 0x1008ff1b,    // XF86XK_Search
     BrowserFavorites = 0x1008ff30, // XF86XK_Favorites
     // Application keys
-    LaunchMail = 0x1008ff19,     // XF86XK_Mail
+    LaunchMail = 0x1008ff19,       // XF86XK_Mail
     LaunchCalculator = 0x1008ff1d, // XF86XK_Calculator
-    LaunchExplorer = 0x1008ff5d, // XF86XK_Explorer
+    LaunchExplorer = 0x1008ff5d,   // XF86XK_Explorer
     // System keys
     #[strum(serialize = "sleep", serialize = "standby")]
-    Sleep = 0x1008ff2f,          // XF86XK_Sleep
-    Eject = 0x1008ff2c,          // XF86XK_Eject
+    Sleep = 0x1008ff2f, // XF86XK_Sleep
+    Eject = 0x1008ff2c, // XF86XK_Eject
 }
 
 // Maps ASCII characters to keysyms and returns whether Shift is needed
 fn keysym_for_char(ch: char) -> Result<(Keysym, bool), String> {
     match ch {
         'a'..='z' => Ok((ch as u32 - 'a' as u32 + 0x61, false)),
-        'A'..='Z' => Ok((ch as u32 - 'A' as u32 + 0x61, true)),  // Uppercase: map to lowercase keysym + Shift
+        'A'..='Z' => Ok((ch as u32 - 'A' as u32 + 0x61, true)), // Uppercase: map to lowercase keysym + Shift
         '0'..='9' => Ok((ch as u32 - '0' as u32 + 0x30, false)),
         ' ' => Ok((0x20, false)),
         // Shifted symbols - these need Shift pressed
-        '!' => Ok((0x31, true)),  // '1' -> '!'
-        '@' => Ok((0x32, true)),  // '2' -> '@'
-        '#' => Ok((0x33, true)),  // '3' -> '#'
-        '$' => Ok((0x34, true)),  // '4' -> '$'
-        '%' => Ok((0x35, true)),  // '5' -> '%'
-        '^' => Ok((0x36, true)),  // '6' -> '^'
-        '&' => Ok((0x37, true)),  // '7' -> '&'
-        '*' => Ok((0x38, true)),  // '8' -> '*'
-        '(' => Ok((0x39, true)),  // '9' -> '('
-        ')' => Ok((0x30, true)),  // '0' -> ')'
-        '_' => Ok((0x2D, true)),  // '-' -> '_'
-        '+' => Ok((0x3D, true)),  // '=' -> '+'
-        '{' => Ok((0x5B, true)),  // '[' -> '{'
-        '}' => Ok((0x5D, true)),  // ']' -> '}'
-        ':' => Ok((0x3B, true)),  // ';' -> ':'
-        '"' => Ok((0x27, true)),  // '\'' -> '"'
-        '<' => Ok((0x2C, true)),  // ',' -> '<'
-        '>' => Ok((0x2E, true)),  // '.' -> '>'
-        '?' => Ok((0x2F, true)),  // '/' -> '?'
-        '~' => Ok((0x60, true)),  // '`' -> '~'
-        '|' => Ok((0x5C, true)),  // '\' -> '|'
+        '!' => Ok((0x31, true)), // '1' -> '!'
+        '@' => Ok((0x32, true)), // '2' -> '@'
+        '#' => Ok((0x33, true)), // '3' -> '#'
+        '$' => Ok((0x34, true)), // '4' -> '$'
+        '%' => Ok((0x35, true)), // '5' -> '%'
+        '^' => Ok((0x36, true)), // '6' -> '^'
+        '&' => Ok((0x37, true)), // '7' -> '&'
+        '*' => Ok((0x38, true)), // '8' -> '*'
+        '(' => Ok((0x39, true)), // '9' -> '('
+        ')' => Ok((0x30, true)), // '0' -> ')'
+        '_' => Ok((0x2D, true)), // '-' -> '_'
+        '+' => Ok((0x3D, true)), // '=' -> '+'
+        '{' => Ok((0x5B, true)), // '[' -> '{'
+        '}' => Ok((0x5D, true)), // ']' -> '}'
+        ':' => Ok((0x3B, true)), // ';' -> ':'
+        '"' => Ok((0x27, true)), // '\'' -> '"'
+        '<' => Ok((0x2C, true)), // ',' -> '<'
+        '>' => Ok((0x2E, true)), // '.' -> '>'
+        '?' => Ok((0x2F, true)), // '/' -> '?'
+        '~' => Ok((0x60, true)), // '`' -> '~'
+        '|' => Ok((0x5C, true)), // '\' -> '|'
         // Unshifted symbols
         '-' => Ok((0x2D, false)),
         '=' => Ok((0x3D, false)),
@@ -158,9 +167,17 @@ fn keysym_for_char(ch: char) -> Result<(Keysym, bool), String> {
 }
 
 /// Converts a Keysym to a Keycode by scanning the keyboard mapping.
-fn keysym_to_keycode(keysym: Keysym, keysym_mapping: &GetKeyboardMappingReply, min_keycode: Keycode) -> Result<u8, String> {
+fn keysym_to_keycode(
+    keysym: Keysym,
+    keysym_mapping: &GetKeyboardMappingReply,
+    min_keycode: Keycode,
+) -> Result<u8, String> {
     // Scan through the Keysyms to find the corresponding Keycode
-    for (i, keysym_list) in keysym_mapping.keysyms.chunks(keysym_mapping.keysyms_per_keycode as usize).enumerate() {
+    for (i, keysym_list) in keysym_mapping
+        .keysyms
+        .chunks(keysym_mapping.keysyms_per_keycode as usize)
+        .enumerate()
+    {
         for &mapped_keysym in keysym_list {
             if mapped_keysym == keysym {
                 return Ok(min_keycode + i as u8); // Compute Keycode based on offset
@@ -173,7 +190,16 @@ fn keysym_to_keycode(keysym: Keysym, keysym_mapping: &GetKeyboardMappingReply, m
 /// Sends a key event using the XTest extension.
 fn send_key_event(keycode: &u8, conn: &RustConnection, event_type: u8) -> Result<(), String> {
     let device_id = 0;
-    if let Err(e) = xtest::fake_input(conn, event_type, *keycode, x11rb::CURRENT_TIME, NONE, 0, 0, device_id) {
+    if let Err(e) = xtest::fake_input(
+        conn,
+        event_type,
+        *keycode,
+        x11rb::CURRENT_TIME,
+        NONE,
+        0,
+        0,
+        device_id,
+    ) {
         return Err(format!("Error sending key event: {}", e));
     }
     if let Err(e) = conn.flush() {
@@ -183,7 +209,12 @@ fn send_key_event(keycode: &u8, conn: &RustConnection, event_type: u8) -> Result
 }
 
 /// Parses and presses a key combination string like "LCtrl+LShift+z"
-fn press_key_combination(combo: &str, conn: &RustConnection, keyboard_mapping: &GetKeyboardMappingReply, min_keycode: Keycode) -> Result<(), String> {
+fn press_key_combination(
+    combo: &str,
+    conn: &RustConnection,
+    keyboard_mapping: &GetKeyboardMappingReply,
+    min_keycode: Keycode,
+) -> Result<(), String> {
     let parts: Vec<&str> = combo.split('+').collect();
     let mut keycodes: Vec<u8> = Vec::new();
     for part in parts {
@@ -228,10 +259,13 @@ pub fn send_key_combination(combination: &str) -> Result<(), String> {
     let min_keycode = setup.min_keycode;
     let max_keycode = setup.max_keycode;
 
-    let keyboard_mapping = conn.get_keyboard_mapping(min_keycode, max_keycode - min_keycode + 1).map_err(|e| e.to_string())?;
+    let keyboard_mapping = conn
+        .get_keyboard_mapping(min_keycode, max_keycode - min_keycode + 1)
+        .map_err(|e| e.to_string())?;
     let keysym_mapping = keyboard_mapping.reply().map_err(|e| e.to_string())?;
 
-    press_key_combination(combination, &conn, &keysym_mapping, min_keycode).unwrap_or_else(|e| eprintln!("{}", e));
+    press_key_combination(combination, &conn, &keysym_mapping, min_keycode)
+        .unwrap_or_else(|e| eprintln!("{}", e));
     Ok(())
 }
 
@@ -287,8 +321,8 @@ pub fn process_escape_sequences(text: &str) -> Vec<char> {
 fn keysym_for_control_char(ch: char) -> Option<Keysym> {
     match ch {
         '\n' | '\r' => Some(0xff0d), // XK_Return (Enter key)
-        '\t' => Some(0xff09),         // XK_Tab
-        '\x1b' => Some(0xff1b),       // XK_Escape
+        '\t' => Some(0xff09),        // XK_Tab
+        '\x1b' => Some(0xff1b),      // XK_Escape
         _ => None,
     }
 }
@@ -314,7 +348,9 @@ pub fn send_string(text: &str) -> Result<(), String> {
     let min_keycode = setup.min_keycode;
     let max_keycode = setup.max_keycode;
 
-    let keyboard_mapping = conn.get_keyboard_mapping(min_keycode, max_keycode - min_keycode + 1).map_err(|e| e.to_string())?;
+    let keyboard_mapping = conn
+        .get_keyboard_mapping(min_keycode, max_keycode - min_keycode + 1)
+        .map_err(|e| e.to_string())?;
     let keysym_mapping = keyboard_mapping.reply().map_err(|e| e.to_string())?;
 
     // Get the Shift key's keycode

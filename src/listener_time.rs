@@ -5,8 +5,8 @@ use crate::event::{send, DeviceEvent};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -38,7 +38,8 @@ pub struct TimeManager {
 impl TimeManager {
     /// Creates a new TimeManager and spawns the background thread
     pub fn new(tx: Sender<DeviceEvent>, still_active: Arc<AtomicBool>) -> Self {
-        let events: Arc<Mutex<BinaryHeap<ScheduledEvent>>> = Arc::new(Mutex::new(BinaryHeap::new()));
+        let events: Arc<Mutex<BinaryHeap<ScheduledEvent>>> =
+            Arc::new(Mutex::new(BinaryHeap::new()));
         let events_clone = events.clone();
 
         thread::spawn(move || {

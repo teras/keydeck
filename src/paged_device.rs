@@ -1,24 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use crate::listener_button::button_listener;
-use crate::listener_time::TimeManager;
 use crate::device_manager::find_path;
 use crate::device_trait::KeydeckDevice;
+use crate::dynamic_params::evaluate_dynamic_params;
 use crate::event::{DeviceEvent, WaitEventType};
 use crate::focus_property::set_focus;
-use crate::keyboard::{process_escape_sequences, send_key_combination, send_string};
-use crate::pages::{Action, Button, ButtonConfig, DrawConfig, FocusChangeRestorePolicy, GraphicType, Direction, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig};
-use crate::text_renderer;
 use crate::graphics_renderer;
+use crate::keyboard::{process_escape_sequences, send_key_combination, send_string};
+use crate::listener_button::button_listener;
+use crate::listener_time::TimeManager;
+use crate::pages::{
+    Action, Button, ButtonConfig, Direction, DrawConfig, FocusChangeRestorePolicy, GraphicType,
+    MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig,
+};
 use crate::services::ServicesState;
-use crate::dynamic_params::evaluate_dynamic_params;
+use crate::text_renderer;
 use crate::{error_log, verbose_log, warn_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
+use indexmap::IndexMap;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use indexmap::IndexMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -61,19 +64,21 @@ pub struct PagedDevice {
 }
 
 impl PagedDevice {
-    pub fn new(pages: Arc<Pages>,
-               image_dir: Option<String>,
-               colors: Arc<Option<IndexMap<String, String>>>,
-               button_templates: Arc<Option<IndexMap<String, Button>>>,
-               macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
-               services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
-               services_state: ServicesState,
-               services_active: Arc<AtomicBool>,
-               device: Box<dyn KeydeckDevice>,
-               tx: &Sender<DeviceEvent>,
-               time_manager: Arc<TimeManager>,
-               initial_page: Option<String>,
-               brightness: u8) -> Self {
+    pub fn new(
+        pages: Arc<Pages>,
+        image_dir: Option<String>,
+        colors: Arc<Option<IndexMap<String, String>>>,
+        button_templates: Arc<Option<IndexMap<String, Button>>>,
+        macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
+        services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
+        services_state: ServicesState,
+        services_active: Arc<AtomicBool>,
+        device: Box<dyn KeydeckDevice>,
+        tx: &Sender<DeviceEvent>,
+        time_manager: Arc<TimeManager>,
+        initial_page: Option<String>,
+        brightness: u8,
+    ) -> Self {
         let serial = device.serial_number().unwrap_or_else(|e| {
             error_log!("Failed to get device serial number: {}", e);
             "Unknown".to_string()
@@ -81,8 +86,12 @@ impl PagedDevice {
         let button_count = { device.button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
         button_listener(&serial, tx, &active_events);
-        device.reset().unwrap_or_else(|e| { error_log!("Error while resetting device: {}", e) });
-        device.clear_all_button_images().unwrap_or_else(|e| { error_log!("Error while clearing button images: {}", e) });
+        device
+            .reset()
+            .unwrap_or_else(|e| error_log!("Error while resetting device: {}", e));
+        device
+            .clear_all_button_images()
+            .unwrap_or_else(|e| error_log!("Error while clearing button images: {}", e));
 
         // Determine which page to display initially
         // Priority: initial_page (if exists) > main_page (if exists) > first page
@@ -92,17 +101,28 @@ impl PagedDevice {
                 page_name
             } else {
                 // Requested page doesn't exist anymore, fall back to main page
-                verbose_log!("Requested initial page '{}' not found, falling back to main page", page_name);
+                verbose_log!(
+                    "Requested initial page '{}' not found, falling back to main page",
+                    page_name
+                );
                 match &pages.main_page {
                     Some(name) if pages.pages.contains_key(name) => name.clone(),
-                    _ => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+                    _ => pages
+                        .pages
+                        .get_index(0)
+                        .map(|(name, _)| name.clone())
+                        .unwrap_or_else(|| "".to_string()),
                 }
             }
         } else {
             // No initial page requested, use main page if it exists, otherwise first page
             match &pages.main_page {
                 Some(name) if pages.pages.contains_key(name) => name.clone(),
-                _ => pages.pages.get_index(0).map(|(name, _)| name.clone()).unwrap_or_else(|| "".to_string()),
+                _ => pages
+                    .pages
+                    .get_index(0)
+                    .map(|(name, _)| name.clone())
+                    .unwrap_or_else(|| "".to_string()),
             }
         };
 
@@ -133,12 +153,24 @@ impl PagedDevice {
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
         if !start_page_name.is_empty() {
             if let Err(e) = paged_device.set_page(&start_page_name, false) {
-                error_log!("Failed to set initial page '{}': {}. Device will remain uninitialized.", start_page_name, e);
-                error_log!("Available pages: {:?}", paged_device.pages.pages.keys().collect::<Vec<_>>());
+                error_log!(
+                    "Failed to set initial page '{}': {}. Device will remain uninitialized.",
+                    start_page_name,
+                    e
+                );
+                error_log!(
+                    "Available pages: {:?}",
+                    paged_device.pages.pages.keys().collect::<Vec<_>>()
+                );
             }
         } else {
-            error_log!("No valid page found for device initialization. Device will remain uninitialized.");
-            error_log!("Available pages: {:?}", paged_device.pages.pages.keys().collect::<Vec<_>>());
+            error_log!(
+                "No valid page found for device initialization. Device will remain uninitialized."
+            );
+            error_log!(
+                "Available pages: {:?}",
+                paged_device.pages.pages.keys().collect::<Vec<_>>()
+            );
         }
 
         // The hardware may not accept brightness commands immediately after reset/reconnect
@@ -146,12 +178,12 @@ impl PagedDevice {
         paged_device.time_manager.schedule_brightness(
             paged_device.serial.clone(),
             brightness,
-            Duration::from_millis(100)
+            Duration::from_millis(100),
         );
         paged_device.time_manager.schedule_brightness(
             paged_device.serial.clone(),
             brightness,
-            Duration::from_millis(1000)
+            Duration::from_millis(1000),
         );
 
         paged_device
@@ -171,7 +203,10 @@ impl PagedDevice {
         if current_page_idx == usize::MAX {
             None
         } else {
-            self.pages.pages.get_index(current_page_idx).map(|(name, _)| name.clone())
+            self.pages
+                .pages
+                .get_index(current_page_idx)
+                .map(|(name, _)| name.clone())
         }
     }
 
@@ -192,24 +227,29 @@ impl PagedDevice {
     }
 
     pub fn disable(&self) {
-        self.active_events.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.active_events
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn terminate(&self) {
         self.disable();
-        self.device.shutdown().unwrap_or_else(|e| { error_log!("Error while shutting down device: {}", e) });
+        self.device
+            .shutdown()
+            .unwrap_or_else(|e| error_log!("Error while shutting down device: {}", e));
     }
 
     /// Reload configuration without reinitializing the device
-    pub fn reload(&mut self,
-                  pages: Arc<Pages>,
-                  colors: Arc<Option<IndexMap<String, String>>>,
-                  button_templates: Arc<Option<IndexMap<String, Button>>>,
-                  macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
-                  services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
-                  services_state: ServicesState,
-                  services_active: Arc<AtomicBool>,
-                  brightness: u8) {
+    pub fn reload(
+        &mut self,
+        pages: Arc<Pages>,
+        colors: Arc<Option<IndexMap<String, String>>>,
+        button_templates: Arc<Option<IndexMap<String, Button>>>,
+        macros: Arc<Option<IndexMap<String, crate::pages::Macro>>>,
+        services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
+        services_state: ServicesState,
+        services_active: Arc<AtomicBool>,
+        brightness: u8,
+    ) {
         verbose_log!("Reloading configuration for device {}", self.serial);
 
         // Get current page name before updating pages reference
@@ -261,14 +301,15 @@ impl PagedDevice {
     /// If event type matches, resume action execution. Returns true if event was consumed.
     pub fn check_pending_event(&self, event_type: &WaitEventType) -> bool {
         // Take the pending actions if any exist
-        let pending = {
-            self.pending_actions.borrow_mut().take()
-        }; // Borrow ends here
+        let pending = { self.pending_actions.borrow_mut().take() }; // Borrow ends here
 
         if let Some(pending) = pending {
             // Check timeout
             if pending.last_modified.elapsed() > pending.timeout {
-                verbose_log!("Pending action queue timed out for event '{}'", pending.event_type.as_str());
+                verbose_log!(
+                    "Pending action queue timed out for event '{}'",
+                    pending.event_type.as_str()
+                );
                 return false;
             }
 
@@ -280,7 +321,10 @@ impl PagedDevice {
             }
 
             // Event type matches, resume actions
-            verbose_log!("WaitFor condition met for event '{}', resuming actions", event_type.as_str());
+            verbose_log!(
+                "WaitFor condition met for event '{}', resuming actions",
+                event_type.as_str()
+            );
             if let Err(e) = self.execute_actions(pending.actions) {
                 error_log!("{}", e);
             }
@@ -295,8 +339,10 @@ impl PagedDevice {
     /// for future conditional logic if needed.
     fn cancel_pending_actions(&self) {
         if let Some(pending) = self.pending_actions.borrow_mut().take() {
-            verbose_log!("Canceling pending actions that were waiting for event '{}'",
-                       pending.event_type.as_str());
+            verbose_log!(
+                "Canceling pending actions that were waiting for event '{}'",
+                pending.event_type.as_str()
+            );
         }
     }
 
@@ -346,9 +392,13 @@ impl PagedDevice {
         let provided_params = macro_call.params;
 
         // Find the macro definition
-        let macros = self.macros.as_ref().as_ref()
+        let macros = self
+            .macros
+            .as_ref()
+            .as_ref()
             .ok_or_else(|| format!("No macros defined"))?;
-        let macro_def = macros.get(&macro_name)
+        let macro_def = macros
+            .get(&macro_name)
             .ok_or_else(|| format!("Macro '{}' not found", macro_name))?;
 
         // Merge provided params with default params (provided params override defaults)
@@ -364,10 +414,18 @@ impl PagedDevice {
         Self::substitute_in_value(&mut actions_value, &final_params);
 
         // Parse the substituted YAML into Vec<Action>
-        let actions: Vec<Action> = serde_yaml_ng::from_value(actions_value)
-            .map_err(|e| format!("Failed to parse macro '{}' actions after parameter substitution: {}", macro_name, e))?;
+        let actions: Vec<Action> = serde_yaml_ng::from_value(actions_value).map_err(|e| {
+            format!(
+                "Failed to parse macro '{}' actions after parameter substitution: {}",
+                macro_name, e
+            )
+        })?;
 
-        verbose_log!("Expanded macro '{}' with {} actions", macro_name, actions.len());
+        verbose_log!(
+            "Expanded macro '{}' with {} actions",
+            macro_name,
+            actions.len()
+        );
         Ok(actions)
     }
 
@@ -390,10 +448,15 @@ impl PagedDevice {
 
                         if !output.status.success() {
                             let stderr = String::from_utf8_lossy(&output.stderr);
-                            let exit_code = output.status.code().map_or("unknown".to_string(), |c| c.to_string());
+                            let exit_code = output
+                                .status
+                                .code()
+                                .map_or("unknown".to_string(), |c| c.to_string());
                             return Err(format!(
                                 "Command '{}' failed with exit code {}: {}",
-                                exec, exit_code, stderr.trim()
+                                exec,
+                                exit_code,
+                                stderr.trim()
                             ));
                         }
                     } else {
@@ -416,9 +479,15 @@ impl PagedDevice {
                 Action::Focus { focus } => {
                     // Focus action: match against both window class and title
                     set_focus(&focus, &focus)?;
-                    verbose_log!("Requested focus for '{}' (checking both class and title)", focus);
+                    verbose_log!(
+                        "Requested focus for '{}' (checking both class and title)",
+                        focus
+                    );
                 }
-                Action::WaitFor { wait_for_event, timeout } => {
+                Action::WaitFor {
+                    wait_for_event,
+                    timeout,
+                } => {
                     let event_type = WaitEventType::from_str(&wait_for_event)?;
                     let timeout_secs = timeout.unwrap_or(1.0);
 
@@ -432,16 +501,17 @@ impl PagedDevice {
                         event_type: event_type.clone(),
                     });
 
-                    verbose_log!("WaitFor paused, waiting for event '{}' (timeout: {}s)",
-                               event_type.as_str(), timeout_secs);
+                    verbose_log!(
+                        "WaitFor paused, waiting for event '{}' (timeout: {}s)",
+                        event_type.as_str(),
+                        timeout_secs
+                    );
                     return Ok(()); // Pause execution, will resume when event arrives
                 }
                 Action::Wait { wait } => {
                     // Schedule an async timer event instead of blocking
-                    self.time_manager.schedule_timer(
-                        self.serial.clone(),
-                        Duration::from_secs_f64(wait as f64)
-                    );
+                    self.time_manager
+                        .schedule_timer(self.serial.clone(), Duration::from_secs_f64(wait as f64));
 
                     // Pause and wait for the TimerComplete event
                     let remaining: Vec<Action> = actions_iter.collect();
@@ -462,7 +532,10 @@ impl PagedDevice {
                 Action::Text { text } => {
                     send_string(&text)?;
                 }
-                Action::Try { try_actions, else_actions } => {
+                Action::Try {
+                    try_actions,
+                    else_actions,
+                } => {
                     // Execute try block
                     let try_result = self.execute_actions(try_actions);
 
@@ -507,7 +580,7 @@ impl PagedDevice {
                     // Execute all actions sequentially, short-circuit on first error
                     verbose_log!("AND: executing {} conditions", and_actions.len());
                     for action in and_actions {
-                        self.execute_actions(vec![action])?;  // Propagate first error
+                        self.execute_actions(vec![action])?; // Propagate first error
                     }
                     verbose_log!("AND: all conditions succeeded");
                     // All succeeded, continue
@@ -520,16 +593,18 @@ impl PagedDevice {
                         match self.execute_actions(vec![action]) {
                             Ok(_) => {
                                 verbose_log!("OR: condition {} succeeded", idx + 1);
-                                return Ok(());  // First success, stop and succeed
+                                return Ok(()); // First success, stop and succeed
                             }
                             Err(e) => {
                                 verbose_log!("OR: condition {} failed: {}", idx + 1, e);
-                                last_error = Some(e);  // Store error, try next
+                                last_error = Some(e); // Store error, try next
                             }
                         }
                     }
                     // All failed, return last error
-                    return Err(last_error.unwrap_or_else(|| "All OR conditions failed".to_string()));
+                    return Err(
+                        last_error.unwrap_or_else(|| "All OR conditions failed".to_string())
+                    );
                 }
                 Action::Not { not_action } => {
                     // Invert the result of the action
@@ -537,7 +612,9 @@ impl PagedDevice {
                     match self.execute_actions(vec![*not_action]) {
                         Ok(_) => {
                             verbose_log!("NOT: action succeeded, inverting to failure");
-                            return Err("NOT condition: action succeeded (inverted to failure)".to_string());
+                            return Err(
+                                "NOT condition: action succeeded (inverted to failure)".to_string()
+                            );
                         }
                         Err(e) => {
                             verbose_log!("NOT: action failed ({}), inverting to success", e);
@@ -556,7 +633,8 @@ impl PagedDevice {
                             for button_id in 1..=button_count {
                                 if let Some(button) = self.find_button(current_page, button_id) {
                                     // Hybrid: explicit dynamic flag takes precedence, otherwise use computed
-                                    let is_dynamic = button.dynamic.unwrap_or(button.is_dynamic_computed);
+                                    let is_dynamic =
+                                        button.dynamic.unwrap_or(button.is_dynamic_computed);
                                     if is_dynamic {
                                         self.invalidate_and_refresh_button(button_id)?;
                                     }
@@ -658,13 +736,20 @@ impl PagedDevice {
             let last_target = { self.last_auto_target_page.borrow().clone() };
             if target_page == last_target {
                 // Target hasn't changed, swallow the event
-                verbose_log!("Focus event: target page unchanged ({:?}), staying on current page", target_page);
+                verbose_log!(
+                    "Focus event: target page unchanged ({:?}), staying on current page",
+                    target_page
+                );
                 return;
             }
         }
 
         // Target has changed (or force_change=true), update tracking
-        verbose_log!("Focus event: target page changed to {:?} (force_change={})", target_page, force_change);
+        verbose_log!(
+            "Focus event: target page changed to {:?} (force_change={})",
+            target_page,
+            force_change
+        );
         self.last_auto_target_page.replace(target_page.clone());
 
         // If we found a matching page, switch to it
@@ -711,22 +796,32 @@ impl PagedDevice {
     /// Render a graphic based on DrawConfig
     /// Evaluates dynamic parameters, parses colors, and calls appropriate renderer
     /// Get color for a value using color_map if available, otherwise use base_color
-    fn get_color_for_value(&self, draw_config: &DrawConfig, value: f32, range: (f32, f32), base_color: (u8, u8, u8)) -> (u8, u8, u8) {
+    fn get_color_for_value(
+        &self,
+        draw_config: &DrawConfig,
+        value: f32,
+        range: (f32, f32),
+        base_color: (u8, u8, u8),
+    ) -> (u8, u8, u8) {
         if let Some(ref color_map) = draw_config.color_map {
             let percent = if range.1 > range.0 {
                 ((value - range.0) / (range.1 - range.0) * 100.0).clamp(0.0, 100.0)
             } else {
                 0.0
             };
-            self.parse_color_map(color_map, percent).unwrap_or(base_color)
+            self.parse_color_map(color_map, percent)
+                .unwrap_or(base_color)
         } else {
             base_color
         }
     }
 
-
     /// Parse color_map into format expected by graphics_renderer
-    fn parse_color_map(&self, color_map: &[crate::pages::ColorMapEntry], value_percent: f32) -> Option<(u8, u8, u8)> {
+    fn parse_color_map(
+        &self,
+        color_map: &[crate::pages::ColorMapEntry],
+        value_percent: f32,
+    ) -> Option<(u8, u8, u8)> {
         let mut parsed_map: Vec<(f32, (u8, u8, u8))> = Vec::new();
 
         for entry in color_map {
@@ -751,7 +846,10 @@ impl PagedDevice {
         // Sort by threshold
         parsed_map.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        Some(graphics_renderer::calculate_color_from_map(value_percent, &parsed_map))
+        Some(graphics_renderer::calculate_color_from_map(
+            value_percent,
+            &parsed_map,
+        ))
     }
 
     /// Invalidates cache and refreshes a single button with dynamic parameter evaluation.
@@ -761,14 +859,17 @@ impl PagedDevice {
 
         // Validate button range
         if button_id < 1 || button_id > button_count {
-            return Err(format!("Invalid button number: {} (valid range: 1-{})",
-                              button_id, button_count));
+            return Err(format!(
+                "Invalid button number: {} (valid range: 1-{})",
+                button_id, button_count
+            ));
         }
 
         let current_page = { self.current_page_ref.borrow().clone() };
 
         // Check if button exists in config
-        let button = self.find_button(current_page, button_id)
+        let button = self
+            .find_button(current_page, button_id)
             .ok_or_else(|| format!("Button {} not defined in configuration", button_id))?;
 
         // Invalidate cache for this button
@@ -782,23 +883,51 @@ impl PagedDevice {
         // Re-render button (update_button will evaluate dynamic params internally)
         let mut invalid_indices = Vec::new();
         if let Some(icon) = &button.icon {
-            self.update_button(icon, self.image_dir.clone(), button.background.clone(),
-                              button.draw.clone(), button.text.clone(), button.outline.clone(),
-                              button.text_color.clone(), button_id, &mut invalid_indices);
+            self.update_button(
+                icon,
+                self.image_dir.clone(),
+                button.background.clone(),
+                button.draw.clone(),
+                button.text.clone(),
+                button.outline.clone(),
+                button.text_color.clone(),
+                button_id,
+                &mut invalid_indices,
+            );
         } else {
-            self.update_button("", None, button.background.clone(), button.draw.clone(),
-                              button.text.clone(), button.outline.clone(), button.text_color.clone(),
-                              button_id, &mut invalid_indices);
+            self.update_button(
+                "",
+                None,
+                button.background.clone(),
+                button.draw.clone(),
+                button.text.clone(),
+                button.outline.clone(),
+                button.text_color.clone(),
+                button_id,
+                &mut invalid_indices,
+            );
         }
 
         // Flush to device
-        self.device.flush()
+        self.device
+            .flush()
             .map_err(|e| format!("Failed to flush device: {}", e))?;
 
         Ok(())
     }
 
-    fn update_button(&self, image: &str, image_path: Option<String>, background: Option<String>, draw: Option<Vec<DrawConfig>>, text: Option<TextConfig>, outline: Option<String>, text_color: Option<String>, button_index: u8, invalid_indices: &mut Vec<u8>) {
+    fn update_button(
+        &self,
+        image: &str,
+        image_path: Option<String>,
+        background: Option<String>,
+        draw: Option<Vec<DrawConfig>>,
+        text: Option<TextConfig>,
+        outline: Option<String>,
+        text_color: Option<String>,
+        button_index: u8,
+        invalid_indices: &mut Vec<u8>,
+    ) {
         // Get the button size from the device's image format
         let (width, height) = {
             let (w, h) = self.device.button_image_size();
@@ -818,7 +947,12 @@ impl PagedDevice {
 
         // Evaluate dynamic parameters in text (${time:}, ${env:}, ${service:})
         if !text_str.is_empty() && text_str.contains("${") {
-            let params = evaluate_dynamic_params(&text_str, &self.services_config, &self.services_state, &self.services_active);
+            let params = evaluate_dynamic_params(
+                &text_str,
+                &self.services_config,
+                &self.services_state,
+                &self.services_active,
+            );
             // Substitute parameters
             for (pattern, value) in params {
                 let full_pattern = format!("${{{}}}", pattern);
@@ -832,7 +966,11 @@ impl PagedDevice {
         }
 
         // Find the icon path if provided
-        let image_exists = if image.len() > 0 { find_path(image, image_path.clone()) } else { Some(image.to_string()) };
+        let image_exists = if image.len() > 0 {
+            find_path(image, image_path.clone())
+        } else {
+            Some(image.to_string())
+        };
         let image_path = if let Some(image) = image_exists {
             image
         } else {
@@ -842,7 +980,11 @@ impl PagedDevice {
             "".to_string()
         };
 
-        let bg_color_str = if let Some(bg_color) = background.as_ref() { bg_color.as_str() } else { "" };
+        let bg_color_str = if let Some(bg_color) = background.as_ref() {
+            bg_color.as_str()
+        } else {
+            ""
+        };
 
         // Extract font_size from TextConfig if available
         let font_size_str = if let Some(TextConfig::Detailed { font_size, .. }) = &text {
@@ -855,14 +997,18 @@ impl PagedDevice {
         let outline_str = outline.as_deref().unwrap_or("");
 
         // Create cache key including all visual properties that affect rendering
-        let cache_key = format!("{}:{}:{}:{}:{}:{}",
-            image_path, bg_color_str, text_str, text_color_str, outline_str, font_size_str);
+        let cache_key = format!(
+            "{}:{}:{}:{}:{}:{}",
+            image_path, bg_color_str, text_str, text_color_str, outline_str, font_size_str
+        );
 
         {
             // Check if the button state is the same as the current one
             let mut button_images = self.button_images.borrow_mut();
             let mut button_backgrounds = self.button_backgrounds.borrow_mut();
-            if button_images[button_index as usize - 1] == cache_key && button_backgrounds[button_index as usize - 1] == bg_color_str {
+            if button_images[button_index as usize - 1] == cache_key
+                && button_backgrounds[button_index as usize - 1] == bg_color_str
+            {
                 // No need to update the button
                 return;
             }
@@ -905,7 +1051,11 @@ impl PagedDevice {
                     let y_offset = (height - new_height) / 2;
 
                     // Resize and overlay with Lanczos filter
-                    let resized = icon_img.resize_exact(new_width, new_height, image::imageops::FilterType::Lanczos3);
+                    let resized = icon_img.resize_exact(
+                        new_width,
+                        new_height,
+                        image::imageops::FilterType::Lanczos3,
+                    );
                     overlay(&mut canvas, &resized, x_offset as i64, y_offset as i64);
                 }
                 Err(_) => {
@@ -920,12 +1070,21 @@ impl PagedDevice {
         // Graphics are drawn in order (first item drawn first, last item on top)
         if let Some(ref draw_configs) = draw {
             for draw_config in draw_configs {
-                verbose_log!("Rendering graphic: type={:?}, value={}", draw_config.graphic_type, draw_config.value);
+                verbose_log!(
+                    "Rendering graphic: type={:?}, value={}",
+                    draw_config.graphic_type,
+                    draw_config.value
+                );
 
                 // Evaluate dynamic parameters in value
                 let mut value_str = draw_config.value.clone();
                 if value_str.contains("${") {
-                    let params = evaluate_dynamic_params(&value_str, &self.services_config, &self.services_state, &self.services_active);
+                    let params = evaluate_dynamic_params(
+                        &value_str,
+                        &self.services_config,
+                        &self.services_state,
+                        &self.services_active,
+                    );
                     for (pattern, value) in params {
                         let full_pattern = format!("${{{}}}", pattern);
                         value_str = value_str.replace(&full_pattern, &value);
@@ -942,8 +1101,12 @@ impl PagedDevice {
 
                 // Calculate dimensions
                 let padding = draw_config.padding.unwrap_or(5);
-                let draw_width = draw_config.width.unwrap_or(width.saturating_sub(2 * padding));
-                let draw_height = draw_config.height.unwrap_or(height.saturating_sub(2 * padding));
+                let draw_width = draw_config
+                    .width
+                    .unwrap_or(width.saturating_sub(2 * padding));
+                let draw_height = draw_config
+                    .height
+                    .unwrap_or(height.saturating_sub(2 * padding));
 
                 // Parse color
                 let base_color = if let Some(ref color_str) = draw_config.color {
@@ -961,48 +1124,102 @@ impl PagedDevice {
                 match &draw_config.graphic_type {
                     GraphicType::Bar => {
                         if let Ok(value) = value_str.trim().parse::<f32>() {
-                            let color = self.get_color_for_value(draw_config, value, range, base_color);
+                            let color =
+                                self.get_color_for_value(draw_config, value, range, base_color);
 
                             // Determine direction from optional direction field
                             let direction = match draw_config.direction.as_ref() {
-                                Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
-                                Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
-                                Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
-                                Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
+                                Some(Direction::LeftToRight) => {
+                                    graphics_renderer::BarDirection::LeftToRight
+                                }
+                                Some(Direction::RightToLeft) => {
+                                    graphics_renderer::BarDirection::RightToLeft
+                                }
+                                Some(Direction::TopToBottom) => {
+                                    graphics_renderer::BarDirection::TopToBottom
+                                }
+                                Some(Direction::BottomToTop) => {
+                                    graphics_renderer::BarDirection::BottomToTop
+                                }
                                 None => graphics_renderer::BarDirection::BottomToTop, // Default: bottom to top
                             };
 
-                            graphics_renderer::render_bar(&mut canvas, x, y, value, range, draw_width, draw_height, color, draw_config.segments, direction);
+                            graphics_renderer::render_bar(
+                                &mut canvas,
+                                x,
+                                y,
+                                value,
+                                range,
+                                draw_width,
+                                draw_height,
+                                color,
+                                draw_config.segments,
+                                direction,
+                            );
                         }
                     }
                     GraphicType::Gauge => {
                         if let Ok(value) = value_str.trim().parse::<f32>() {
-                            let color = self.get_color_for_value(draw_config, value, range, base_color);
-                            graphics_renderer::render_gauge(&mut canvas, x, y, value, range, draw_width, draw_height, color);
+                            let color =
+                                self.get_color_for_value(draw_config, value, range, base_color);
+                            graphics_renderer::render_gauge(
+                                &mut canvas,
+                                x,
+                                y,
+                                value,
+                                range,
+                                draw_width,
+                                draw_height,
+                                color,
+                            );
                         }
                     }
                     GraphicType::MultiBar => {
-                        let values: Vec<f32> = value_str.split_whitespace()
+                        let values: Vec<f32> = value_str
+                            .split_whitespace()
                             .filter_map(|s| s.parse::<f32>().ok())
                             .collect();
                         if !values.is_empty() {
                             let bar_spacing = draw_config.bar_spacing.unwrap_or(2);
 
                             // Calculate color for each bar based on its value
-                            let colors: Vec<(u8, u8, u8)> = values.iter()
-                                .map(|&value| self.get_color_for_value(draw_config, value, range, base_color))
+                            let colors: Vec<(u8, u8, u8)> = values
+                                .iter()
+                                .map(|&value| {
+                                    self.get_color_for_value(draw_config, value, range, base_color)
+                                })
                                 .collect();
 
                             // Determine direction
                             let direction = match draw_config.direction.as_ref() {
-                                Some(Direction::LeftToRight) => graphics_renderer::BarDirection::LeftToRight,
-                                Some(Direction::RightToLeft) => graphics_renderer::BarDirection::RightToLeft,
-                                Some(Direction::TopToBottom) => graphics_renderer::BarDirection::TopToBottom,
-                                Some(Direction::BottomToTop) => graphics_renderer::BarDirection::BottomToTop,
+                                Some(Direction::LeftToRight) => {
+                                    graphics_renderer::BarDirection::LeftToRight
+                                }
+                                Some(Direction::RightToLeft) => {
+                                    graphics_renderer::BarDirection::RightToLeft
+                                }
+                                Some(Direction::TopToBottom) => {
+                                    graphics_renderer::BarDirection::TopToBottom
+                                }
+                                Some(Direction::BottomToTop) => {
+                                    graphics_renderer::BarDirection::BottomToTop
+                                }
                                 None => graphics_renderer::BarDirection::BottomToTop, // Default: vertical bars side-by-side
                             };
 
-                            graphics_renderer::render_multi_bar(&mut canvas, x, y, &values, range, draw_width, draw_height, &colors, bar_spacing, draw_config.segments, direction);
+                            graphics_renderer::render_multi_bar(
+                                &mut canvas,
+                                x,
+                                y,
+                                &values,
+                                range,
+                                draw_width,
+                                draw_height,
+                                &colors,
+                                bar_spacing,
+                                draw_config.segments,
+                                direction,
+                            );
                         }
                     }
                 }
@@ -1039,7 +1256,13 @@ impl PagedDevice {
             };
 
             // Render text directly onto the canvas
-            text_renderer::render_text_on_canvas(&mut canvas, &text_str, font_size, text_color_rgba, outline_rgb);
+            text_renderer::render_text_on_canvas(
+                &mut canvas,
+                &text_str,
+                font_size,
+                text_color_rgba,
+                outline_rgb,
+            );
         }
 
         let image_data = DynamicImage::ImageRgba8(canvas);
@@ -1053,9 +1276,11 @@ impl PagedDevice {
     /// Clear a button and its cache entry
     fn clear_button(&self, button_index: u8) {
         // Clear the button image on the device
-        self.device.clear_button_image(button_index - 1).unwrap_or_else(|e| {
-            error_log!("Error while clearing button image: {}", e);
-        });
+        self.device
+            .clear_button_image(button_index - 1)
+            .unwrap_or_else(|e| {
+                error_log!("Error while clearing button image: {}", e);
+            });
 
         // Clear the cache for this button so it can be redrawn properly next time
         let mut button_images = self.button_images.borrow_mut();
@@ -1071,7 +1296,9 @@ impl PagedDevice {
             for button_index in 1..=button_count {
                 self.clear_button(button_index);
             }
-            self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
+            self.device
+                .flush()
+                .unwrap_or_else(|e| error_log!("Error while flushing device: {}", e));
             return;
         }
 
@@ -1081,15 +1308,37 @@ impl PagedDevice {
         for button_index in 1..=button_count {
             if let Some(button) = self.find_button(current_page, button_index).as_ref() {
                 if let Some(icon) = &button.icon {
-                    self.update_button(icon, self.image_dir.clone(), button.background.clone(), button.draw.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
+                    self.update_button(
+                        icon,
+                        self.image_dir.clone(),
+                        button.background.clone(),
+                        button.draw.clone(),
+                        button.text.clone(),
+                        button.outline.clone(),
+                        button.text_color.clone(),
+                        button_index,
+                        &mut invalid_indices,
+                    );
                 } else {
-                    self.update_button("", None, button.background.clone(), button.draw.clone(), button.text.clone(), button.outline.clone(), button.text_color.clone(), button_index, &mut invalid_indices);
+                    self.update_button(
+                        "",
+                        None,
+                        button.background.clone(),
+                        button.draw.clone(),
+                        button.text.clone(),
+                        button.outline.clone(),
+                        button.text_color.clone(),
+                        button_index,
+                        &mut invalid_indices,
+                    );
                 }
             } else {
                 self.clear_button(button_index);
             }
         }
-        self.device.flush().unwrap_or_else(|e| { error_log!("Error while flushing device: {}", e) });
+        self.device
+            .flush()
+            .unwrap_or_else(|e| error_log!("Error while flushing device: {}", e));
         // Process all invalid button indices
         for &button_index in &invalid_indices {
             self.clear_button(button_index);
@@ -1113,7 +1362,12 @@ impl PagedDevice {
                         }
                     }
                 } else {
-                    if self.pages.pages.get_index(page).map_or(true, |(_, target_page)| !target_page.lock.unwrap_or(false)) {
+                    if self
+                        .pages
+                        .pages
+                        .get_index(page)
+                        .map_or(true, |(_, target_page)| !target_page.lock.unwrap_or(false))
+                    {
                         self.last_active_page.take();
                     }
                 }
@@ -1157,13 +1411,24 @@ impl PagedDevice {
     }
 }
 
-fn string_to_color(color: &str, named_colors: &Option<IndexMap<String, String>>) -> Result<(u8, u8, u8), String> {
+fn string_to_color(
+    color: &str,
+    named_colors: &Option<IndexMap<String, String>>,
+) -> Result<(u8, u8, u8), String> {
     if (color.len() == 8 || color.len() == 10) && color.starts_with("0x") {
         let offset = if color.len() == 10 { 2 } else { 0 };
-        let a = if color.len() == 10 { u8::from_str_radix(&color[2..4], 16).map_err(|_| format!("Invalid color format: {}", color))? } else { 255 };
-        let r = u8::from_str_radix(&color[offset + 2..offset + 4], 16).map_err(|_| format!("Invalid color format: {}", color))?;
-        let g = u8::from_str_radix(&color[offset + 4..offset + 6], 16).map_err(|_| format!("Invalid color format: {}", color))?;
-        let b = u8::from_str_radix(&color[offset + 6..offset + 8], 16).map_err(|_| format!("Invalid color format: {}", color))?;
+        let a = if color.len() == 10 {
+            u8::from_str_radix(&color[2..4], 16)
+                .map_err(|_| format!("Invalid color format: {}", color))?
+        } else {
+            255
+        };
+        let r = u8::from_str_radix(&color[offset + 2..offset + 4], 16)
+            .map_err(|_| format!("Invalid color format: {}", color))?;
+        let g = u8::from_str_radix(&color[offset + 4..offset + 6], 16)
+            .map_err(|_| format!("Invalid color format: {}", color))?;
+        let b = u8::from_str_radix(&color[offset + 6..offset + 8], 16)
+            .map_err(|_| format!("Invalid color format: {}", color))?;
 
         // Assuming the background color is 0,0,0
         let alpha = a as f32 / 255.0;

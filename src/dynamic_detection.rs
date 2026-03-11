@@ -89,7 +89,10 @@ fn has_dynamic_in_actions(
                     return true;
                 }
             }
-            Action::Try { try_actions, else_actions } => {
+            Action::Try {
+                try_actions,
+                else_actions,
+            } => {
                 if has_dynamic_in_actions(try_actions, macros, visited_macros) {
                     return true;
                 }
@@ -235,10 +238,7 @@ fn scan_yaml_value(
 /// Returns false if:
 /// 1. Button has explicit `dynamic: false` override
 /// 2. No dynamic patterns detected (or detection failed)
-pub fn is_button_dynamic(
-    button: &Button,
-    macros: &Option<IndexMap<String, Macro>>,
-) -> bool {
+pub fn is_button_dynamic(button: &Button, macros: &Option<IndexMap<String, Macro>>) -> bool {
     // Explicit override takes absolute precedence
     if let Some(explicit) = button.dynamic {
         return explicit;
@@ -305,7 +305,7 @@ mod tests {
         assert!(has_dynamic_pattern("${env:USER}"));
         assert!(has_dynamic_pattern("${service:cpu}"));
         assert!(has_dynamic_pattern("CPU: ${service:cpu}%"));
-        assert!(has_dynamic_pattern("${service:${var}}"));  // Nested
+        assert!(has_dynamic_pattern("${service:${var}}")); // Nested
 
         // Not dynamic (no colon = macro parameter)
         assert!(!has_dynamic_pattern("${param}"));

@@ -1326,6 +1326,39 @@ pages:
 - "..." - Service starting (first update in progress)
 - "⚠" - Service failed or not defined
 
+#### 4. System Provider (`${system:METRIC}`)
+
+Displays built-in system metrics without requiring background services. KeyDeck samples CPU, memory, and temperature sensors directly from the host and caches the results for sub-second reuse.
+
+**Available metrics:**
+
+| Metric | Description |
+| --- | --- |
+| `cpumax` | Highest usage among all CPU cores (percentage) |
+| `cpuavg` | Average CPU usage across all cores (percentage) |
+| `ram` | RAM usage percentage (used vs total) |
+| `tempcpu` | CPU package temperature in °C |
+| `tempgpu` | GPU temperature in °C (if sensors exposed) |
+| `tempnvme` | NVMe controller temperature in °C (if sensors exposed) |
+
+Temperature metrics are flexible: any value starting with `temp` attempts to match an available sensor label. For example, `${system:tempchipset}` will search for a sensor whose label contains "chipset". When a sensor does not exist or the system restricts access, the provider returns "⚠".
+
+**Examples:**
+
+```yaml
+button_cpu:
+  dynamic: true
+  text: "CPU ${system:cpumax}%"
+
+button_ram:
+  dynamic: true
+  text: "RAM ${system:ram}%"
+
+button_temp:
+  dynamic: true
+  text: "CPU ${system:tempcpu}°C"
+```
+
 ### Combining Multiple Providers
 
 Multiple parameters can be combined in a single text string:

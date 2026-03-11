@@ -1,36 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-mod device_manager;
 mod device_info;
-mod device_trait;
-mod elgato_device;
-mod mirajazz_device;
+mod device_manager;
 mod device_registry_init;
-mod server;
-mod pages;
+mod device_trait;
+mod dynamic_detection;
+mod dynamic_params;
+mod elgato_device;
+mod event;
 mod focus_property;
 mod focus_property_wayland;
-mod event;
+mod graphics_renderer;
+mod keyboard;
+mod kwin_script;
 mod listener_button;
 mod listener_device;
-mod listener_time;
-mod paged_device;
-mod utils;
 mod listener_focus;
 mod listener_focus_wayland;
-mod kwin_script;
-mod listener_tick;
-mod listener_sleep;
 mod listener_signal;
-mod keyboard;
+mod listener_sleep;
+mod listener_tick;
+mod listener_time;
 mod lock;
-mod session;
-mod text_renderer;
-mod graphics_renderer;
+mod mirajazz_device;
+mod paged_device;
+mod pages;
+mod server;
 mod services;
-mod dynamic_params;
-mod dynamic_detection;
+mod session;
+mod system_info;
+mod text_renderer;
+mod utils;
 mod validate;
 
 use crate::device_manager::DeviceManager;
@@ -63,7 +64,9 @@ fn print_help() {
     println!("      --list                  List all devices");
     println!("      --info <DEVICE>         Show detailed device information as YAML");
     println!("      --validate <FILE>       Validate configuration file and test services");
-    println!("      --json                  Output validation results as JSON (use with --validate)");
+    println!(
+        "      --json                  Output validation results as JSON (use with --validate)"
+    );
     println!("      --quiet                 Do not print verbose messages");
     println!("      --verbose               Print verbose messages");
     println!("      --server                Start the server");
@@ -90,7 +93,10 @@ fn main() {
             // Fallback to default paths if initialization fails
             vec![
                 "/usr/share/keydeck/devices".to_string(),
-                format!("{}/.config/keydeck/devices", env::var("HOME").unwrap_or_default()),
+                format!(
+                    "{}/.config/keydeck/devices",
+                    env::var("HOME").unwrap_or_default()
+                ),
             ]
         }
     };
@@ -119,7 +125,10 @@ fn main() {
                                 error_log!("Error: {}", e);
                             }
                         }
-                        Err(_) => error_log!("Error: Invalid button number '{}', expected a number", index),
+                        Err(_) => error_log!(
+                            "Error: Invalid button number '{}', expected a number",
+                            index
+                        ),
                     }
                 } else {
                     error_log!("Error: Setting button image requires two arguments, button number and image path");
@@ -145,7 +154,9 @@ fn main() {
                                 error_log!("Error: {}", e);
                             }
                         }
-                        Err(_) => error_log!("Error: Invalid button number '{}', expected a number", arg1),
+                        Err(_) => {
+                            error_log!("Error: Invalid button number '{}', expected a number", arg1)
+                        }
                     }
                 } else {
                     error_log!("Error: Clearing button image requires an argument");
@@ -159,7 +170,10 @@ fn main() {
                                 error_log!("Error: {}", e);
                             }
                         }
-                        Err(_) => error_log!("Error: Invalid brightness '{}', expected a number 0-100", arg1),
+                        Err(_) => error_log!(
+                            "Error: Invalid brightness '{}', expected a number 0-100",
+                            arg1
+                        ),
                     }
                 } else {
                     error_log!("Error: Setting brightness requires an argument");
@@ -226,8 +240,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            "--json" => {}, // Processed in --validate
-            "--quiet" | "--verbose" => {}, // Already processed in first pass
+            "--json" => {}                // Processed in --validate
+            "--quiet" | "--verbose" => {} // Already processed in first pass
             "--server" => should_start_server = true,
             _ => {
                 error_log!("Error: Unknown command '{}'", arg);

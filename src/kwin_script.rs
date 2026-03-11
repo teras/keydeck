@@ -7,17 +7,17 @@
 //! It allows querying active window information and activating windows without
 //! requiring external tools like kdotool.
 
-use std::fs;
-use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Sender as MpscSender, Receiver as MpscReceiver};
-use std::thread::JoinHandle;
-use std::time::Duration;
 use dbus::blocking::{Connection, SyncConnection};
 use dbus::channel::{MatchingReceiver, Sender, Token};
 use dbus::Message;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
+use std::sync::{Arc, RwLock};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use std::collections::HashMap;
 
@@ -74,7 +74,7 @@ pub struct KWinScriptClient {
     dbus_thread: Option<JoinHandle<()>>,
     dbus_connection: Arc<SyncConnection>,
     message_receiver_token: Token,
-    owns_listener: bool,  // Track if this instance started the listener
+    owns_listener: bool, // Track if this instance started the listener
 }
 
 impl KWinScriptClient {
@@ -83,8 +83,10 @@ impl KWinScriptClient {
         let kwin_conn = Connection::new_session()
             .map_err(|e| Error::DBusError(format!("Failed to connect to session bus: {}", e)))?;
 
-        let self_conn = Arc::new(SyncConnection::new_session()
-            .map_err(|e| Error::DBusError(format!("Failed to create sync connection: {}", e)))?);
+        let self_conn =
+            Arc::new(SyncConnection::new_session().map_err(|e| {
+                Error::DBusError(format!("Failed to create sync connection: {}", e))
+            })?);
 
         let dbus_addr = self_conn.unique_name().to_string();
         let temp_dir = std::env::temp_dir();
@@ -152,7 +154,7 @@ impl KWinScriptClient {
             dbus_thread: Some(dbus_thread),
             dbus_connection: self_conn,
             message_receiver_token,
-            owns_listener: false,  // New instances don't own the listener by default
+            owns_listener: false, // New instances don't own the listener by default
         })
     }
 
@@ -165,11 +167,8 @@ impl KWinScriptClient {
     pub fn cleanup_stale_scripts_static() {
         // Connect to D-Bus and try to unload the listener script
         if let Ok(conn) = Connection::new_session() {
-            let kwin_proxy = conn.with_proxy(
-                "org.kde.KWin",
-                "/Scripting",
-                Duration::from_millis(5000)
-            );
+            let kwin_proxy =
+                conn.with_proxy("org.kde.KWin", "/Scripting", Duration::from_millis(5000));
 
             // Try to unload the listener script if it exists
             let _: Result<(bool,), _> = kwin_proxy.method_call(
@@ -192,7 +191,10 @@ impl KWinScriptClient {
     pub fn activate_window(&self, class: &str, title: &str) -> Result<(), Error> {
         // Generate unique script name
         let script_name = format!("focus2-activate-{}", uuid::Uuid::new_v4());
-        let method_name = format!("activate_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
+        let method_name = format!(
+            "activate_{}",
+            uuid::Uuid::new_v4().to_string().replace("-", "")
+        );
 
         let script = format!(
             r#"
@@ -241,29 +243,31 @@ impl KWinScriptClient {
             .map_err(|e| Error::IOError(format!("Failed to write script file: {}", e)))?;
 
         // Load the script via D-Bus
-        let kwin_proxy = self.kwin_conn.with_proxy(
-            "org.kde.KWin",
-            "/Scripting",
-            Duration::from_millis(5000)
-        );
+        let kwin_proxy =
+            self.kwin_conn
+                .with_proxy("org.kde.KWin", "/Scripting", Duration::from_millis(5000));
 
-        let script_path_str = script_file_path.to_str()
-            .ok_or_else(|| Error::DBusError(format!("Script path contains invalid UTF-8: {:?}", script_file_path)))?;
+        let script_path_str = script_file_path.to_str().ok_or_else(|| {
+            Error::DBusError(format!(
+                "Script path contains invalid UTF-8: {:?}",
+                script_file_path
+            ))
+        })?;
 
-        let (script_id,): (i32,) = kwin_proxy.method_call(
-            "org.kde.kwin.Scripting",
-            "loadScript",
-            (script_path_str, script_name.as_str()),
-        ).map_err(|e| Error::DBusError(format!("Failed to load script: {}", e)))?;
+        let (script_id,): (i32,) = kwin_proxy
+            .method_call(
+                "org.kde.kwin.Scripting",
+                "loadScript",
+                (script_path_str, script_name.as_str()),
+            )
+            .map_err(|e| Error::DBusError(format!("Failed to load script: {}", e)))?;
 
         let script_path = format!("/Scripting/Script{}", script_id);
 
         // Run the script
-        let script_proxy = self.kwin_conn.with_proxy(
-            "org.kde.KWin",
-            &script_path,
-            Duration::from_millis(5000)
-        );
+        let script_proxy =
+            self.kwin_conn
+                .with_proxy("org.kde.KWin", &script_path, Duration::from_millis(5000));
 
         // Create a channel to receive the result (event-driven, not polling!)
         let (sender, receiver) = mpsc::channel();
@@ -275,7 +279,8 @@ impl KWinScriptClient {
         }
 
         // Run the script - if this fails, we need to unload it and clean up the channel
-        let run_result: Result<(), dbus::Error> = script_proxy.method_call("org.kde.kwin.Script", "run", ());
+        let run_result: Result<(), dbus::Error> =
+            script_proxy.method_call("org.kde.kwin.Script", "run", ());
         if let Err(e) = run_result {
             // Remove our channel
             {
@@ -319,7 +324,9 @@ impl KWinScriptClient {
         match final_result.as_deref() {
             Some("activated") => Ok(()),
             Some("not_found") => Err(Error::ScriptError("Window not found".to_string())),
-            _ => Err(Error::ScriptError("No response from activation script".to_string())),
+            _ => Err(Error::ScriptError(
+                "No response from activation script".to_string(),
+            )),
         }
     }
 
@@ -424,20 +431,24 @@ impl KWinScriptClient {
             .map_err(|e| Error::IOError(format!("Failed to write listener script: {}", e)))?;
 
         // Load the script via D-Bus
-        let kwin_proxy = self.kwin_conn.with_proxy(
-            "org.kde.KWin",
-            "/Scripting",
-            Duration::from_millis(5000)
-        );
+        let kwin_proxy =
+            self.kwin_conn
+                .with_proxy("org.kde.KWin", "/Scripting", Duration::from_millis(5000));
 
-        let script_path_str = script_file_path.to_str()
-            .ok_or_else(|| Error::DBusError(format!("Listener script path contains invalid UTF-8: {:?}", script_file_path)))?;
+        let script_path_str = script_file_path.to_str().ok_or_else(|| {
+            Error::DBusError(format!(
+                "Listener script path contains invalid UTF-8: {:?}",
+                script_file_path
+            ))
+        })?;
 
-        let (script_id,): (i32,) = kwin_proxy.method_call(
-            "org.kde.kwin.Scripting",
-            "loadScript",
-            (script_path_str, LISTENER_SCRIPT_NAME),
-        ).map_err(|e| Error::DBusError(format!("Failed to load listener script: {}", e)))?;
+        let (script_id,): (i32,) = kwin_proxy
+            .method_call(
+                "org.kde.kwin.Scripting",
+                "loadScript",
+                (script_path_str, LISTENER_SCRIPT_NAME),
+            )
+            .map_err(|e| Error::DBusError(format!("Failed to load listener script: {}", e)))?;
 
         // Store script ID for later unloading
         {
@@ -448,14 +459,13 @@ impl KWinScriptClient {
         let script_path = format!("/Scripting/Script{}", script_id);
 
         // Run the script (it will stay running)
-        let script_proxy = self.kwin_conn.with_proxy(
-            "org.kde.KWin",
-            &script_path,
-            Duration::from_millis(5000)
-        );
+        let script_proxy =
+            self.kwin_conn
+                .with_proxy("org.kde.KWin", &script_path, Duration::from_millis(5000));
 
         // Run the script (it will stay running) - if this fails, we need to unload it
-        let run_result: Result<(), dbus::Error> = script_proxy.method_call("org.kde.kwin.Script", "run", ());
+        let run_result: Result<(), dbus::Error> =
+            script_proxy.method_call("org.kde.kwin.Script", "run", ());
         if let Err(e) = run_result {
             // Remove our channel from global map
             {
@@ -477,7 +487,10 @@ impl KWinScriptClient {
                 *listener_id = None;
             }
 
-            return Err(Error::ScriptError(format!("Failed to run listener script: {}", e)));
+            return Err(Error::ScriptError(format!(
+                "Failed to run listener script: {}",
+                e
+            )));
         }
 
         // Clean up temp file
@@ -507,7 +520,7 @@ impl KWinScriptClient {
             let script_proxy = self.kwin_conn.with_proxy(
                 "org.kde.KWin",
                 &script_path,
-                Duration::from_millis(5000)
+                Duration::from_millis(5000),
             );
 
             // Stop the script
@@ -517,7 +530,7 @@ impl KWinScriptClient {
             let kwin_proxy = self.kwin_conn.with_proxy(
                 "org.kde.KWin",
                 "/Scripting",
-                Duration::from_millis(5000)
+                Duration::from_millis(5000),
             );
             let _: Result<(), _> = kwin_proxy.method_call(
                 "org.kde.kwin.Scripting",
@@ -538,7 +551,9 @@ impl Drop for KWinScriptClient {
         }
 
         // Stop receiving D-Bus messages
-        let _ = self.dbus_connection.stop_receive(self.message_receiver_token);
+        let _ = self
+            .dbus_connection
+            .stop_receive(self.message_receiver_token);
 
         // Stop the background thread
         self.stop_flag.store(true, Ordering::Relaxed);

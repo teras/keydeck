@@ -2,7 +2,7 @@
 // Copyright (C) 2025 Panayotis Katsaloulis
 
 use image::{Rgba, RgbaImage};
-use imageproc::drawing::{draw_filled_rect_mut, draw_filled_circle_mut};
+use imageproc::drawing::{draw_filled_circle_mut, draw_filled_rect_mut};
 use imageproc::rect::Rect;
 use std::f32::consts::PI;
 
@@ -14,9 +14,12 @@ pub fn parse_hex_color(hex: &str) -> Result<(u8, u8, u8), String> {
         return Err(format!("Invalid hex color format: {}", hex));
     }
 
-    let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| format!("Invalid red component: {}", hex))?;
-    let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| format!("Invalid green component: {}", hex))?;
-    let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| format!("Invalid blue component: {}", hex))?;
+    let r = u8::from_str_radix(&hex[0..2], 16)
+        .map_err(|_| format!("Invalid red component: {}", hex))?;
+    let g = u8::from_str_radix(&hex[2..4], 16)
+        .map_err(|_| format!("Invalid green component: {}", hex))?;
+    let b = u8::from_str_radix(&hex[4..6], 16)
+        .map_err(|_| format!("Invalid blue component: {}", hex))?;
 
     Ok((r, g, b))
 }
@@ -95,7 +98,11 @@ pub fn render_bar(
     // Calculate percentage
     let (min, max) = range;
     let value = value.clamp(min, max);
-    let percent = if max > min { (value - min) / (max - min) } else { 0.0 };
+    let percent = if max > min {
+        (value - min) / (max - min)
+    } else {
+        0.0
+    };
 
     let color_rgba = Rgba([color.0, color.1, color.2, 255]);
 
@@ -122,7 +129,8 @@ pub fn render_bar(
                             x + offset_x as i64 + (i * (segment_width + segment_spacing)) as i64
                         } else {
                             // Fill from right
-                            x + (width - offset_x - ((i + 1) * (segment_width + segment_spacing))) as i64
+                            x + (width - offset_x - ((i + 1) * (segment_width + segment_spacing)))
+                                as i64
                         };
 
                         draw_filled_rect_mut(
@@ -169,7 +177,8 @@ pub fn render_bar(
                     for i in 0..filled_segments {
                         let seg_y = if matches!(direction, BarDirection::BottomToTop) {
                             // Fill from bottom
-                            y + (height - offset_y - ((i + 1) * (segment_height + segment_spacing))) as i64
+                            y + (height - offset_y - ((i + 1) * (segment_height + segment_spacing)))
+                                as i64
                         } else {
                             // Fill from top
                             y + offset_y as i64 + (i * (segment_height + segment_spacing)) as i64
@@ -217,7 +226,11 @@ pub fn render_gauge(
     // Calculate percentage
     let (min, max) = range;
     let value = value.clamp(min, max);
-    let percent = if max > min { (value - min) / (max - min) } else { 0.0 };
+    let percent = if max > min {
+        (value - min) / (max - min)
+    } else {
+        0.0
+    };
 
     let color_rgba = Rgba([color.0, color.1, color.2, 255]);
 
@@ -276,16 +289,7 @@ pub fn render_multi_bar(
                 let bar_y = y + (i as u32 * (bar_height + bar_spacing)) as i64;
                 let color = colors.get(i).copied().unwrap_or((255, 255, 255));
                 render_bar(
-                    canvas,
-                    x,
-                    bar_y,
-                    value,
-                    range,
-                    width,
-                    bar_height,
-                    color,
-                    segments,
-                    direction,
+                    canvas, x, bar_y, value, range, width, bar_height, color, segments, direction,
                 );
             }
         }
@@ -298,16 +302,7 @@ pub fn render_multi_bar(
                 let bar_x = x + (i as u32 * (bar_width + bar_spacing)) as i64;
                 let color = colors.get(i).copied().unwrap_or((255, 255, 255));
                 render_bar(
-                    canvas,
-                    bar_x,
-                    y,
-                    value,
-                    range,
-                    bar_width,
-                    height,
-                    color,
-                    segments,
-                    direction,
+                    canvas, bar_x, y, value, range, bar_width, height, color, segments, direction,
                 );
             }
         }

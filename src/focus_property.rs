@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
+use crate::session::{detect_session_type, SessionType};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     Atom, AtomEnum, ClientMessageData, ClientMessageEvent, ConnectionExt, EventMask, Window,
     CLIENT_MESSAGE_EVENT,
 };
 use x11rb::rust_connection::RustConnection;
-use crate::session::{detect_session_type, SessionType};
 
 pub fn set_focus(class: &String, title: &String) -> Result<(), String> {
     match detect_session_type() {
@@ -116,8 +116,7 @@ fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
                 2, // Source indication (2 = pager)
                 0, // Timestamp (0 means CurrentTime)
                 0, // Flags (set to 0)
-                0,
-                0,
+                0, 0,
             ];
 
             let data: ClientMessageData = data32.into();
@@ -138,7 +137,7 @@ fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
                 EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
                 &event,
             )
-                .map_err(|e| format!("Failed to send _NET_ACTIVE_WINDOW event: {}", e))?;
+            .map_err(|e| format!("Failed to send _NET_ACTIVE_WINDOW event: {}", e))?;
 
             // Flush the request to ensure it's sent
             conn.flush()
@@ -148,7 +147,10 @@ fn set_focus_x11(class: &String, title: &String) -> Result<(), String> {
         }
     }
 
-    Err(format!("No matching window found using class '{}' and title '{}'", class, title))
+    Err(format!(
+        "No matching window found using class '{}' and title '{}'",
+        class, title
+    ))
 }
 
 /// Helper function to intern an atom and return its identifier.

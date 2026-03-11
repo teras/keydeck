@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use crate::{error_log, info_log, verbose_log};
-use crate::device_info::{DeviceInfo, ButtonLayout, ButtonImage};
+use crate::device_info::{ButtonImage, ButtonLayout, DeviceInfo};
 use crate::device_trait::{DeviceError, DeviceReader, KeydeckDevice};
 use crate::elgato_device::ElgatoDevice;
 use crate::mirajazz_device::MirajazzDevice;
+use crate::{error_log, info_log, verbose_log};
 use elgato_streamdeck::{list_devices, new_hidapi};
 use image::{open, DynamicImage};
 use std::path::Path;
@@ -47,7 +47,6 @@ impl Device {
         }
     }
 }
-
 
 // Implement KeydeckDevice for Device enum by delegating to inner types
 impl KeydeckDevice for Device {
@@ -130,7 +129,9 @@ impl KeydeckDevice for Device {
 
     fn set_button_image(&self, button_idx: u8, image: DynamicImage) -> Result<(), DeviceError> {
         match self {
-            Device::Elgato(d) => d.set_button_image(button_idx, image).map_err(DeviceError::from),
+            Device::Elgato(d) => d
+                .set_button_image(button_idx, image)
+                .map_err(DeviceError::from),
             Device::Mirajazz(d) => d.set_button_image(button_idx, image),
         }
     }
@@ -215,7 +216,12 @@ impl DeviceManager {
                 if let Some(serial) = device_info.serial_number() {
                     // Deduplicate by (vid, pid, serial) - single physical device may have multiple interfaces
                     if mirajazz_devices.insert((vid, pid, serial.to_string())) {
-                        verbose_log!("Detected Mirajazz device (VID:{:04X} PID:{:04X} Serial:{})", vid, pid, serial);
+                        verbose_log!(
+                            "Detected Mirajazz device (VID:{:04X} PID:{:04X} Serial:{})",
+                            vid,
+                            pid,
+                            serial
+                        );
                     }
                 }
                 continue;
@@ -230,7 +236,13 @@ impl DeviceManager {
         // Create Mirajazz device instances
         for (vid, pid, usb_serial) in mirajazz_devices {
             let device_id = format!("{:04X}:{:04X}", vid, pid);
-            match MirajazzDevice::new(Arc::clone(&hidapi), vid, pid, usb_serial.clone(), device_id.clone()) {
+            match MirajazzDevice::new(
+                Arc::clone(&hidapi),
+                vid,
+                pid,
+                usb_serial.clone(),
+                device_id.clone(),
+            ) {
                 Ok(mirajazz_device) => {
                     let display_serial = mirajazz_device.serial.clone();
                     verbose_log!("Adding Mirajazz device: {} ({})", display_serial, device_id);
@@ -251,15 +263,18 @@ impl DeviceManager {
             // Only add if it was detected as elgato-supported in our priority check
             if elgato_devices.contains(&(vid, pid)) {
                 let device_id = format!("{:04X}:{:04X}", vid, pid);
-                verbose_log!("Adding Elgato device: {} (VID:{:04X} PID:{:04X})", serial, vid, pid);
-                devices.push(
-                    Device::Elgato(ElgatoDevice::new(
-                        Arc::clone(&hidapi),
-                        kind,
-                        serial,
-                        device_id,
-                    ))
+                verbose_log!(
+                    "Adding Elgato device: {} (VID:{:04X} PID:{:04X})",
+                    serial,
+                    vid,
+                    pid
                 );
+                devices.push(Device::Elgato(ElgatoDevice::new(
+                    Arc::clone(&hidapi),
+                    kind,
+                    serial,
+                    device_id,
+                )));
             }
         }
 
@@ -313,7 +328,10 @@ impl DeviceManager {
     pub fn grab_event(&mut self) -> Result<(), String> {
         let active = self.count_active_devices();
         if self.count_active_devices() != 1 {
-            return Err(format!("Only one active device is allowed to grab events, found {}", active));
+            return Err(format!(
+                "Only one active device is allowed to grab events, found {}",
+                active
+            ));
         }
         for device in self.iter_active_devices() {
             // Use trait method get_reader() which returns Arc<dyn DeviceReader>
@@ -350,7 +368,8 @@ impl DeviceManager {
 
     pub fn set_button_image(&mut self, button_idx: u8, img_path: String) -> Result<(), String> {
         let image_data = match find_path(&img_path, self.image_dir.clone()) {
-            Some(image_path) => open(image_path).map_err(|e| format!("Failed to open image '{}': {}", &img_path, e))?,
+            Some(image_path) => open(image_path)
+                .map_err(|e| format!("Failed to open image '{}': {}", &img_path, e))?,
             None => return Err(format!("Image '{}' not found", img_path)),
         };
         for device in self.iter_active_devices() {
@@ -380,7 +399,12 @@ impl DeviceManager {
 
     pub fn list_devices(&mut self) {
         for device in self.iter_active_devices() {
-            info_log!("{} {} {}", device.device_id(), device.serial(), device.kind_name());
+            info_log!(
+                "{} {} {}",
+                device.device_id(),
+                device.serial(),
+                device.kind_name()
+            );
         }
         info_log!("Total devices: {}", self.count_active_devices());
     }
@@ -395,7 +419,9 @@ impl DeviceManager {
 
                 let device_info = DeviceInfo {
                     device_id: device.device_id().to_string(),
-                    serial: device.serial_number().unwrap_or_else(|_| "Unknown".to_string()),
+                    serial: device
+                        .serial_number()
+                        .unwrap_or_else(|_| "Unknown".to_string()),
                     model: device.kind_name(),
                     button_layout: ButtonLayout {
                         rows: rows as u8,
@@ -408,7 +434,7 @@ impl DeviceManager {
                         format: "JPEG".to_string(), // Assuming JPEG for now
                     },
                     encoders: encoders as u8,
-                    touchpoints: 0, // Not available in trait
+                    touchpoints: 0,  // Not available in trait
                     lcd_strip: None, // Not available in trait
                     is_visual: device.has_screen(),
                 };
@@ -436,7 +462,10 @@ impl DeviceManager {
                 return Ok(());
             }
         }
-        Err(format!("Enabling device with id '{}' not found", identifier))
+        Err(format!(
+            "Enabling device with id '{}' not found",
+            identifier
+        ))
     }
 
     pub fn disable_device(&mut self, device_id: String) -> Result<(), String> {
@@ -447,7 +476,10 @@ impl DeviceManager {
                 return Ok(());
             }
         }
-        Err(format!("Disabling device with id '{}' not found", device_id))
+        Err(format!(
+            "Disabling device with id '{}' not found",
+            device_id
+        ))
     }
 
     fn set_state_all_devices(&mut self, state: bool) {
@@ -466,7 +498,7 @@ impl DeviceManager {
         count
     }
 
-    pub fn iter_active_devices(&mut self) -> impl Iterator<Item=&mut Device> {
+    pub fn iter_active_devices(&mut self) -> impl Iterator<Item = &mut Device> {
         self.devices.iter_mut().filter(|device| device.is_enabled())
     }
 }
@@ -475,7 +507,11 @@ pub fn find_path(file: &str, dir: Option<String>) -> Option<String> {
     if Path::new(file).exists() {
         Some(file.to_string())
     } else {
-        let other_path = format!("{}/{}", dir.clone().unwrap_or_else(|| ".".to_string()), file.replace("\\", "/"));
+        let other_path = format!(
+            "{}/{}",
+            dir.clone().unwrap_or_else(|| ".".to_string()),
+            file.replace("\\", "/")
+        );
         if Path::new(&other_path).exists() {
             Some(other_path)
         } else {
@@ -503,7 +539,13 @@ pub fn find_device_by_serial(device_sn: &str) -> Option<Device> {
 
                 if MirajazzDevice::is_supported(vid, pid) {
                     let device_id = format!("{:04X}:{:04X}", vid, pid);
-                    match MirajazzDevice::new(Arc::clone(&hidapi), vid, pid, serial.to_string(), device_id) {
+                    match MirajazzDevice::new(
+                        Arc::clone(&hidapi),
+                        vid,
+                        pid,
+                        serial.to_string(),
+                        device_id,
+                    ) {
                         Ok(mirajazz_device) => {
                             return Some(Device::Mirajazz(mirajazz_device));
                         }

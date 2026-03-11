@@ -46,7 +46,10 @@ impl From<DeviceError> for String {
 
 /// Trait for any device reader that can provide button events
 pub trait DeviceReader: Send + Sync {
-    fn read(&self, timeout: Option<std::time::Duration>) -> Result<Vec<DeviceStateUpdate>, DeviceError>;
+    fn read(
+        &self,
+        timeout: Option<std::time::Duration>,
+    ) -> Result<Vec<DeviceStateUpdate>, DeviceError>;
 }
 
 /// Device state update events
@@ -56,12 +59,26 @@ pub enum DeviceStateUpdate {
     ButtonUp(u8),
     EncoderDown(u8),
     EncoderUp(u8),
-    EncoderTwist { encoder: u8, ticks: i8 },
+    EncoderTwist {
+        encoder: u8,
+        ticks: i8,
+    },
     TouchPointDown(u8),
     TouchPointUp(u8),
-    TouchScreenPress { x: u16, y: u16 },
-    TouchScreenLongPress { x: u16, y: u16 },
-    TouchScreenSwipe { x: u16, y: u16, target_x: u16, target_y: u16 },
+    TouchScreenPress {
+        x: u16,
+        y: u16,
+    },
+    TouchScreenLongPress {
+        x: u16,
+        y: u16,
+    },
+    TouchScreenSwipe {
+        x: u16,
+        y: u16,
+        target_x: u16,
+        target_y: u16,
+    },
 }
 
 /// Main device abstraction trait
@@ -156,7 +173,14 @@ pub trait KeydeckDevice: Send + Sync {
 
     /// Write to LCD strip with specific region
     /// Default implementation logs warning and does nothing
-    fn write_lcd(&self, _x: u16, _y: u16, _width: u16, _height: u16, _image: &DynamicImage) -> Result<(), DeviceError> {
+    fn write_lcd(
+        &self,
+        _x: u16,
+        _y: u16,
+        _width: u16,
+        _height: u16,
+        _image: &DynamicImage,
+    ) -> Result<(), DeviceError> {
         warn_log!("write_lcd() not supported on this device");
         Ok(())
     }

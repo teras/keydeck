@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use std::sync::mpsc::Sender;
 use crate::error_log;
+use std::sync::mpsc::Sender;
 
 pub fn send(tx: &Sender<DeviceEvent>, event: DeviceEvent) {
-    tx.send(event).unwrap_or_else(|e| {
-        error_log!("Error while sending event: {}", e)
-    })
+    tx.send(event)
+        .unwrap_or_else(|e| error_log!("Error while sending event: {}", e))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +24,11 @@ pub enum DeviceEvent {
     EncoderUp { sn: String, encoder_id: u8 },
 
     /// Encoder was twisted
-    EncoderTwist { sn: String, encoder_id: u8, value: i8 },
+    EncoderTwist {
+        sn: String,
+        encoder_id: u8,
+        value: i8,
+    },
 
     /// Touch Point got pressed down
     TouchPointDown { sn: String, point_id: u8 },
@@ -40,7 +43,11 @@ pub enum DeviceEvent {
     TouchScreenLongPress { sn: String, x: u16, y: u16 },
 
     /// Touch screen received a swipe
-    TouchScreenSwipe { sn: String, start: (u16, u16), end: (u16, u16) },
+    TouchScreenSwipe {
+        sn: String,
+        start: (u16, u16),
+        end: (u16, u16),
+    },
 
     /// Window focus changed
     FocusChanges { class: String, title: String },

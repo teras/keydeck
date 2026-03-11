@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use cosmic_text::{Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap};
+use cosmic_text::{
+    Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Wrap,
+};
 use image::{Rgba, RgbaImage};
 use std::cell::RefCell;
 use std::sync::OnceLock;
@@ -102,7 +104,10 @@ fn build_rich_text_spans<'a>(text: &'a str, font_system: &FontSystem) -> Vec<(&'
             in_emoji = true;
             emoji_start = i;
         } else if !is_emoji_char && in_emoji {
-            spans.push((&text[emoji_start..i], Attrs::new().family(Family::Name(emoji_font))));
+            spans.push((
+                &text[emoji_start..i],
+                Attrs::new().family(Family::Name(emoji_font)),
+            ));
             in_emoji = false;
             current_start = i;
         }
@@ -111,7 +116,10 @@ fn build_rich_text_spans<'a>(text: &'a str, font_system: &FontSystem) -> Vec<(&'
     // Handle final section
     let text_len = text.len();
     if in_emoji {
-        spans.push((&text[emoji_start..text_len], Attrs::new().family(Family::Name(emoji_font))));
+        spans.push((
+            &text[emoji_start..text_len],
+            Attrs::new().family(Family::Name(emoji_font)),
+        ));
     } else if current_start < text_len {
         spans.push((&text[current_start..text_len], Attrs::new()));
     }
@@ -148,7 +156,13 @@ fn calculate_optimal_font_size(
         buffer.set_size(font_system, Some(width as f32), None);
 
         let spans = build_rich_text_spans(line, font_system);
-        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
+        buffer.set_rich_text(
+            font_system,
+            spans,
+            &Attrs::new(),
+            Shaping::Advanced,
+            Some(Align::Center),
+        );
         buffer.shape_until_scroll(font_system, false);
 
         for run in buffer.layout_runs() {
@@ -183,7 +197,13 @@ fn calculate_optimal_font_size(
         buffer.set_size(font_system, Some(target_width), None);
 
         let spans = build_rich_text_spans(longest_line, font_system);
-        buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
+        buffer.set_rich_text(
+            font_system,
+            spans,
+            &Attrs::new(),
+            Shaping::Advanced,
+            Some(Align::Center),
+        );
         buffer.shape_until_scroll(font_system, false);
 
         let mut line_width = 0.0f32;
@@ -216,7 +236,11 @@ pub fn render_text_on_canvas(
     RENDERING_DEPTH.with(|depth| {
         let current_depth = *depth.borrow();
         if current_depth > 0 {
-            eprintln!("DEBUG_REENTRANCE: Re-entrant call detected! Depth: {} -> {}", current_depth, current_depth + 1);
+            eprintln!(
+                "DEBUG_REENTRANCE: Re-entrant call detected! Depth: {} -> {}",
+                current_depth,
+                current_depth + 1
+            );
             eprintln!("DEBUG_REENTRANCE: Text being rendered: '{}'", text);
         }
         *depth.borrow_mut() += 1;
@@ -224,7 +248,14 @@ pub fn render_text_on_canvas(
 
     FONT_SYSTEM.with(|fs| {
         let mut font_system = fs.borrow_mut();
-        render_text_on_canvas_internal(canvas, text, font_size, text_color, outline_color, &mut font_system);
+        render_text_on_canvas_internal(
+            canvas,
+            text,
+            font_size,
+            text_color,
+            outline_color,
+            &mut font_system,
+        );
     });
 
     // DEBUG_REENTRANCE: Decrement depth on exit
@@ -251,7 +282,8 @@ fn render_text_on_canvas_internal(
     // Determine final font size - always run auto-scaling
     // Use user's font size as preferred (or default if not specified)
     let preferred_size = font_size.unwrap_or(DEFAULT_FONT_SIZE);
-    let final_font_size = calculate_optimal_font_size(font_system, &lines, width, height, preferred_size);
+    let final_font_size =
+        calculate_optimal_font_size(font_system, &lines, width, height, preferred_size);
 
     // Calculate line height and total block height
     let line_height = final_font_size * LINE_SPACING_FACTOR;
@@ -323,7 +355,13 @@ fn render_line_on_canvas(
 
     // Set text with emoji-aware rich text and center alignment
     let spans = build_rich_text_spans(text, font_system);
-    buffer.set_rich_text(font_system, spans, &Attrs::new(), Shaping::Advanced, Some(Align::Center));
+    buffer.set_rich_text(
+        font_system,
+        spans,
+        &Attrs::new(),
+        Shaping::Advanced,
+        Some(Align::Center),
+    );
     buffer.shape_until_scroll(font_system, false);
 
     // Calculate vertical centering
@@ -348,26 +386,36 @@ fn render_line_on_canvas(
         let offsets = [(0.0, -1.0), (0.0, 1.0), (-1.0, 0.0), (1.0, 0.0)];
 
         for &(dx, dy) in &offsets {
-            buffer.draw(font_system, &mut swash_cache, outline_color, |x, y, w, h, color| {
-                let final_x = (x as f32 + dx) as i32;
-                let final_y = (y as f32 + y_offset + dy) as i32;
+            buffer.draw(
+                font_system,
+                &mut swash_cache,
+                outline_color,
+                |x, y, w, h, color| {
+                    let final_x = (x as f32 + dx) as i32;
+                    let final_y = (y as f32 + y_offset + dy) as i32;
 
-                if final_x >= 0 && final_y >= 0 {
-                    draw_glyph(canvas, final_x, final_y, w, h, color);
-                }
-            });
+                    if final_x >= 0 && final_y >= 0 {
+                        draw_glyph(canvas, final_x, final_y, w, h, color);
+                    }
+                },
+            );
         }
     }
 
     // Draw main text
-    buffer.draw(font_system, &mut swash_cache, cosmic_color, |x, y, w, h, color| {
-        let final_x = x as i32;
-        let final_y = (y as f32 + y_offset) as i32;
+    buffer.draw(
+        font_system,
+        &mut swash_cache,
+        cosmic_color,
+        |x, y, w, h, color| {
+            let final_x = x as i32;
+            let final_y = (y as f32 + y_offset) as i32;
 
-        if final_x >= 0 && final_y >= 0 {
-            draw_glyph(canvas, final_x, final_y, w, h, color);
-        }
-    });
+            if final_x >= 0 && final_y >= 0 {
+                draw_glyph(canvas, final_x, final_y, w, h, color);
+            }
+        },
+    );
 }
 
 /// Helper function to draw a single glyph onto the canvas
