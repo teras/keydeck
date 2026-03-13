@@ -24,8 +24,8 @@ image = { version = "0.25", default-features = false, features = [
     "jpeg",
     "png",
 ] }
-imageproc = "0.25"
-cosmic-text = "0.14"
+imageproc = "0.26"
+cosmic-text = "0.18"
 hidapi = { version = "2.6", default-features = false, features = ["linux-static-hidraw"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -33,13 +33,13 @@ serde_yaml_ng = "0.10"
 serde_path_to_error = "0.1"
 x11rb = { version = "0.13", features = ["xtest"] }
 zbus = { version = "5", features = ["blocking"] }
-signal-hook = "0.3"
+signal-hook = "0.4"
 strum = { version = "0.26", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 regex = "1.12"
-sysinfo = "0.30"
-ashpd = "0.11"
+sysinfo = "0.38"
+ashpd = { version = "0.13", features = ["remote_desktop", "screencast"] }
 tokio = { version = "1", features = ["rt"] }
 
 [profile.release]

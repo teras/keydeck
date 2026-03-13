@@ -422,7 +422,11 @@ impl DeviceManager {
                     serial: device
                         .serial_number()
                         .unwrap_or_else(|_| "Unknown".to_string()),
+                    manufacturer: device.manufacturer(),
                     model: device.kind_name(),
+                    firmware_version: device
+                        .firmware_version()
+                        .unwrap_or_else(|_| "Unknown".to_string()),
                     button_layout: ButtonLayout {
                         rows: rows as u8,
                         columns: cols as u8,
@@ -431,11 +435,11 @@ impl DeviceManager {
                     button_image: ButtonImage {
                         width: img_width as usize,
                         height: img_height as usize,
-                        format: "JPEG".to_string(), // Assuming JPEG for now
+                        format: "JPEG".to_string(), // TODO: Query actual image format from device
                     },
                     encoders: encoders as u8,
-                    touchpoints: 0,  // Not available in trait
-                    lcd_strip: None, // Not available in trait
+                    touchpoints: 0,  // TODO: Add touchpoint support to KeydeckDevice trait
+                    lcd_strip: None, // TODO: Report LCD strip dimensions from devices that support it
                     is_visual: device.has_screen(),
                 };
 

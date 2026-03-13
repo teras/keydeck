@@ -20,7 +20,6 @@ struct DaemonStatus {
 }
 
 mod backup_restore;
-mod icon_extractor;
 mod windows;
 
 #[cfg(target_os = "linux")]
@@ -1011,14 +1010,6 @@ fn is_protected(icon: &str, patterns: &[String]) -> bool {
     })
 }
 
-/// Extract icon from a Windows PE file (.exe, .dll) and save it to the icon directory
-/// Returns the filename of the saved icon
-#[tauri::command]
-fn extract_icon_from_exe(file_path: String) -> Result<String, String> {
-    let icon_dir = get_icon_dir();
-    icon_extractor::extract_icon_from_exe(file_path, icon_dir)
-}
-
 /// Read an icon file from any system path and return it as a base64 data URL
 /// This bypasses Tauri's asset protocol restrictions for system icons
 #[tauri::command]
@@ -1262,7 +1253,6 @@ pub fn run() {
             check_directory_exists,
             list_icons,
             ensure_default_icon_dir,
-            extract_icon_from_exe,
             list_applications,
             select_app_icon,
             preview_icon_cleanup,

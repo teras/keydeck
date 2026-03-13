@@ -5,7 +5,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use zip::write::{FileOptions, ZipWriter};
+use zip::write::{SimpleFileOptions, ZipWriter};
 use zip::CompressionMethod;
 
 /// Creates a backup of the entire ~/.config/keydeck/ directory as a ZIP file.
@@ -29,8 +29,7 @@ pub fn backup_config_directory(zip_path: &str) -> Result<(), String> {
     let file = File::create(zip_path).map_err(|e| format!("Failed to create zip file: {}", e))?;
     let mut zip = ZipWriter::new(file);
 
-    let options: FileOptions<()> =
-        FileOptions::default().compression_method(CompressionMethod::Deflated);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     // Walk through the config directory
     for entry in WalkDir::new(&config_dir)

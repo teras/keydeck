@@ -7,7 +7,9 @@ use serde::{Serialize, Deserialize};
 pub struct DeviceInfo {
     pub device_id: String,
     pub serial: String,
+    pub manufacturer: String,
     pub model: String,
+    pub firmware_version: String,
     pub button_layout: ButtonLayout,
     pub button_image: ButtonImage,
     #[serde(skip_serializing_if = "is_zero", default)]

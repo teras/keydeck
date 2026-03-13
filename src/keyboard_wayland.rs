@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
-use ashpd::desktop::PersistMode;
+use ashpd::desktop::remote_desktop::{
+    DeviceType, KeyState, NotifyKeyboardKeycodeOptions, RemoteDesktop, SelectDevicesOptions,
+    StartOptions,
+};
 use std::str::FromStr;
 use std::sync::Mutex;
 use strum::EnumString;
@@ -18,8 +20,8 @@ pub struct WaylandKeyboardSession {
 }
 
 struct SessionInner {
-    proxy: RemoteDesktop<'static>,
-    session: ashpd::desktop::Session<'static, RemoteDesktop<'static>>,
+    proxy: RemoteDesktop,
+    session: ashpd::desktop::Session<RemoteDesktop>,
 }
 
 // Safety: ashpd types are Send, we protect with Mutex
@@ -48,17 +50,21 @@ impl WaylandKeyboardSession {
                 .map_err(|e| format!("Failed to create RemoteDesktop proxy: {}", e))?;
 
             let session = proxy
-                .create_session()
+                .create_session(Default::default())
                 .await
                 .map_err(|e| format!("Failed to create session: {}", e))?;
 
             proxy
-                .select_devices(&session, DeviceType::Keyboard.into(), None, PersistMode::DoNot)
+                .select_devices(
+                    &session,
+                    SelectDevicesOptions::default()
+                        .set_devices(Some(DeviceType::Keyboard.into())),
+                )
                 .await
                 .map_err(|e| format!("Failed to select devices: {}", e))?;
 
             let _response = proxy
-                .start(&session, None)
+                .start(&session, None, StartOptions::default())
                 .await
                 .map_err(|e| format!("Failed to start session (user denied?): {}", e))?
                 .response()
@@ -83,7 +89,12 @@ impl WaylandKeyboardSession {
         self.runtime.block_on(async {
             inner
                 .proxy
-                .notify_keyboard_keycode(&inner.session, keycode, state)
+                .notify_keyboard_keycode(
+                    &inner.session,
+                    keycode,
+                    state,
+                    NotifyKeyboardKeycodeOptions::default(),
+                )
                 .await
                 .map_err(|e| format!("Failed to send keycode: {}", e))
         })

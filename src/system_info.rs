@@ -5,9 +5,7 @@
 
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
-use sysinfo::{
-    Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System, MINIMUM_CPU_UPDATE_INTERVAL,
-};
+use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
 /// Cache refresh interval for expensive sysinfo sampling
 const CACHE_TTL: Duration = Duration::from_millis(750);
@@ -170,12 +168,12 @@ struct SystemMetricsState {
 
 impl SystemMetricsState {
     fn new() -> Self {
-        let refresh = RefreshKind::new()
+        let refresh = RefreshKind::nothing()
             .with_cpu(CpuRefreshKind::everything())
             .with_memory(MemoryRefreshKind::everything());
         let system = System::new_with_specifics(refresh);
         let mut components = Components::new();
-        components.refresh_list();
+        components.refresh(true);
         Self {
             system,
             components,
@@ -201,17 +199,16 @@ impl SystemMetricsState {
 
     fn refresh_snapshot(&mut self, now: Instant) {
         if !self.cpu_initialized {
-            self.system.refresh_cpu();
-            std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL);
+            self.system
+                .refresh_cpu_specifics(CpuRefreshKind::everything());
+            std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
             self.cpu_initialized = true;
         }
-        self.system.refresh_cpu();
-        self.system.refresh_memory();
-        if self.components.list().is_empty() {
-            self.components.refresh_list();
-        } else {
-            self.components.refresh();
-        }
+        self.system
+            .refresh_cpu_specifics(CpuRefreshKind::everything());
+        self.system
+            .refresh_memory_specifics(MemoryRefreshKind::everything());
+        self.components.refresh(true);
 
         let cpus = self.system.cpus();
         let (cpu_max, cpu_avg) = if cpus.is_empty() {
@@ -242,10 +239,11 @@ impl SystemMetricsState {
 
         let mut temperatures = Vec::new();
         for component in self.components.list() {
-            let normalized = component.label().to_ascii_lowercase();
-            let value = component.temperature();
-            if value.is_finite() {
-                temperatures.push(TemperatureReading { normalized, value });
+            if let Some(value) = component.temperature() {
+                if value.is_finite() {
+                    let normalized = component.label().to_ascii_lowercase();
+                    temperatures.push(TemperatureReading { normalized, value });
+                }
             }
         }
 

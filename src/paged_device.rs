@@ -193,6 +193,7 @@ impl PagedDevice {
         self.device.as_ref()
     }
 
+    // TODO: Expose serial in the config UI so the user can identify connected devices
     #[allow(dead_code)]
     pub fn get_serial(&self) -> &str {
         &self.serial

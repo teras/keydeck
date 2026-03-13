@@ -151,6 +151,7 @@ pub trait KeydeckDevice: Send + Sync {
         Ok(())
     }
 
+    // TODO: Call sleep() on idle timeout or system suspend to save power on Ajazz/Mirabox devices
     /// Put device to sleep (no-op for most devices)
     /// Used by Ajazz/Mirabox devices for power management
     fn sleep(&self) -> Result<(), DeviceError> {
@@ -164,17 +165,16 @@ pub trait KeydeckDevice: Send + Sync {
         // No-op by default - Elgato devices don't need this
     }
 
-    // === Optional LCD/Display Features ===
+    // === LCD/Display Features ===
 
+    // TODO: Implement LCD strip support for Stream Deck Neo/Plus devices
     /// Write to LCD strip (e.g., Stream Deck Neo/Plus)
-    /// Default implementation logs warning and does nothing
     fn write_lcd_fill(&self, _x: u16, _y: u16, _image: &DynamicImage) -> Result<(), DeviceError> {
         warn_log!("write_lcd_fill() not supported on this device");
         Ok(())
     }
 
     /// Write to LCD strip with specific region
-    /// Default implementation logs warning and does nothing
     fn write_lcd(
         &self,
         _x: u16,
@@ -187,8 +187,8 @@ pub trait KeydeckDevice: Send + Sync {
         Ok(())
     }
 
+    // TODO: Implement logo/background image support for Ajazz devices
     /// Set logo/background image (e.g., Ajazz fullscreen background)
-    /// Default implementation logs warning and does nothing
     fn set_logo_image(&self, _image: DynamicImage) -> Result<(), DeviceError> {
         warn_log!("set_logo_image() not supported on this device");
         Ok(())
