@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Panayotis Katsaloulis
 
 use crate::device_trait::{DeviceError, DeviceReader, DeviceStateUpdate, KeydeckDevice};
+#[allow(unused_imports)]
 use crate::{error_log, verbose_log};
 use elgato_streamdeck::info::Kind;
 use elgato_streamdeck::{DeviceStateReader, StreamDeck};

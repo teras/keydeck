@@ -17,30 +17,30 @@ path = "src/main.rs"
 
 [dependencies]
 keydeck-types = { path = "keydeck-types" }
-elgato-streamdeck = "0.12.0"
+elgato-streamdeck = "0.12"
 mirajazz-json = { path = "vendor/mirajazz-json" }
-indexmap = { version = "2.6.0", features = ["serde"] }
-image = { version = "0.25.4", default-features = false, features = [
+indexmap = { version = "2.13", features = ["serde"] }
+image = { version = "0.25", default-features = false, features = [
     "jpeg",
     "png",
 ] }
 imageproc = "0.25"
 cosmic-text = "0.14"
 hidapi = { version = "2.6", default-features = false, features = ["linux-static-hidraw"] }
-serde = { version = "1.0.213", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
-serde_yaml_ng = "0.10.0"
+serde_yaml_ng = "0.10"
 serde_path_to_error = "0.1"
-x11rb = { version = "0.13.1", features = ["xtest"] }
-dbus = { version = "0.9.7", features = ["stdfd"] }
-signal-hook = "0.3.17"
-strum = "0.26.3"
-strum_macros = "0.26.4"
-uuid = { version = "1.0", features = ["v4"] }
-lazy_static = "1.4"
+x11rb = { version = "0.13", features = ["xtest"] }
+zbus = { version = "5", features = ["blocking"] }
+signal-hook = "0.3"
+strum = { version = "0.26", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
-regex = "1.10"
+regex = "1.12"
 sysinfo = "0.30"
+ashpd = "0.11"
+tokio = { version = "1", features = ["rt"] }
 
 [profile.release]
 opt-level = "z"  # Optimize for size

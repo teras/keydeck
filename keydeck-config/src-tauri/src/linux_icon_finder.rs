@@ -2,7 +2,7 @@
 // Copyright (C) 2025 Panayotis Katsaloulis
 
 use image::GenericImageView;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -19,7 +19,7 @@ pub struct AppInfo {
 }
 
 // Cache for application list
-static APP_CACHE: Lazy<Mutex<Option<Vec<AppInfo>>>> = Lazy::new(|| Mutex::new(None));
+static APP_CACHE: LazyLock<Mutex<Option<Vec<AppInfo>>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Main public function to find all applications
 pub fn find_applications() -> Result<Vec<AppInfo>, String> {

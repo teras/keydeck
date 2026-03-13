@@ -3,8 +3,7 @@
 //
 // Provides cached access to local system metrics (CPU, RAM, temperatures)
 
-use lazy_static::lazy_static;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use sysinfo::{
     Components, CpuRefreshKind, MemoryRefreshKind, RefreshKind, System, MINIMUM_CPU_UPDATE_INTERVAL,
@@ -13,9 +12,8 @@ use sysinfo::{
 /// Cache refresh interval for expensive sysinfo sampling
 const CACHE_TTL: Duration = Duration::from_millis(750);
 
-lazy_static! {
-    static ref SYSTEM_STATE: Mutex<SystemMetricsState> = Mutex::new(SystemMetricsState::new());
-}
+static SYSTEM_STATE: LazyLock<Mutex<SystemMetricsState>> =
+    LazyLock::new(|| Mutex::new(SystemMetricsState::new()));
 
 /// Public API: returns formatted value for `${system:...}` metric requests.
 /// Returns error string if the metric cannot be resolved.

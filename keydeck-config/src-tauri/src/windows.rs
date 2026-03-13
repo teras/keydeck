@@ -6,14 +6,8 @@ use std::collections::HashSet;
 #[cfg(target_os = "linux")]
 use std::sync::mpsc;
 #[cfg(target_os = "linux")]
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-#[cfg(target_os = "linux")]
-use dbus::blocking::Connection as DBusConnection;
-#[cfg(target_os = "linux")]
-use dbus::channel::MatchingReceiver;
-#[cfg(target_os = "linux")]
-use dbus::message::MatchRule;
 #[cfg(target_os = "linux")]
 use uuid::Uuid;
 #[cfg(target_os = "linux")]
@@ -89,20 +83,59 @@ fn list_window_classes_x11() -> Result<Vec<String>, String> {
 
 #[cfg(target_os = "linux")]
 fn list_window_classes_wayland() -> Result<Vec<String>, String> {
-    // Assume KDE Plasma / KWin availability
-    let conn = DBusConnection::new_session()
+    use std::sync::Arc;
+
+    // D-Bus callback handler to receive KWin script results
+    struct WindowListHandler {
+        tx: mpsc::Sender<String>,
+        method_name: Arc<String>,
+    }
+
+    #[zbus::interface(name = "org.keydeck.WindowList")]
+    impl WindowListHandler {
+        async fn window_list_result(
+            &self,
+            #[zbus(header)] header: zbus::message::Header<'_>,
+            data: &str,
+        ) {
+            if let Some(member) = header.member() {
+                if member.as_str() == self.method_name.as_str() {
+                    let _ = self.tx.send(data.to_string());
+                }
+            }
+        }
+    }
+
+    // zbus::blocking requires a tokio runtime context
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+    let _guard = rt.enter();
+
+    let conn = zbus::blocking::Connection::session()
         .map_err(|e| format!("Failed to connect to D-Bus session bus: {}", e))?;
 
-    let script_name = format!("keydeck-window-list-{}", Uuid::new_v4());
-    let method_name = format!(
-        "keydeck_window_list_{}",
-        Uuid::new_v4().to_string().replace('-', "")
-    );
+    let dbus_addr = conn
+        .unique_name()
+        .ok_or_else(|| "No unique bus name".to_string())?
+        .to_string();
 
-    // We'll listen for the script response on a dedicated D-Bus connection.
-    let mut match_conn = DBusConnection::new_session()
-        .map_err(|e| format!("Failed to create D-Bus match connection: {}", e))?;
-    let match_unique = match_conn.unique_name().to_string();
+    let script_name = format!("keydeck-window-list-{}", Uuid::new_v4());
+    let method_uuid = Uuid::new_v4().to_string().replace('-', "");
+
+    // Create channel to receive result
+    let (tx, rx) = mpsc::channel();
+    let method_name = Arc::new(format!("keydeck_window_list_{}", method_uuid));
+
+    // Register callback handler
+    conn.object_server()
+        .at(
+            "/org/keydeck/windowlist",
+            WindowListHandler {
+                tx,
+                method_name: method_name.clone(),
+            },
+        )
+        .map_err(|e| format!("Failed to register callback handler: {}", e))?;
 
     let script = format!(
         r#"
@@ -112,58 +145,74 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
                 var client = clients[i];
                 data.push(client.resourceClass || "");
             }}
-            callDBus("{}", "/", "", "{}", JSON.stringify(data));
+            callDBus("{}",
+                    "/org/keydeck/windowlist",
+                    "org.keydeck.WindowList",
+                    "WindowListResult",
+                    JSON.stringify(data));
         "#,
-        match_unique, method_name
+        dbus_addr
     );
 
     let script_path = std::env::temp_dir().join(format!("{}.js", script_name));
-    std::fs::write(&script_path, script)
+    std::fs::write(&script_path, &script)
         .map_err(|e| format!("Failed to write temporary script: {}", e))?;
 
-    let kwin_proxy = conn.with_proxy("org.kde.KWin", "/Scripting", Duration::from_secs(5));
     let script_path_str = script_path
         .to_str()
         .ok_or_else(|| "Temporary script path contains invalid UTF-8".to_string())?;
-    let (script_id,): (i32,) = kwin_proxy
-        .method_call(
-            "org.kde.kwin.Scripting",
+
+    // Load the script
+    let reply = conn
+        .call_method(
+            Some("org.kde.KWin"),
+            "/Scripting",
+            Some("org.kde.kwin.Scripting"),
             "loadScript",
-            (script_path_str, script_name.as_str()),
+            &(script_path_str, script_name.as_str()),
         )
         .map_err(|e| format!("Failed to load KWin script: {}", e))?;
+    let script_id: i32 = reply
+        .body()
+        .deserialize()
+        .map_err(|e| format!("Failed to read script ID: {}", e))?;
 
     let script_object_path = format!("/Scripting/Script{}", script_id);
-    let script_proxy = conn.with_proxy("org.kde.KWin", &script_object_path, Duration::from_secs(5));
-    let (tx, rx) = mpsc::channel();
-    let mut rule = MatchRule::new_method_call();
-    rule.member = Some(method_name.clone().into());
-    let token = match_conn.start_receive(
-        rule,
-        Box::new(move |message, _| {
-            if let Some(arg) = message.get1::<&str>() {
-                let _ = tx.send(arg.to_string());
-                return true;
-            }
-            true
-        }),
-    );
 
-    script_proxy
-        .method_call::<(), _, _, _>("org.kde.kwin.Script", "run", ())
-        .map_err(|e| format!("Failed to run KWin script: {}", e))?;
+    // Run the script
+    conn.call_method(
+        Some("org.kde.KWin"),
+        script_object_path.as_str(),
+        Some("org.kde.kwin.Script"),
+        "run",
+        &(),
+    )
+    .map_err(|e| format!("Failed to run KWin script: {}", e))?;
 
-    let payload = wait_for_payload(&mut match_conn, &rx)?;
+    // Wait for result with timeout
+    let payload = rx
+        .recv_timeout(Duration::from_secs(2))
+        .map_err(|_| "Timed out waiting for KWin response".to_string())?;
 
     // Cleanup
-    let _ = script_proxy.method_call::<(), _, _, _>("org.kde.kwin.Script", "stop", ());
-    let _ = kwin_proxy.method_call::<(), _, _, _>(
-        "org.kde.kwin.Scripting",
+    let _ = conn.call_method(
+        Some("org.kde.KWin"),
+        script_object_path.as_str(),
+        Some("org.kde.kwin.Script"),
+        "stop",
+        &(),
+    );
+    let _ = conn.call_method(
+        Some("org.kde.KWin"),
+        "/Scripting",
+        Some("org.kde.kwin.Scripting"),
         "unloadScript",
-        (script_name.as_str(),),
+        &(script_name.as_str(),),
     );
     let _ = std::fs::remove_file(&script_path);
-    match_conn.stop_receive(token);
+    let _ = conn
+        .object_server()
+        .remove::<WindowListHandler, _>("/org/keydeck/windowlist");
 
     let mut seen = HashSet::new();
     let mut classes = Vec::new();
@@ -178,27 +227,6 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
     }
 
     Ok(classes)
-}
-
-#[cfg(target_os = "linux")]
-fn wait_for_payload(
-    conn: &mut DBusConnection,
-    rx: &mpsc::Receiver<String>,
-) -> Result<String, String> {
-    let timeout = Duration::from_secs(2);
-    let start = Instant::now();
-
-    loop {
-        if let Ok(payload) = rx.try_recv() {
-            return Ok(payload);
-        }
-
-        if start.elapsed() >= timeout {
-            return Err("Timed out waiting for KWin response".into());
-        }
-
-        let _ = conn.process(Duration::from_millis(50));
-    }
 }
 
 #[cfg(target_os = "linux")]

@@ -13,6 +13,7 @@ mod focus_property;
 mod focus_property_wayland;
 mod graphics_renderer;
 mod keyboard;
+mod keyboard_wayland;
 mod kwin_script;
 mod listener_button;
 mod listener_device;

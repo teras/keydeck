@@ -11,7 +11,7 @@ use crate::listener_tick::listener_tick;
 use crate::listener_time::TimeManager;
 use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
-use crate::pages::{KeyDeckConf, KeyDeckConfLoader};
+use crate::pages::KeyDeckConfLoader;
 use crate::services::new_services_state;
 use crate::{error_log, info_log, verbose_log};
 use indexmap::IndexMap;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
@@ -16,7 +16,7 @@ pub struct AppInfo {
 }
 
 /// Cache for application list to avoid repeated filesystem scanning
-static APP_CACHE: Lazy<Mutex<Option<Vec<AppInfo>>>> = Lazy::new(|| Mutex::new(None));
+static APP_CACHE: LazyLock<Mutex<Option<Vec<AppInfo>>>> = LazyLock::new(|| Mutex::new(None));
 
 /// Find all applications from Windows Start Menu shortcuts
 pub fn find_applications() -> Result<Vec<AppInfo>, String> {

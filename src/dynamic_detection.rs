@@ -21,11 +21,12 @@ pub fn has_dynamic_pattern(text: &str) -> bool {
         return false;
     }
 
+    use std::sync::LazyLock;
+
     // Match ${provider:argument} - requires colon to be dynamic
     // Pattern: ${ followed by non-colon/non-brace chars, then :, then non-brace chars, then }
-    lazy_static::lazy_static! {
-        static ref DYNAMIC_PATTERN: Regex = Regex::new(r"\$\{[^:}]+:[^}]+\}").unwrap();
-    }
+    static DYNAMIC_PATTERN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\$\{[^:}]+:[^}]+\}").unwrap());
 
     DYNAMIC_PATTERN.is_match(text)
 }

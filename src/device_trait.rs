@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
+#[allow(unused_imports)]
 use crate::warn_log;
 use image::DynamicImage;
 use std::fmt;
@@ -83,6 +84,7 @@ pub enum DeviceStateUpdate {
 
 /// Main device abstraction trait
 /// All KeyDeck-compatible devices must implement this trait
+#[allow(dead_code)]
 pub trait KeydeckDevice: Send + Sync {
     // === Required Device Information ===
 

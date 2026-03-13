@@ -193,6 +193,7 @@ impl PagedDevice {
         self.device.as_ref()
     }
 
+    #[allow(dead_code)]
     pub fn get_serial(&self) -> &str {
         &self.serial
     }
