@@ -135,14 +135,14 @@ impl MirajazzDevice {
         self.device
             .borrow_mut()
             .get_or_insert_with(|| {
-                Arc::new(
-                    Device::connect(
+                {
+                    let mut device = Device::connect(
                         &self.hid_api,
                         self.vid,
                         self.pid,
                         &self.serial,
-                        self.device_def.protocol.protocol_version >= 2, // is_v2
-                        self.device_def.protocol.protocol_version >= 3, // supports_both_states
+                        self.device_def.protocol.protocol_version,
+                        self.device_def.protocol.protocol_version > 2, // supports_both_states
                         self.device_def.layout.key_count(),
                         self.device_def.layout.encoder_count,
                     )
@@ -157,8 +157,22 @@ impl MirajazzDevice {
                         error_log!("  - Insufficient USB permissions");
                         error_log!("  - Device busy/in use by another process");
                         panic!("Cannot continue without device connection");
-                    }),
-                )
+                    });
+
+                    // Apply encoder toggle quirk
+                    if self.device_def.quirks.force_encoder_toggle {
+                        device = device.with_supports_both_encoder_states(false);
+                    }
+
+                    // Set device mode for multimodal devices
+                    if let Some(mode) = self.device_def.protocol.device_mode {
+                        device.set_mode(mode).unwrap_or_else(|e| {
+                            error_log!("Failed to set device mode {}: {}", mode, e);
+                        });
+                    }
+
+                    Arc::new(device)
+                }
             })
             .clone()
     }
