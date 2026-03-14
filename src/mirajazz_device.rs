@@ -198,6 +198,7 @@ impl MirajazzDevice {
             mode: match button_format.mode {
                 ImageMode::BMP => mirajazz_json::types::ImageMode::BMP,
                 ImageMode::JPEG => mirajazz_json::types::ImageMode::JPEG,
+                ImageMode::PNG => mirajazz_json::types::ImageMode::PNG,
             },
             size: (
                 button_format.size[0] as usize,
@@ -271,6 +272,10 @@ impl KeydeckDevice for MirajazzDevice {
 
     fn encoder_count(&self) -> usize {
         self.device_def.layout.encoder_count
+    }
+
+    fn supports_button_press_feedback(&self) -> bool {
+        self.device_def.protocol.protocol_version > 2
     }
 
     fn reset(&self) -> Result<(), DeviceError> {
@@ -360,6 +365,51 @@ impl KeydeckDevice for MirajazzDevice {
             reader: self.get_reader_arc(),
             device_def: self.device_def,
         })
+    }
+
+    fn set_logo_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
+        let bg_config = self.device_def.background.as_ref().ok_or_else(|| {
+            DeviceError::UnsupportedOperation(format!(
+                "Device '{}' does not support background images",
+                self.device_def.info.human_name
+            ))
+        })?;
+
+        let image_format = mirajazz_json::types::ImageFormat {
+            mode: match bg_config.mode {
+                ImageMode::BMP => mirajazz_json::types::ImageMode::BMP,
+                ImageMode::JPEG => mirajazz_json::types::ImageMode::JPEG,
+                ImageMode::PNG => mirajazz_json::types::ImageMode::PNG,
+            },
+            size: (bg_config.resolution[0] as usize, bg_config.resolution[1] as usize),
+            rotation: match bg_config.rotation {
+                Rotation::Rot0 => mirajazz_json::types::ImageRotation::Rot0,
+                Rotation::Rot90 => mirajazz_json::types::ImageRotation::Rot90,
+                Rotation::Rot180 => mirajazz_json::types::ImageRotation::Rot180,
+                Rotation::Rot270 => mirajazz_json::types::ImageRotation::Rot270,
+            },
+            mirror: match bg_config.mirror {
+                Mirror::None => mirajazz_json::types::ImageMirroring::None,
+                Mirror::X => mirajazz_json::types::ImageMirroring::X,
+                Mirror::Y => mirajazz_json::types::ImageMirroring::Y,
+                Mirror::Both => mirajazz_json::types::ImageMirroring::Both,
+            },
+        };
+
+        let image_data = mirajazz_json::images::convert_image_with_format(image_format, image)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to convert background image: {}", e)))?;
+
+        let device = self.get_device();
+        verbose_log!(
+            "Setting background image on device '{}' ({}x{}, {} bytes)",
+            self.serial,
+            bg_config.resolution[0],
+            bg_config.resolution[1],
+            image_data.len()
+        );
+        device
+            .send_background_image(&image_data)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to set background image: {}", e)))
     }
 
     fn shutdown(&self) -> Result<(), DeviceError> {

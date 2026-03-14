@@ -142,6 +142,12 @@ pub trait KeydeckDevice: Send + Sync {
     /// Get event reader for this device
     fn get_reader(&self) -> Arc<dyn DeviceReader>;
 
+    /// Whether the device supports separate button down/up events.
+    /// When false, button_down visual feedback is skipped (no point sending images).
+    fn supports_button_press_feedback(&self) -> bool {
+        true // Most devices support this
+    }
+
     // === Optional Device Lifecycle (default no-op) ===
 
     /// Shutdown device (no-op for most devices)

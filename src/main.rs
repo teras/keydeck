@@ -26,6 +26,7 @@ mod listener_time;
 mod lock;
 mod mirajazz_device;
 mod paged_device;
+mod press_effect;
 mod pages;
 mod server;
 mod services;

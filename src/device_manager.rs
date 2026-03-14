@@ -113,6 +113,13 @@ impl KeydeckDevice for Device {
         }
     }
 
+    fn supports_button_press_feedback(&self) -> bool {
+        match self {
+            Device::Elgato(d) => d.supports_button_press_feedback(),
+            Device::Mirajazz(d) => d.supports_button_press_feedback(),
+        }
+    }
+
     fn reset(&self) -> Result<(), DeviceError> {
         match self {
             Device::Elgato(d) => d.reset().map_err(DeviceError::from),
@@ -182,6 +189,13 @@ impl KeydeckDevice for Device {
         match self {
             Device::Elgato(d) => d.keep_alive(),
             Device::Mirajazz(d) => d.keep_alive(),
+        }
+    }
+
+    fn set_logo_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
+        match self {
+            Device::Elgato(d) => d.set_logo_image(image),
+            Device::Mirajazz(d) => d.set_logo_image(image),
         }
     }
 }

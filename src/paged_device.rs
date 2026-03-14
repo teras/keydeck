@@ -16,6 +16,7 @@ use crate::pages::{
 };
 use crate::services::ServicesState;
 use crate::text_renderer;
+use crate::press_effect::apply_press_effect;
 use crate::{error_log, verbose_log, warn_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
@@ -54,6 +55,8 @@ pub struct PagedDevice {
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
     button_backgrounds: RefCell<Vec<String>>,
+    button_canvases: RefCell<Vec<Option<RgbaImage>>>,
+    button_pressed: RefCell<Vec<bool>>,
     active_events: Arc<AtomicBool>,
     last_active_page: RefCell<Option<String>>,
     last_auto_target_page: RefCell<Option<String>>,
@@ -78,6 +81,7 @@ impl PagedDevice {
         time_manager: Arc<TimeManager>,
         initial_page: Option<String>,
         brightness: u8,
+        background_image: Option<String>,
     ) -> Self {
         let serial = device.serial_number().unwrap_or_else(|e| {
             error_log!("Failed to get device serial number: {}", e);
@@ -92,6 +96,22 @@ impl PagedDevice {
         device
             .clear_all_button_images()
             .unwrap_or_else(|e| error_log!("Error while clearing button images: {}", e));
+
+        // Set background/wallpaper image if configured
+        if let Some(ref bg_path) = background_image {
+            match image::open(bg_path) {
+                Ok(img) => {
+                    device.set_logo_image(img).unwrap_or_else(|e| {
+                        error_log!("Failed to set background image '{}': {}", bg_path, e);
+                    });
+                    // Device needs time to process background before accepting key images
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                Err(e) => {
+                    error_log!("Failed to load background image '{}': {}", bg_path, e);
+                }
+            }
+        }
 
         // Determine which page to display initially
         // Priority: initial_page (if exists) > main_page (if exists) > first page
@@ -141,6 +161,8 @@ impl PagedDevice {
             current_page_ref: RefCell::new(usize::MAX),
             button_images: RefCell::new(vec![String::new(); button_count]),
             button_backgrounds: RefCell::new(vec![String::new(); button_count]),
+            button_canvases: RefCell::new(vec![None; button_count]),
+            button_pressed: RefCell::new(vec![false; button_count]),
             active_events,
             last_active_page: RefCell::new(None),
             last_auto_target_page: RefCell::new(None),
@@ -251,6 +273,7 @@ impl PagedDevice {
         services_state: ServicesState,
         services_active: Arc<AtomicBool>,
         brightness: u8,
+        background_image: Option<String>,
     ) {
         verbose_log!("Reloading configuration for device {}", self.serial);
 
@@ -270,6 +293,22 @@ impl PagedDevice {
         self.device.set_brightness(brightness).unwrap_or_else(|e| {
             error_log!("Error setting brightness: {}", e);
         });
+
+        // Update background image
+        if let Some(ref bg_path) = background_image {
+            match image::open(bg_path) {
+                Ok(img) => {
+                    self.device.set_logo_image(img).unwrap_or_else(|e| {
+                        error_log!("Failed to set background image '{}': {}", bg_path, e);
+                    });
+                    // Device needs time to process background before accepting key images
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                Err(e) => {
+                    error_log!("Failed to load background image '{}': {}", bg_path, e);
+                }
+            }
+        }
 
         // Check if current page still exists in new configuration
         let page_exists = if let Some(ref page_name) = current_page_name {
@@ -348,9 +387,22 @@ impl PagedDevice {
         }
     }
 
-    pub fn button_down(&self, _button_id: u8) {}
+    pub fn button_down(&self, button_id: u8) {
+        if !self.device.supports_button_press_feedback() {
+            return;
+        }
+        self.button_pressed.borrow_mut()[button_id as usize - 1] = true;
+        self.invalidate_and_refresh_button(button_id)
+            .unwrap_or_else(|e| error_log!("Error refreshing pressed button: {}", e));
+    }
 
     pub fn button_up(&self, button_id: u8) {
+        if self.device.supports_button_press_feedback() {
+            self.button_pressed.borrow_mut()[button_id as usize - 1] = false;
+            self.invalidate_and_refresh_button(button_id)
+                .unwrap_or_else(|e| error_log!("Error refreshing released button: {}", e));
+        }
+
         self.cancel_pending_actions();
         let current_page = { self.current_page_ref.borrow().clone() };
         if let Some(button) = self.find_button(current_page, button_id) {
@@ -1019,18 +1071,24 @@ impl PagedDevice {
             button_backgrounds[button_index as usize - 1] = bg_color_str.to_string();
         }
 
+        // If button has no content at all, clear it so background shows through
+        let has_content = background.is_some() || !image_path.is_empty() || !text_str.is_empty() || draw.is_some();
+        if !has_content {
+            self.device
+                .clear_button_image(button_index - 1)
+                .unwrap_or_else(|e| error_log!("Error while clearing button image: {}", e));
+            return;
+        }
+
         // Simple linear pipeline: Create ONE canvas, then modify it step by step
 
         // Step 1: Create base canvas with background color
-        let bg_rgb = if let Some(ref bg) = background {
-            match string_to_color(bg, &self.colors) {
-                Ok((r, g, b)) => [r, g, b],
-                Err(_) => [0, 0, 0],
-            }
+        let bg_color = if let Some(ref bg) = background {
+            let (r, g, b) = string_to_color(bg, &self.colors).unwrap_or((0, 0, 0));
+            Rgba([r, g, b, 255])
         } else {
-            [0, 0, 0]
+            Rgba([0, 0, 0, 0]) // Transparent when no background; flattened to black for JPEG/BMP
         };
-        let bg_color = Rgba([bg_rgb[0], bg_rgb[1], bg_rgb[2], 255]);
         let mut canvas = RgbaImage::from_pixel(width, height, bg_color);
 
         // Step 2: Overlay icon image if provided (scaled with Lanczos filter)
@@ -1267,7 +1325,19 @@ impl PagedDevice {
             );
         }
 
-        let image_data = DynamicImage::ImageRgba8(canvas);
+        // Cache the unmodified canvas for future re-renders
+        self.button_canvases.borrow_mut()[button_index as usize - 1] = Some(canvas.clone());
+
+        // Apply press effect if button is currently pressed
+        let final_canvas = if self.device.supports_button_press_feedback()
+            && self.button_pressed.borrow()[button_index as usize - 1]
+        {
+            apply_press_effect(&canvas, &self.pages.press_effect)
+        } else {
+            canvas
+        };
+
+        let image_data = DynamicImage::ImageRgba8(final_canvas);
 
         // Set the final button image
         self.device
@@ -1374,6 +1444,7 @@ impl PagedDevice {
                     }
                 }
                 self.current_page_ref.replace(page);
+                self.button_pressed.borrow_mut().iter_mut().for_each(|p| *p = false);
                 self.refresh_page();
             }
             Ok(())

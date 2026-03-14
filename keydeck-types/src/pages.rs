@@ -62,6 +62,11 @@ pub struct KeyDeckConf {
     #[serde(default = "default_brightness")]
     pub brightness: u8,
 
+    /// Background/wallpaper image path for the device LCD.
+    /// Only supported on devices with background image capability (e.g., Ajazz/Mirabox).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background_image: Option<String>,
+
     /// List of glob patterns for icons that should be protected from cleanup.
     /// Icons matching these patterns won't be deleted even if unused.
     /// This is useful for icons used by dynamic content or button state switching.
@@ -86,9 +91,50 @@ pub struct Pages {
     #[serde(default = "default_restore_mode")] // Uses the default function to set a value
     pub restore_mode: FocusChangeRestorePolicy,
 
+    /// Visual effect applied to button images when pressed.
+    /// Only used on devices that support software button press feedback.
+    #[serde(default = "default_press_effect")]
+    pub press_effect: PressEffectConfig,
+
     /// Individual pages within the page group, each identified by a title.
     #[serde(flatten)]
     pub pages: IndexMap<String, Page>,
+}
+
+/// Configuration for the visual effect applied to buttons when pressed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PressEffectConfig {
+    /// Shrink the image by a percentage (e.g., 10 = 90% size, centered)
+    Shrink {
+        #[serde(default = "default_shrink_percent")]
+        percent: u32,
+    },
+    /// Translate the image down and right by N pixels
+    Translate {
+        #[serde(default = "default_translate_pixels")]
+        pixels: u32,
+    },
+}
+
+impl Default for PressEffectConfig {
+    fn default() -> Self {
+        default_press_effect()
+    }
+}
+
+fn default_press_effect() -> PressEffectConfig {
+    PressEffectConfig::Translate {
+        pixels: default_translate_pixels(),
+    }
+}
+
+fn default_shrink_percent() -> u32 {
+    10
+}
+
+fn default_translate_pixels() -> u32 {
+    5
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -144,6 +190,7 @@ impl Default for KeyDeckConf {
             macros: None,
             tick_time: default_tick_time(),
             brightness: default_brightness(),
+            background_image: None,
             protected_icons: None,
             page_groups: IndexMap::new(),
         }

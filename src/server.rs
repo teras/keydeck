@@ -48,6 +48,7 @@ fn initialize_device(
     current_class: &str,
     current_title: &str,
     conf_brightness: u8,
+    conf_background_image: Option<String>,
     devices: &mut HashMap<String, PagedDevice>,
     initial_page: Option<String>,
 ) {
@@ -70,6 +71,7 @@ fn initialize_device(
             Arc::new(Pages {
                 main_page: None,
                 restore_mode: keydeck_types::pages::FocusChangeRestorePolicy::Main,
+                press_effect: Default::default(),
                 pages: IndexMap::new(),
             })
         };
@@ -88,6 +90,7 @@ fn initialize_device(
             time_manager.clone(),
             initial_page,
             conf_brightness,
+            conf_background_image.clone(),
         );
         new_device.focus_changed(current_class, current_title, false);
         info_log!("Adding device {}", sn);
@@ -108,6 +111,7 @@ pub fn start_server() {
     let mut conf_services = Arc::new(conf.services.clone());
     let icon_dir = Some(get_icon_dir());
     let mut conf_brightness = conf.brightness;
+    let mut conf_background_image = conf.background_image.clone();
     let conf_tick_time = Arc::new(std::sync::Mutex::new(conf.tick_time));
 
     // Initialize with empty focus - listener will send current window immediately
@@ -240,6 +244,7 @@ pub fn start_server() {
                         &current_class,
                         &current_title,
                         conf_brightness,
+                        conf_background_image.clone(),
                         &mut devices,
                         initial_page,
                     );
@@ -270,6 +275,7 @@ pub fn start_server() {
                 conf_services = Arc::new(new_conf.services.clone());
                 // icon_dir remains hard-coded - no need to update
                 conf_brightness = new_conf.brightness;
+                conf_background_image = new_conf.background_image.clone();
 
                 // Update tick_time in the mutex (will be used in next tick cycle)
                 *conf_tick_time.lock().unwrap() = new_conf.tick_time;
@@ -296,6 +302,7 @@ pub fn start_server() {
                         Arc::new(Pages {
                             main_page: None,
                             restore_mode: keydeck_types::pages::FocusChangeRestorePolicy::Main,
+                            press_effect: Default::default(),
                             pages: IndexMap::new(),
                         })
                     };
@@ -309,6 +316,7 @@ pub fn start_server() {
                         services_state.clone(),
                         services_active.clone(),
                         conf_brightness,
+                        conf_background_image.clone(),
                     );
                 }
 
