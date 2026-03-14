@@ -93,7 +93,7 @@ pub struct Pages {
 
     /// Visual effect applied to button images when pressed.
     /// Only used on devices that support software button press feedback.
-    #[serde(default = "default_press_effect")]
+    #[serde(default)]
     pub press_effect: PressEffectConfig,
 
     /// Individual pages within the page group, each identified by a title.
@@ -105,36 +105,74 @@ pub struct Pages {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PressEffectConfig {
-    /// Shrink the image by a percentage (e.g., 10 = 90% size, centered)
+    /// Shrink the content when pressed (Lanczos resize). No canvas size reduction.
+    /// The `pixels` value is the margin on each side when shrunk.
     Shrink {
-        #[serde(default = "default_shrink_percent")]
-        percent: u32,
-    },
-    /// Translate the image down and right by N pixels
-    Translate {
-        #[serde(default = "default_translate_pixels")]
+        #[serde(default = "default_shrink_pixels")]
         pixels: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        border_color: Option<String>,
     },
+    /// Shift content on press. Canvas is reduced by `pixels` in each dimension.
+    /// Unpressed: content at (0,0), border_color fills right+bottom.
+    /// Pressed: content at (T,T), border_color fills left+top.
+    Shift {
+        #[serde(default = "default_shift_pixels")]
+        pixels: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        border_color: Option<String>,
+    },
+    /// 3D bevel border. Canvas is reduced by 2×`pixels` in each dimension.
+    /// Unpressed: raised (highlight top+left, shadow bottom+right).
+    /// Pressed: sunken (shadow top+left, highlight bottom+right).
+    /// Diagonal transition at bottom-left and top-right corners.
+    Emboss {
+        #[serde(default = "default_emboss_pixels")]
+        pixels: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        border_color: Option<String>,
+    },
+}
+
+impl PressEffectConfig {
+    /// Returns (width_reduction, height_reduction) for the render pipeline canvas.
+    pub fn canvas_reduction(&self) -> (u32, u32) {
+        match self {
+            PressEffectConfig::Shrink { .. } => (0, 0),
+            PressEffectConfig::Shift { pixels, .. } => (*pixels, *pixels),
+            PressEffectConfig::Emboss { pixels, .. } => (3 * *pixels, 3 * *pixels),
+        }
+    }
+
+    /// Returns the border_color string if set.
+    pub fn border_color(&self) -> Option<&str> {
+        match self {
+            PressEffectConfig::Shrink { border_color, .. }
+            | PressEffectConfig::Shift { border_color, .. }
+            | PressEffectConfig::Emboss { border_color, .. } => border_color.as_deref(),
+        }
+    }
 }
 
 impl Default for PressEffectConfig {
     fn default() -> Self {
-        default_press_effect()
+        PressEffectConfig::Shift {
+            pixels: default_shift_pixels(),
+            border_color: None,
+        }
     }
 }
 
-fn default_press_effect() -> PressEffectConfig {
-    PressEffectConfig::Translate {
-        pixels: default_translate_pixels(),
-    }
+fn default_shrink_pixels() -> u32 {
+    2
 }
 
-fn default_shrink_percent() -> u32 {
-    10
+fn default_shift_pixels() -> u32 {
+    4
 }
 
-fn default_translate_pixels() -> u32 {
-    5
+fn default_emboss_pixels() -> u32 {
+    2
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -16,7 +16,7 @@ use crate::pages::{
 };
 use crate::services::ServicesState;
 use crate::text_renderer;
-use crate::press_effect::apply_press_effect;
+use crate::press_effect::compose_button;
 use crate::{error_log, verbose_log, warn_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
@@ -982,11 +982,17 @@ impl PagedDevice {
         button_index: u8,
         invalid_indices: &mut Vec<u8>,
     ) {
-        // Get the button size from the device's image format
-        let (width, height) = {
+        // Get the button size from the device, reduced by press effect canvas requirements
+        let (device_w, device_h) = {
             let (w, h) = self.device.button_image_size();
             (w as u32, h as u32)
         };
+        let (reduce_w, reduce_h) = if self.device.supports_button_press_feedback() {
+            self.pages.press_effect.canvas_reduction()
+        } else {
+            (0, 0)
+        };
+        let (width, height) = (device_w - reduce_w, device_h - reduce_h);
 
         // Determine if we're rendering text or using an icon
         let has_text = text.is_some();
@@ -1074,6 +1080,7 @@ impl PagedDevice {
         // If button has no content at all, clear it so background shows through
         let has_content = background.is_some() || !image_path.is_empty() || !text_str.is_empty() || draw.is_some();
         if !has_content {
+            self.button_canvases.borrow_mut()[button_index as usize - 1] = None;
             self.device
                 .clear_button_image(button_index - 1)
                 .unwrap_or_else(|e| error_log!("Error while clearing button image: {}", e));
@@ -1328,11 +1335,16 @@ impl PagedDevice {
         // Cache the unmodified canvas for future re-renders
         self.button_canvases.borrow_mut()[button_index as usize - 1] = Some(canvas.clone());
 
-        // Apply press effect if button is currently pressed
-        let final_canvas = if self.device.supports_button_press_feedback()
-            && self.button_pressed.borrow()[button_index as usize - 1]
-        {
-            apply_press_effect(&canvas, &self.pages.press_effect)
+        // Compose final image with press effect (always, for translate/emboss border)
+        let final_canvas = if self.device.supports_button_press_feedback() {
+            let pressed = self.button_pressed.borrow()[button_index as usize - 1];
+            let border_rgba = self
+                .pages
+                .press_effect
+                .border_color()
+                .and_then(|c| string_to_color(c, &self.colors).ok())
+                .map(|(r, g, b)| Rgba([r, g, b, 255]));
+            compose_button(&canvas, device_w, device_h, &self.pages.press_effect, pressed, border_rgba)
         } else {
             canvas
         };
