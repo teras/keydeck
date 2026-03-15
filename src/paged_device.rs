@@ -426,8 +426,19 @@ impl PagedDevice {
         }
     }
 
+    /// Returns true if the button has actions configured on the current page
+    fn button_has_actions(&self, button_id: u8) -> bool {
+        let current_page = *self.current_page_ref.borrow();
+        self.find_button(current_page, button_id)
+            .and_then(|b| b.actions.as_ref())
+            .is_some_and(|a| !a.is_empty())
+    }
+
     pub fn button_down(&self, button_id: u8) {
         if !self.device.supports_button_press_feedback() {
+            return;
+        }
+        if !self.button_has_actions(button_id) {
             return;
         }
         self.button_pressed.borrow_mut()[button_id as usize - 1] = true;
@@ -436,6 +447,9 @@ impl PagedDevice {
     }
 
     pub fn button_up(&self, button_id: u8) {
+        if !self.button_has_actions(button_id) {
+            return;
+        }
         if self.device.supports_button_press_feedback() {
             self.button_pressed.borrow_mut()[button_id as usize - 1] = false;
             self.invalidate_and_refresh_button(button_id)
