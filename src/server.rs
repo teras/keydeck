@@ -53,6 +53,7 @@ fn initialize_device(
     initial_page: Option<String>,
 ) {
     if let Some(device) = find_device_by_serial(sn) {
+        info_log!("Adding device {}", sn);
         verbose_log!("Looking for configuration for device serial: '{}'", sn);
         verbose_log!(
             "Available page groups: {:?}",
@@ -93,7 +94,6 @@ fn initialize_device(
             conf_background_image.clone(),
         );
         new_device.focus_changed(current_class, current_title, false);
-        info_log!("Adding device {}", sn);
         devices.insert(sn.to_string(), new_device);
     }
 }
