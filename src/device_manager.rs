@@ -349,14 +349,14 @@ impl DeviceManager {
 
     pub fn list_devices(&mut self) {
         for device in self.iter_active_devices() {
-            info_log!(
+            println!(
                 "{} {} {}",
                 device.device_id(),
                 device.serial(),
                 device.kind_name()
             );
         }
-        info_log!("Total devices: {}", self.count_active_devices());
+        println!("Total devices: {}", self.count_active_devices());
     }
 
     pub fn info_device(&mut self, identifier: String) -> Result<(), String> {
@@ -395,7 +395,7 @@ impl DeviceManager {
 
                 match serde_yaml_ng::to_string(&device_info) {
                     Ok(yaml) => {
-                        info_log!("{}", yaml);
+                        print!("{}", yaml);
                         return Ok(());
                     }
                     Err(e) => return Err(format!("Failed to serialize device info: {}", e)),
