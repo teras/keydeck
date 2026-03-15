@@ -1,0 +1,55 @@
+{
+  "hardware": {
+    "vendor_id": "0x5548",
+    "product_id": "0x1028"
+  },
+  "info": {
+    "human_name": "StreamDock XL",
+    "device_namespace": "xl",
+    "manufacturer": "Mirabox",
+    "model": "StreamDock XL"
+  },
+  "protocol": {
+    "protocol_version": 3
+  },
+  "layout": {
+    "rows": 4,
+    "cols": 8,
+    "encoder_count": 2
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [80, 80],
+    "rotation": "Rot180",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      24, 25, 26, 27, 28, 29, 30, 31,
+      16, 17, 18, 19, 20, 21, 22, 23,
+       8,  9, 10, 11, 12, 13, 14, 15,
+       0,  1,  2,  3,  4,  5,  6,  7
+    ],
+    "encoder_twist_map": {
+      "33": { "encoder": 0, "direction": 1 },
+      "35": { "encoder": 0, "direction": -1 },
+      "36": { "encoder": 1, "direction": -1 },
+      "38": { "encoder": 1, "direction": 1 }
+    },
+    "encoder_press_map": {},
+    "non_display_buttons": []
+  },
+  "background": {
+    "resolution": [1024, 600],
+    "mode": "JPEG",
+    "rotation": "Rot180",
+    "mirror": "None"
+  },
+  "quirks": {
+    "needs_button_remapping": true
+  },
+  "led": {
+    "count": 6
+  }
+}

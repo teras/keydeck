@@ -1,0 +1,48 @@
+{
+  "hardware": {
+    "vendor_id": "0x6603",
+    "product_id": "0x1015"
+  },
+  "info": {
+    "human_name": "StreamDock K1Pro",
+    "device_namespace": "kp",
+    "manufacturer": "Mirabox",
+    "model": "StreamDock K1Pro"
+  },
+  "protocol": {
+    "protocol_version": 3,
+    "report_id": 4
+  },
+  "layout": {
+    "rows": 2,
+    "cols": 3,
+    "encoder_count": 3
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [64, 64],
+    "rotation": "Rot90",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [4, 2, 0, 5, 3, 1],
+    "encoder_twist_map": {
+      "80": { "encoder": 0, "direction": -1 },
+      "81": { "encoder": 0, "direction": 1 },
+      "96": { "encoder": 1, "direction": -1 },
+      "97": { "encoder": 1, "direction": 1 },
+      "144": { "encoder": 2, "direction": -1 },
+      "145": { "encoder": 2, "direction": 1 }
+    },
+    "encoder_press_map": {
+      "37": 0,
+      "48": 1,
+      "49": 2
+    },
+    "non_display_buttons": []
+  },
+  "quirks": {
+    "needs_button_remapping": true
+  }
+}

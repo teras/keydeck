@@ -84,7 +84,7 @@ KeyDeck works with a wide variety of macro pads and Stream Deck devices:
 
 Special thanks to:
 - [`elgato-streamdeck`](https://github.com/OpenActionAPI/rust-elgato-streamdeck) - For Elgato device support
-- [`mirajazz`](https://github.com/viandoxdev/mirajazz) - For supporting more devices ([json-fork variant](https://github.com/teras/mirajazz/tree/json-fork))
+- [`mirajazz`](https://github.com/viandoxdev/mirajazz) - Original project for Mirabox/Ajazz device support
 
 ---
 

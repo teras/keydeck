@@ -1,0 +1,73 @@
+{
+  "hardware": {
+    "vendor_id": "0x6602",
+    "product_id": "0x1002"
+  },
+  "info": {
+    "human_name": "Mirabox N3",
+    "device_namespace": "n3",
+    "manufacturer": "Mirabox",
+    "model": "N3"
+  },
+  "protocol": {
+    "protocol_version": 2
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 3,
+    "encoder_count": 3
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [
+      60,
+      60
+    ],
+    "rotation": "Rot0",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": null,
+    "encoder_twist_map": {
+      "144": {
+        "encoder": 0,
+        "direction": -1
+      },
+      "145": {
+        "encoder": 0,
+        "direction": 1
+      },
+      "80": {
+        "encoder": 1,
+        "direction": -1
+      },
+      "81": {
+        "encoder": 1,
+        "direction": 1
+      },
+      "96": {
+        "encoder": 2,
+        "direction": -1
+      },
+      "97": {
+        "encoder": 2,
+        "direction": 1
+      }
+    },
+    "encoder_press_map": {
+      "51": 0,
+      "53": 1,
+      "52": 2
+    },
+    "non_display_buttons": [
+      7,
+      8,
+      9
+    ]
+  },
+  "quirks": {
+    "needs_button_remapping": false,
+    "has_non_display_buttons": true
+  }
+}

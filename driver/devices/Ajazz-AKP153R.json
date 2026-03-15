@@ -1,0 +1,59 @@
+{
+  "hardware": {
+    "vendor_id": "0x0300",
+    "product_id": "0x1020"
+  },
+  "info": {
+    "human_name": "Ajazz AKP153R",
+    "device_namespace": "99",
+    "manufacturer": "Ajazz",
+    "model": "AKP153R"
+  },
+  "protocol": {
+    "protocol_version": 1
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 6,
+    "encoder_count": 0
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [
+      85,
+      85
+    ],
+    "rotation": "Rot90",
+    "mirror": "Both",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      12,
+      9,
+      6,
+      3,
+      0,
+      15,
+      13,
+      10,
+      7,
+      4,
+      1,
+      16,
+      14,
+      11,
+      8,
+      5,
+      2,
+      17
+    ],
+    "encoder_twist_map": {},
+    "encoder_press_map": {},
+    "non_display_buttons": []
+  },
+  "quirks": {
+    "needs_button_remapping": true,
+    "has_non_display_buttons": false
+  }
+}

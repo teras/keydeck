@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 keydeck-types = { path = "keydeck-types" }
 elgato-streamdeck = "0.12"
-mirajazz-json = { path = "vendor/mirajazz-json" }
+mirajazz-json = { path = "driver" }
 indexmap = { version = "2.13", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = [
     "jpeg",

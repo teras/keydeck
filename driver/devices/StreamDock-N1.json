@@ -1,0 +1,52 @@
+{
+  "hardware": {
+    "vendor_id": "0x6603",
+    "product_id": "0x1011"
+  },
+  "info": {
+    "human_name": "StreamDock N1",
+    "device_namespace": "n1",
+    "manufacturer": "Mirabox",
+    "model": "StreamDock N1"
+  },
+  "protocol": {
+    "protocol_version": 3,
+    "device_mode": 2
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 5,
+    "encoder_count": 1
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [96, 96],
+    "rotation": "Rot0",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      10, 11, 12, 13, 14,
+       5,  6,  7,  8,  9,
+       0,  1,  2,  3,  4
+    ],
+    "encoder_twist_map": {
+      "50": { "encoder": 0, "direction": -1 },
+      "51": { "encoder": 0, "direction": 1 }
+    },
+    "encoder_press_map": {
+      "35": 0
+    },
+    "non_display_buttons": [30, 31]
+  },
+  "background": {
+    "resolution": [480, 854],
+    "mode": "JPEG",
+    "rotation": "Rot0",
+    "mirror": "None"
+  },
+  "quirks": {
+    "needs_button_remapping": true
+  }
+}

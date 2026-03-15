@@ -1,0 +1,19 @@
+[package]
+name = "mirajazz-json"
+description = "A library for interfacing with Mirabox and Ajazz stream controller devices (JSON-based device registry)"
+authors = ["Andrey Viktorov <loonks@disroot.org>"]
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "MPL-2.0"
+
+[dependencies]
+hidapi = "2.6.3"
+image = { version = "0.25.6", default-features = false, features = ["bmp", "jpeg", "png"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+[[example]]
+name = "akp03r"
+path = "examples/akp03r.rs"

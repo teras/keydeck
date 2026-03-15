@@ -1,0 +1,49 @@
+{
+  "hardware": {
+    "vendor_id": "0x6603",
+    "product_id": "0x1012"
+  },
+  "info": {
+    "human_name": "StreamDock M18",
+    "device_namespace": "18",
+    "manufacturer": "Mirabox",
+    "model": "StreamDock M18"
+  },
+  "protocol": {
+    "protocol_version": 3
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 5,
+    "encoder_count": 0
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [64, 64],
+    "rotation": "Rot0",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      10, 11, 12, 13, 14,
+       5,  6,  7,  8,  9,
+       0,  1,  2,  3,  4
+    ],
+    "encoder_twist_map": {},
+    "encoder_press_map": {},
+    "non_display_buttons": [37, 48, 49]
+  },
+  "background": {
+    "resolution": [480, 272],
+    "mode": "JPEG",
+    "rotation": "Rot0",
+    "mirror": "None"
+  },
+  "quirks": {
+    "needs_button_remapping": true
+  },
+  "led": {
+    "count": 24
+  }
+}

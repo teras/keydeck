@@ -1,0 +1,56 @@
+{
+  "hardware": {
+    "vendor_id": "0x6602",
+    "product_id": "0x1001"
+  },
+  "info": {
+    "human_name": "StreamDock N4",
+    "device_namespace": "n4",
+    "manufacturer": "Mirabox",
+    "model": "StreamDock N4"
+  },
+  "protocol": {
+    "protocol_version": 3
+  },
+  "layout": {
+    "rows": 2,
+    "cols": 5,
+    "encoder_count": 4
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [112, 112],
+    "rotation": "Rot180",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [5, 6, 7, 8, 9, 0, 1, 2, 3, 4],
+    "encoder_twist_map": {
+      "160": { "encoder": 0, "direction": -1 },
+      "161": { "encoder": 0, "direction": 1 },
+      "80": { "encoder": 1, "direction": -1 },
+      "81": { "encoder": 1, "direction": 1 },
+      "144": { "encoder": 2, "direction": -1 },
+      "145": { "encoder": 2, "direction": 1 },
+      "112": { "encoder": 3, "direction": -1 },
+      "113": { "encoder": 3, "direction": 1 }
+    },
+    "encoder_press_map": {
+      "55": 0,
+      "53": 1,
+      "51": 2,
+      "54": 3
+    },
+    "non_display_buttons": []
+  },
+  "background": {
+    "resolution": [800, 480],
+    "mode": "JPEG",
+    "rotation": "Rot180",
+    "mirror": "None"
+  },
+  "quirks": {
+    "needs_button_remapping": true
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "hardware": {
+    "vendor_id": "0x5548",
+    "product_id": "0x6670"
+  },
+  "info": {
+    "human_name": "Mirabox HSV293S",
+    "device_namespace": "99",
+    "manufacturer": "Mirabox",
+    "model": "HSV293S"
+  },
+  "protocol": {
+    "protocol_version": 1
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 6,
+    "encoder_count": 0
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [
+      85,
+      85
+    ],
+    "rotation": "Rot90",
+    "mirror": "Both",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      12,
+      9,
+      6,
+      3,
+      0,
+      15,
+      13,
+      10,
+      7,
+      4,
+      1,
+      16,
+      14,
+      11,
+      8,
+      5,
+      2,
+      17
+    ],
+    "encoder_twist_map": {},
+    "encoder_press_map": {},
+    "non_display_buttons": []
+  },
+  "quirks": {
+    "needs_button_remapping": true,
+    "has_non_display_buttons": false,
+    "force_serial": true
+  }
+}

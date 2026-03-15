@@ -1,0 +1,63 @@
+{
+  "hardware": {
+    "vendor_id": "0x5548",
+    "product_id": "0x6672",
+    "usage_page": 65440,
+    "usage_id": 1
+  },
+  "info": {
+    "human_name": "Ajazz AKP815",
+    "device_namespace": "99",
+    "manufacturer": "Ajazz",
+    "model": "AKP815"
+  },
+  "protocol": {
+    "protocol_version": 1
+  },
+  "layout": {
+    "rows": 5,
+    "cols": 3,
+    "key_count": 15,
+    "encoder_count": 0
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [
+      100,
+      100
+    ],
+    "rotation": "Rot180",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      14,
+      13,
+      12,
+      11,
+      10,
+      9,
+      8,
+      7,
+      6,
+      5,
+      4,
+      3,
+      2,
+      1,
+      0
+    ],
+    "encoder_twist_map": {},
+    "encoder_press_map": {},
+    "non_display_buttons": []
+  },
+  "quirks": {
+    "needs_button_remapping": true,
+    "has_non_display_buttons": false
+  },
+  "lcd_screen": {
+    "width": 800,
+    "height": 480
+  }
+}

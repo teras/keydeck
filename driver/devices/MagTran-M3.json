@@ -1,0 +1,84 @@
+{
+  "hardware": {
+    "vendor_id": "0x5548",
+    "product_id": "0x1020"
+  },
+  "info": {
+    "human_name": "MagTran M3",
+    "device_namespace": "m3",
+    "manufacturer": "VSDinside",
+    "model": "MagTran M3"
+  },
+  "protocol": {
+    "protocol_version": 3
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 5,
+    "encoder_count": 3
+  },
+  "image_format": {
+    "mode": "PNG",
+    "default_size": [
+      96,
+      96
+    ],
+    "rotation": "Rot270",
+    "mirror": "None",
+    "per_button_overrides": {}
+  },
+  "input_mapping": {
+    "button_remap": [
+      10, 11, 12, 13, 14,
+      5, 6, 7, 8, 9,
+      0, 1, 2, 3, 4
+    ],
+    "encoder_twist_map": {
+      "144": {
+        "encoder": 0,
+        "direction": -1
+      },
+      "145": {
+        "encoder": 0,
+        "direction": 1
+      },
+      "80": {
+        "encoder": 1,
+        "direction": -1
+      },
+      "81": {
+        "encoder": 1,
+        "direction": 1
+      },
+      "96": {
+        "encoder": 2,
+        "direction": -1
+      },
+      "97": {
+        "encoder": 2,
+        "direction": 1
+      }
+    },
+    "encoder_press_map": {
+      "51": 0,
+      "53": 1,
+      "52": 2
+    },
+    "non_display_buttons": [
+      15,
+      16,
+      17
+    ]
+  },
+  "background": {
+    "resolution": [854, 480],
+    "mode": "JPEG",
+    "rotation": "Rot270",
+    "mirror": "None"
+  },
+  "quirks": {
+    "needs_button_remapping": true,
+    "has_non_display_buttons": true,
+    "image_remap_only": true
+  }
+}

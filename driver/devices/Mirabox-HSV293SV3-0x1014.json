@@ -1,0 +1,78 @@
+{
+  "hardware": {
+    "vendor_id": "0x6603",
+    "product_id": "0x1014"
+  },
+  "info": {
+    "human_name": "Mirabox HSV293SV3",
+    "device_namespace": "99",
+    "manufacturer": "Mirabox",
+    "model": "HSV293SV3"
+  },
+  "protocol": {
+    "protocol_version": 3
+  },
+  "layout": {
+    "rows": 3,
+    "cols": 6,
+    "encoder_count": 0
+  },
+  "image_format": {
+    "mode": "JPEG",
+    "default_size": [
+      95,
+      95
+    ],
+    "rotation": "Rot90",
+    "mirror": "Both",
+    "per_button_overrides": {
+      "5": {
+        "size": [
+          82,
+          82
+        ]
+      },
+      "11": {
+        "size": [
+          82,
+          82
+        ]
+      },
+      "17": {
+        "size": [
+          82,
+          82
+        ]
+      }
+    }
+  },
+  "input_mapping": {
+    "button_remap": [
+      12,
+      9,
+      6,
+      3,
+      0,
+      15,
+      13,
+      10,
+      7,
+      4,
+      1,
+      16,
+      14,
+      11,
+      8,
+      5,
+      2,
+      17
+    ],
+    "encoder_twist_map": {},
+    "encoder_press_map": {},
+    "non_display_buttons": []
+  },
+  "quirks": {
+    "needs_button_remapping": true,
+    "has_non_display_buttons": false
+  }
+}
