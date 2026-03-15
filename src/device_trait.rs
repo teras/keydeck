@@ -193,10 +193,25 @@ pub trait KeydeckDevice: Send + Sync {
         Ok(())
     }
 
-    // TODO: Implement logo/background image support for Ajazz devices
-    /// Set logo/background image (e.g., Ajazz fullscreen background)
-    fn set_logo_image(&self, _image: DynamicImage) -> Result<(), DeviceError> {
-        warn_log!("set_logo_image() not supported on this device");
-        Ok(())
+    /// Get background image resolution (width, height), or None if not supported
+    fn background_image_size(&self) -> Option<(u16, u16)> {
+        None
+    }
+
+    /// Set runtime background image displayed behind the keys (CRT BGPIC).
+    /// Buttons cleared with `clear_button_image` will show this background through.
+    fn set_background_image(&self, _image: DynamicImage) -> Result<(), DeviceError> {
+        Ok(()) // No-op for devices without background support
+    }
+
+    /// Clear runtime background image (CRT BGCLE).
+    fn clear_background_image(&self) -> Result<(), DeviceError> {
+        Ok(()) // No-op for devices without background support
+    }
+
+    /// Set persistent boot logo written to device flash (CRT LOG).
+    /// Survives power cycles. Not the same as runtime background.
+    fn set_boot_logo(&self, _image: DynamicImage) -> Result<(), DeviceError> {
+        Ok(()) // No-op for devices without boot logo support
     }
 }

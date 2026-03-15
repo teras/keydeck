@@ -36,8 +36,8 @@ mod text_renderer;
 mod utils;
 mod validate;
 
-use crate::device_manager::DeviceManager;
 use crate::device_registry_init::initialize_device_registry;
+use crate::device_trait::KeydeckDevice;
 use crate::mirajazz_device::init_registry;
 use crate::server::start_server;
 use std::env;
@@ -50,41 +50,22 @@ fn print_help() {
     println!("Control a Stream Deck or similar device");
     println!();
     println!("Options:");
-    println!("  -g, --grab                  Grab the next event (note, it can be more than one)");
-    println!("  -i, --image <BUTTON> <PATH> Set the image for a button");
-    println!("  -d, --img-dir <DIR>         Set the directory where the images are searched");
-    println!("  -c, --clear                 Clear all button images");
-    println!("  -cb, --clear-button <BUTTON> Clear the image for a button");
-    println!("  -b, --brightness <BRIGHTNESS> Set the brightness of the device");
-    println!("  -l, --logo <PATH>           Set the logo image");
-    println!("  -s, --sleep                 Put the device to sleep");
-    println!("  -1, --enable <DEVICE>       Enable a device");
-    println!("  -0, --disable <DEVICE>      Disable a device");
-    println!("      --flush                 Flush devices");
-    println!("      --reset                 Reset devices");
-    println!("      --shutdown              Shutdown devices");
+    println!("      --logo <PATH>           Set persistent boot logo on device");
     println!("      --list                  List all devices");
     println!("      --info <DEVICE>         Show detailed device information as YAML");
     println!("      --validate <FILE>       Validate configuration file and test services");
-    println!(
-        "      --json                  Output validation results as JSON (use with --validate)"
-    );
-    println!("      --quiet                 Do not print verbose messages");
+    println!("      --json                  Output validation results as JSON (use with --validate)");
     println!("      --verbose               Print verbose messages");
-    println!("      --server                Start the server");
+    println!("      --server                Start the server (default when no arguments)");
     println!("      --help                  Display this help and exit");
 }
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<String>>();
 
-    // First pass: process flags (--verbose, --quiet) before anything else
-    for arg in &args {
-        match arg.as_str() {
-            "--quiet" => DEBUG.store(false, std::sync::atomic::Ordering::Relaxed),
-            "--verbose" => DEBUG.store(true, std::sync::atomic::Ordering::Relaxed),
-            _ => {}
-        }
+    // First pass: process --verbose before anything else
+    if args.iter().any(|a| a == "--verbose") {
+        DEBUG.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Initialize device registry: extract embedded JSON files and get search paths
@@ -108,122 +89,35 @@ fn main() {
     }
 
     let mut arg_iter = args.iter();
-    let mut manager = DeviceManager::new();
     let mut should_start_server = false;
 
     while let Some(arg) = arg_iter.next() {
         match arg.as_str() {
             "--help" => print_help(),
-            "-g" | "--grab" => {
-                if let Err(e) = manager.grab_event() {
-                    error_log!("Error: {}", e);
-                }
-            }
-            "-i" | "--image" => {
-                if let (Some(index), Some(path)) = (arg_iter.next(), arg_iter.next()) {
-                    match index.parse() {
-                        Ok(button_num) => {
-                            if let Err(e) = manager.set_button_image(button_num, path.to_string()) {
-                                error_log!("Error: {}", e);
+            "--logo" => {
+                if let Some(path) = arg_iter.next() {
+                    match image::open(path) {
+                        Ok(img) => {
+                            let mut manager = crate::device_manager::DeviceManager::new();
+                            for device in manager.iter_active_devices() {
+                                device.set_boot_logo(img.clone()).unwrap_or_else(|e| {
+                                    error_log!("Error setting boot logo: {}", e);
+                                });
                             }
                         }
-                        Err(_) => error_log!(
-                            "Error: Invalid button number '{}', expected a number",
-                            index
-                        ),
+                        Err(e) => error_log!("Failed to load image '{}': {}", path, e),
                     }
                 } else {
-                    error_log!("Error: Setting button image requires two arguments, button number and image path");
+                    error_log!("Error: --logo requires a path argument");
                 }
             }
-            "-d" | "--img-dir" => {
-                if let Some(arg1) = arg_iter.next() {
-                    manager.set_image_dir(arg1.to_string());
-                } else {
-                    error_log!("Error: Setting the directory where the images are searched requires an argument");
-                }
+            "--list" => {
+                let mut manager = crate::device_manager::DeviceManager::new();
+                manager.list_devices();
             }
-            "-c" | "--clear" => {
-                if let Err(e) = manager.clear_all_button_images() {
-                    error_log!("Error: {}", e);
-                }
-            }
-            "-cb" | "--clear-button" => {
-                if let Some(arg1) = arg_iter.next() {
-                    match arg1.parse() {
-                        Ok(button_num) => {
-                            if let Err(e) = manager.clear_button_image(button_num) {
-                                error_log!("Error: {}", e);
-                            }
-                        }
-                        Err(_) => {
-                            error_log!("Error: Invalid button number '{}', expected a number", arg1)
-                        }
-                    }
-                } else {
-                    error_log!("Error: Clearing button image requires an argument");
-                }
-            }
-            "-b" | "--brightness" => {
-                if let Some(arg1) = arg_iter.next() {
-                    match arg1.parse() {
-                        Ok(brightness) => {
-                            if let Err(e) = manager.set_brightness(brightness) {
-                                error_log!("Error: {}", e);
-                            }
-                        }
-                        Err(_) => error_log!(
-                            "Error: Invalid brightness '{}', expected a number 0-100",
-                            arg1
-                        ),
-                    }
-                } else {
-                    error_log!("Error: Setting brightness requires an argument");
-                }
-            }
-            "-l" | "--logo" => {
-                error_log!("Error: Logo image setting not supported in this version (Ajazz-specific feature removed)");
-                if arg_iter.next().is_none() {
-                    // Consume argument if provided
-                }
-            }
-            "-s" | "--sleep" => {
-                error_log!("Error: Sleep command not supported in this version (Ajazz-specific feature removed)");
-            }
-            "-1" | "--enable" => {
-                if let Some(arg1) = arg_iter.next() {
-                    if let Err(e) = manager.enable_device(arg1.to_uppercase()) {
-                        error_log!("Error: {}", e);
-                    }
-                } else {
-                    error_log!("Error: Adding device requires an argument");
-                }
-            }
-            "-0" | "--disable" => {
-                if let Some(arg1) = arg_iter.next() {
-                    if let Err(e) = manager.disable_device(arg1.to_uppercase()) {
-                        error_log!("Error: {}", e);
-                    }
-                } else {
-                    error_log!("Error: Removing device requires an argument");
-                }
-            }
-            "--flush" => {
-                if let Err(e) = manager.flush_devices() {
-                    error_log!("Error: {}", e);
-                }
-            }
-            "--reset" => {
-                if let Err(e) = manager.reset_devices() {
-                    error_log!("Error: {}", e);
-                }
-            }
-            "--shutdown" => {
-                error_log!("Error: Shutdown command not supported in this version (Ajazz-specific feature removed)");
-            }
-            "--list" => manager.list_devices(),
             "--info" => {
                 if let Some(arg1) = arg_iter.next() {
+                    let mut manager = crate::device_manager::DeviceManager::new();
                     if let Err(e) = manager.info_device(arg1.to_uppercase()) {
                         error_log!("Error: {}", e);
                     }
@@ -233,7 +127,6 @@ fn main() {
             }
             "--validate" => {
                 if let Some(config_path) = arg_iter.next() {
-                    // Check if --json flag is present
                     let json_output = args.iter().any(|a| a == "--json");
                     let success = crate::validate::validate_config(config_path, json_output);
                     std::process::exit(if success { 0 } else { 1 });
@@ -242,15 +135,14 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            "--json" => {}                // Processed in --validate
-            "--quiet" | "--verbose" => {} // Already processed in first pass
+            "--json" | "--verbose" => {} // Processed elsewhere
             "--server" => should_start_server = true,
             _ => {
                 error_log!("Error: Unknown command '{}'", arg);
             }
         }
     }
-    if args.len() == 0 || should_start_server {
+    if args.is_empty() || should_start_server {
         start_server();
     }
 }

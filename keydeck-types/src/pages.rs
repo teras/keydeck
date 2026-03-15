@@ -156,15 +156,15 @@ impl PressEffectConfig {
 
 impl Default for PressEffectConfig {
     fn default() -> Self {
-        PressEffectConfig::Shift {
-            pixels: default_shift_pixels(),
+        PressEffectConfig::Shrink {
+            pixels: default_shrink_pixels(),
             border_color: None,
         }
     }
 }
 
 fn default_shrink_pixels() -> u32 {
-    2
+    4
 }
 
 fn default_shift_pixels() -> u32 {

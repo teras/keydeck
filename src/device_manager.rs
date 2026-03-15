@@ -7,10 +7,9 @@ use crate::elgato_device::ElgatoDevice;
 use crate::mirajazz_device::MirajazzDevice;
 use crate::{error_log, info_log, verbose_log};
 use elgato_streamdeck::{list_devices, new_hidapi};
-use image::{open, DynamicImage};
+use image::DynamicImage;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Enum wrapper for different device types
 pub enum Device {
@@ -40,12 +39,6 @@ impl Device {
         }
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) {
-        match self {
-            Device::Elgato(d) => d.set_enabled(enabled),
-            Device::Mirajazz(d) => d.set_enabled(enabled),
-        }
-    }
 }
 
 // Implement KeydeckDevice for Device enum by delegating to inner types
@@ -192,18 +185,37 @@ impl KeydeckDevice for Device {
         }
     }
 
-    fn set_logo_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
+    fn background_image_size(&self) -> Option<(u16, u16)> {
         match self {
-            Device::Elgato(d) => d.set_logo_image(image),
-            Device::Mirajazz(d) => d.set_logo_image(image),
+            Device::Elgato(d) => d.background_image_size(),
+            Device::Mirajazz(d) => d.background_image_size(),
+        }
+    }
+
+    fn set_background_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
+        match self {
+            Device::Elgato(d) => d.set_background_image(image),
+            Device::Mirajazz(d) => d.set_background_image(image),
+        }
+    }
+
+    fn clear_background_image(&self) -> Result<(), DeviceError> {
+        match self {
+            Device::Elgato(d) => d.clear_background_image(),
+            Device::Mirajazz(d) => d.clear_background_image(),
+        }
+    }
+
+    fn set_boot_logo(&self, image: DynamicImage) -> Result<(), DeviceError> {
+        match self {
+            Device::Elgato(d) => d.set_boot_logo(image),
+            Device::Mirajazz(d) => d.set_boot_logo(image),
         }
     }
 }
 
 pub struct DeviceManager {
     devices: Vec<Device>,
-    image_dir: Option<String>,
-    auto_added: bool,
 }
 
 impl DeviceManager {
@@ -296,11 +308,7 @@ impl DeviceManager {
             error_log!("No supported devices found");
         }
 
-        Self {
-            devices,
-            image_dir: None,
-            auto_added: true,
-        }
+        Self { devices }
     }
 
     /// Enumerate all connected devices and return their serials.
@@ -337,78 +345,6 @@ impl DeviceManager {
         }
 
         serials
-    }
-
-    pub fn grab_event(&mut self) -> Result<(), String> {
-        let active = self.count_active_devices();
-        if self.count_active_devices() != 1 {
-            return Err(format!(
-                "Only one active device is allowed to grab events, found {}",
-                active
-            ));
-        }
-        for device in self.iter_active_devices() {
-            // Use trait method get_reader() which returns Arc<dyn DeviceReader>
-            let reader = device.get_reader();
-            if let Ok(updates) = reader.read(Some(Duration::from_secs_f64(100.0))) {
-                for update in updates {
-                    info_log!("{:?}", update);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn reset_devices(&mut self) -> Result<(), String> {
-        for device in self.iter_active_devices() {
-            device.reset()?;
-        }
-        Ok(())
-    }
-
-    pub fn clear_button_image(&mut self, button_idx: u8) -> Result<(), String> {
-        for device in self.iter_active_devices() {
-            device.clear_button_image(button_idx)?;
-        }
-        Ok(())
-    }
-
-    pub fn flush_devices(&mut self) -> Result<(), String> {
-        for device in self.iter_active_devices() {
-            device.flush()?;
-        }
-        Ok(())
-    }
-
-    pub fn set_button_image(&mut self, button_idx: u8, img_path: String) -> Result<(), String> {
-        let image_data = match find_path(&img_path, self.image_dir.clone()) {
-            Some(image_path) => open(image_path)
-                .map_err(|e| format!("Failed to open image '{}': {}", &img_path, e))?,
-            None => return Err(format!("Image '{}' not found", img_path)),
-        };
-        for device in self.iter_active_devices() {
-            device.set_button_image(button_idx, image_data.clone())?;
-            device.flush()?;
-        }
-        Ok(())
-    }
-
-    pub fn set_image_dir(&mut self, img_dir: String) {
-        self.image_dir = Some(img_dir);
-    }
-
-    pub fn set_brightness(&mut self, brightness: u8) -> Result<(), String> {
-        for device in self.iter_active_devices() {
-            device.set_brightness(brightness)?;
-        }
-        Ok(())
-    }
-
-    pub fn clear_all_button_images(&mut self) -> Result<(), String> {
-        for device in self.iter_active_devices() {
-            device.clear_all_button_images()?;
-        }
-        Ok(())
     }
 
     pub fn list_devices(&mut self) {
@@ -467,43 +403,6 @@ impl DeviceManager {
             }
         }
         Err(format!("Device with id '{}' not found", identifier))
-    }
-
-    pub fn enable_device(&mut self, identifier: String) -> Result<(), String> {
-        if self.auto_added {
-            self.set_state_all_devices(false);
-            self.auto_added = false;
-        }
-        for device in &mut self.devices {
-            if device.device_id() == identifier || device.serial().trim() == identifier {
-                device.set_enabled(true);
-                return Ok(());
-            }
-        }
-        Err(format!(
-            "Enabling device with id '{}' not found",
-            identifier
-        ))
-    }
-
-    pub fn disable_device(&mut self, device_id: String) -> Result<(), String> {
-        self.auto_added = false;
-        for device in &mut self.devices {
-            if device.device_id() == device_id || device.serial().trim() == device_id {
-                device.set_enabled(false);
-                return Ok(());
-            }
-        }
-        Err(format!(
-            "Disabling device with id '{}' not found",
-            device_id
-        ))
-    }
-
-    fn set_state_all_devices(&mut self, state: bool) {
-        for device in &mut self.devices {
-            device.set_enabled(state);
-        }
     }
 
     fn count_active_devices(&self) -> usize {

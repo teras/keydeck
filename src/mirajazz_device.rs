@@ -8,7 +8,7 @@ use hidapi::HidApi;
 use image::DynamicImage;
 use mirajazz_json::{
     device::Device,
-    registry::{DeviceDefinition, DeviceRegistry, ImageMode, Mirror, Rotation},
+    registry::{DeviceDefinition, DeviceRegistry},
     state::DeviceStateReader,
 };
 use std::cell::RefCell;
@@ -127,10 +127,6 @@ impl MirajazzDevice {
         self.enabled
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-    }
-
     fn get_device(&self) -> Arc<Device> {
         self.device
             .borrow_mut()
@@ -190,33 +186,23 @@ impl MirajazzDevice {
             .clone()
     }
 
+    /// Convert a DynamicImage to device background format (used by both BGPIC and LOG)
+    fn convert_background_image(&self, image: DynamicImage) -> Result<(Vec<u8>, &mirajazz_json::registry::BackgroundConfig), DeviceError> {
+        let bg_config = self.device_def.background.as_ref().ok_or_else(|| {
+            DeviceError::UnsupportedOperation(format!(
+                "Device '{}' does not support background images",
+                self.device_def.info.human_name
+            ))
+        })?;
+        let image_format: mirajazz_json::types::ImageFormat = bg_config.into();
+        let image_data = mirajazz_json::images::convert_image_with_format(image_format, image)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to convert background image: {}", e)))?;
+        Ok((image_data, bg_config))
+    }
+
     /// Convert mirajazz ImageFormat from registry definition
     fn get_image_format_for_button(&self, button_idx: u8) -> mirajazz_json::types::ImageFormat {
-        let button_format = self.device_def.image_format_for_button(button_idx);
-
-        mirajazz_json::types::ImageFormat {
-            mode: match button_format.mode {
-                ImageMode::BMP => mirajazz_json::types::ImageMode::BMP,
-                ImageMode::JPEG => mirajazz_json::types::ImageMode::JPEG,
-                ImageMode::PNG => mirajazz_json::types::ImageMode::PNG,
-            },
-            size: (
-                button_format.size[0] as usize,
-                button_format.size[1] as usize,
-            ),
-            rotation: match button_format.rotation {
-                Rotation::Rot0 => mirajazz_json::types::ImageRotation::Rot0,
-                Rotation::Rot90 => mirajazz_json::types::ImageRotation::Rot90,
-                Rotation::Rot180 => mirajazz_json::types::ImageRotation::Rot180,
-                Rotation::Rot270 => mirajazz_json::types::ImageRotation::Rot270,
-            },
-            mirror: match button_format.mirror {
-                Mirror::None => mirajazz_json::types::ImageMirroring::None,
-                Mirror::X => mirajazz_json::types::ImageMirroring::X,
-                Mirror::Y => mirajazz_json::types::ImageMirroring::Y,
-                Mirror::Both => mirajazz_json::types::ImageMirroring::Both,
-            },
-        }
+        self.device_def.image_format_for_button(button_idx).into()
     }
 
     /// Map keydeck button index to device button index (handles remapping quirk)
@@ -367,49 +353,45 @@ impl KeydeckDevice for MirajazzDevice {
         })
     }
 
-    fn set_logo_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
-        let bg_config = self.device_def.background.as_ref().ok_or_else(|| {
-            DeviceError::UnsupportedOperation(format!(
-                "Device '{}' does not support background images",
-                self.device_def.info.human_name
-            ))
-        })?;
+    fn background_image_size(&self) -> Option<(u16, u16)> {
+        self.device_def
+            .background
+            .as_ref()
+            .map(|bg| (bg.resolution[0], bg.resolution[1]))
+    }
 
-        let image_format = mirajazz_json::types::ImageFormat {
-            mode: match bg_config.mode {
-                ImageMode::BMP => mirajazz_json::types::ImageMode::BMP,
-                ImageMode::JPEG => mirajazz_json::types::ImageMode::JPEG,
-                ImageMode::PNG => mirajazz_json::types::ImageMode::PNG,
-            },
-            size: (bg_config.resolution[0] as usize, bg_config.resolution[1] as usize),
-            rotation: match bg_config.rotation {
-                Rotation::Rot0 => mirajazz_json::types::ImageRotation::Rot0,
-                Rotation::Rot90 => mirajazz_json::types::ImageRotation::Rot90,
-                Rotation::Rot180 => mirajazz_json::types::ImageRotation::Rot180,
-                Rotation::Rot270 => mirajazz_json::types::ImageRotation::Rot270,
-            },
-            mirror: match bg_config.mirror {
-                Mirror::None => mirajazz_json::types::ImageMirroring::None,
-                Mirror::X => mirajazz_json::types::ImageMirroring::X,
-                Mirror::Y => mirajazz_json::types::ImageMirroring::Y,
-                Mirror::Both => mirajazz_json::types::ImageMirroring::Both,
-            },
-        };
+    fn set_background_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
+        if self.device_def.background.is_none() { return Ok(()); }
+        let (image_data, bg_config) = self.convert_background_image(image)?;
+        let device = self.get_device();
+        let w = bg_config.resolution[0];
+        let h = bg_config.resolution[1];
+        verbose_log!(
+            "Setting background image (BGPIC) on device '{}' ({}x{}, {} bytes)",
+            self.serial, w, h, image_data.len()
+        );
+        device.send_background_image(&image_data, 0, 0, w, h, 0x00)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to send BGPIC: {}", e)))
+    }
 
-        let image_data = mirajazz_json::images::convert_image_with_format(image_format, image)
-            .map_err(|e| DeviceError::LibraryError(format!("Failed to convert background image: {}", e)))?;
+    fn clear_background_image(&self) -> Result<(), DeviceError> {
+        if self.device_def.background.is_none() { return Ok(()); }
+        let device = self.get_device();
+        verbose_log!("Clearing background image (BGCLE) on device '{}'", self.serial);
+        device.clear_background_image(0x03)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to send BGCLE: {}", e)))
+    }
 
+    fn set_boot_logo(&self, image: DynamicImage) -> Result<(), DeviceError> {
+        if self.device_def.background.is_none() { return Ok(()); }
+        let (image_data, bg_config) = self.convert_background_image(image)?;
         let device = self.get_device();
         verbose_log!(
-            "Setting background image on device '{}' ({}x{}, {} bytes)",
-            self.serial,
-            bg_config.resolution[0],
-            bg_config.resolution[1],
-            image_data.len()
+            "Setting boot logo (LOG) on device '{}' ({}x{}, {} bytes)",
+            self.serial, bg_config.resolution[0], bg_config.resolution[1], image_data.len()
         );
-        device
-            .send_background_image(&image_data)
-            .map_err(|e| DeviceError::LibraryError(format!("Failed to set background image: {}", e)))
+        device.send_boot_logo(&image_data)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to set boot logo: {}", e)))
     }
 
     fn shutdown(&self) -> Result<(), DeviceError> {

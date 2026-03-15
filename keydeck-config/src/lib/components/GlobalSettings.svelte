@@ -28,6 +28,38 @@
   let lastAddedColor = $state<string | null>(null);
   let colorNameInput = $state<HTMLInputElement | undefined>();
 
+  // Background image management
+  async function browseBackgroundImage() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'Image',
+          extensions: ['png', 'jpg', 'jpeg', 'bmp']
+        }]
+      });
+      if (selected) {
+        config.background_image = selected;
+      }
+    } catch (e) {
+      console.error('Failed to open file dialog:', e);
+    }
+  }
+
+  function updateBackgroundImage(value: string) {
+    if (value.trim()) {
+      config.background_image = value.trim();
+    } else {
+      delete config.background_image;
+    }
+  }
+
+  function clearBackgroundImage() {
+    delete config.background_image;
+    config = config;
+  }
+
   // Protected icons management
   let showAddProtectedIcon = $state(false);
   let newProtectedIcon = $state("");
@@ -219,6 +251,24 @@
         oninput={(e) => updateTickTime(e.currentTarget.value)}
       />
       <p class="help">Global tick interval (1-60 seconds)</p>
+    </div>
+
+    <div class="form-group">
+      <label>Background Image</label>
+      <div class="bg-image-row">
+        <input
+          type="text"
+          value={config.background_image || ''}
+          oninput={(e) => updateBackgroundImage(e.currentTarget.value)}
+          placeholder="Path to background image"
+          class="bg-image-input"
+        />
+        <button class="browse-btn" onclick={browseBackgroundImage} title="Browse">...</button>
+        {#if config.background_image}
+          <button class="clear-btn" onclick={clearBackgroundImage} title="Clear">✕</button>
+        {/if}
+      </div>
+      <p class="help">Runtime background displayed behind buttons on supported devices</p>
     </div>
 
     <div class="section">
@@ -710,6 +760,49 @@
 
   .pattern-item .remove-btn:hover {
     background: #dc3545;
+    color: white;
+  }
+
+  .bg-image-row {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .bg-image-input {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+  }
+
+  .browse-btn {
+    padding: 8px 12px;
+    background-color: #3c3c3c;
+    color: #cccccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .browse-btn:hover {
+    background-color: #4a4a4a;
+  }
+
+  .clear-btn {
+    padding: 8px 10px;
+    background-color: #3e3e42;
+    color: #aaa;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .clear-btn:hover {
+    background-color: #dc3545;
     color: white;
   }
 </style>

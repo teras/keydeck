@@ -56,10 +56,6 @@ impl ElgatoDevice {
         self.enabled
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-    }
-
     pub fn get_deck(&self) -> Arc<StreamDeck> {
         self.deck
             .borrow_mut()

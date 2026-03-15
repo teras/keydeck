@@ -64,6 +64,7 @@ pub struct PagedDevice {
     current_title: RefCell<String>,
     pending_actions: RefCell<Option<PendingActionQueue>>,
     time_manager: Arc<TimeManager>,
+    background_image: Option<String>,
 }
 
 impl PagedDevice {
@@ -97,15 +98,13 @@ impl PagedDevice {
             .clear_all_button_images()
             .unwrap_or_else(|e| error_log!("Error while clearing button images: {}", e));
 
-        // Set background/wallpaper image if configured
+        // Set runtime background image (BGPIC) if configured
         if let Some(ref bg_path) = background_image {
             match image::open(bg_path) {
                 Ok(img) => {
-                    device.set_logo_image(img).unwrap_or_else(|e| {
+                    device.set_background_image(img).unwrap_or_else(|e| {
                         error_log!("Failed to set background image '{}': {}", bg_path, e);
                     });
-                    // Device needs time to process background before accepting key images
-                    std::thread::sleep(Duration::from_secs(1));
                 }
                 Err(e) => {
                     error_log!("Failed to load background image '{}': {}", bg_path, e);
@@ -170,6 +169,7 @@ impl PagedDevice {
             current_title: RefCell::new(String::new()),
             pending_actions: RefCell::new(None),
             time_manager,
+            background_image,
         };
 
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
@@ -294,20 +294,35 @@ impl PagedDevice {
             error_log!("Error setting brightness: {}", e);
         });
 
-        // Update background image
-        if let Some(ref bg_path) = background_image {
-            match image::open(bg_path) {
-                Ok(img) => {
-                    self.device.set_logo_image(img).unwrap_or_else(|e| {
-                        error_log!("Failed to set background image '{}': {}", bg_path, e);
-                    });
-                    // Device needs time to process background before accepting key images
-                    std::thread::sleep(Duration::from_secs(1));
+        // Handle background image changes
+        let background_changed = self.background_image != background_image;
+        if background_changed {
+            if let Some(ref bg_path) = background_image {
+                // Background added or changed: send new BGPIC
+                match image::open(bg_path) {
+                    Ok(img) => {
+                        self.device.set_background_image(img).unwrap_or_else(|e| {
+                            error_log!("Failed to set background image '{}': {}", bg_path, e);
+                        });
+                    }
+                    Err(e) => {
+                        error_log!("Failed to load background image '{}': {}", bg_path, e);
+                    }
                 }
-                Err(e) => {
-                    error_log!("Failed to load background image '{}': {}", bg_path, e);
-                }
+            } else {
+                // Background removed: clear via BGCLE
+                self.device.clear_background_image().unwrap_or_else(|e| {
+                    error_log!("Failed to clear background image: {}", e);
+                });
             }
+
+            self.background_image = background_image;
+
+            // Invalidate button caches: background change affects what's visible behind buttons
+            let button_count = self.device.button_count() as usize;
+            *self.button_images.borrow_mut() = vec![String::new(); button_count];
+            *self.button_backgrounds.borrow_mut() = vec![String::new(); button_count];
+            *self.button_canvases.borrow_mut() = vec![None; button_count];
         }
 
         // Check if current page still exists in new configuration
