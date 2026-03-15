@@ -13,10 +13,7 @@ pub fn set_focus(class: &String, title: &String) -> Result<(), String> {
         KWinScriptClient::new().map_err(|e| format!("Failed to create KWin client: {}", e))?;
 
     // Use the event-driven activate_window method
-    // If window is not found, log a warning but don't fail
-    if let Err(e) = client.activate_window(class, title) {
-        crate::verbose_log!("Warning: Failed to activate window: {}", e);
-    }
-
-    Ok(())
+    client.activate_window(class, title).map_err(|e| {
+        format!("Failed to activate window with class '{}' and title '{}': {}", class, title, e)
+    })
 }
