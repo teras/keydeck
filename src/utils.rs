@@ -36,7 +36,7 @@ macro_rules! error_log {
 #[macro_export]
 macro_rules! warn_log {
     ($($arg:tt)*) => {
-        eprintln!("[{}] {}", crate::timestamp!(), format!($($arg)*))
+        eprintln!("[{}] WARNING: {}", crate::timestamp!(), format!($($arg)*))
     };
 }
 

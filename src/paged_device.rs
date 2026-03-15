@@ -195,6 +195,30 @@ impl PagedDevice {
             );
         }
 
+        // Validate encoder configuration against device capabilities
+        let device_encoder_count = paged_device.device.encoder_count();
+        for (page_name, page) in paged_device.pages.pages.iter() {
+            if let Some(encoders) = &page.encoders {
+                for enc_key in encoders.keys() {
+                    if device_encoder_count == 0 {
+                        warn_log!(
+                            "Page '{}' defines '{}' but device '{}' does not support encoders",
+                            page_name, enc_key, paged_device.serial
+                        );
+                    } else if let Some(idx_str) = enc_key.strip_prefix("encoder") {
+                        if let Ok(idx) = idx_str.parse::<usize>() {
+                            if idx > device_encoder_count {
+                                warn_log!(
+                                    "Page '{}' defines '{}' but device '{}' only has {} encoder(s)",
+                                    page_name, enc_key, paged_device.serial, device_encoder_count
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // The hardware may not accept brightness commands immediately after reset/reconnect
         // Try at 100ms first, then again at 1000ms to ensure it gets set
         paged_device.time_manager.schedule_brightness(

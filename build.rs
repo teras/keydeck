@@ -63,6 +63,13 @@ fn main() {
     fs::write(&dest_path, source).expect("Failed to write embedded_devices.rs");
 
     println!("cargo:rerun-if-changed=driver/devices");
+    for entry in fs::read_dir(devices_dir).expect("Failed to re-read devices directory") {
+        let entry = entry.expect("Failed to read directory entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
     println!(
         "cargo:warning=Embedded {} device definition(s) into binary",
         entries.len()

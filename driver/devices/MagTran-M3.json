@@ -34,35 +34,35 @@
       0, 1, 2, 3, 4
     ],
     "encoder_twist_map": {
-      "144": {
+      "160": {
         "encoder": 0,
+        "direction": -1
+      },
+      "161": {
+        "encoder": 0,
+        "direction": 1
+      },
+      "144": {
+        "encoder": 1,
         "direction": -1
       },
       "145": {
-        "encoder": 0,
+        "encoder": 1,
         "direction": 1
       },
       "80": {
-        "encoder": 1,
-        "direction": -1
-      },
-      "81": {
-        "encoder": 1,
-        "direction": 1
-      },
-      "96": {
         "encoder": 2,
         "direction": -1
       },
-      "97": {
+      "81": {
         "encoder": 2,
         "direction": 1
       }
     },
     "encoder_press_map": {
-      "51": 0,
-      "53": 1,
-      "52": 2
+      "55": 0,
+      "51": 1,
+      "53": 2
     },
     "non_display_buttons": [
       15,

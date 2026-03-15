@@ -454,11 +454,33 @@ impl DeviceReader for MirajazzDeviceReader {
         use mirajazz_json::types::DeviceInput;
 
         // Create the process_input closure that converts HID data to DeviceInput
-        // key = button index from USB report (device native index), state = button state (0 or 1)
+        // key = raw input byte from USB report, state = button state (0 or 1)
         let button_count = self.device_def.layout.key_count();
+        let encoder_count = self.device_def.layout.encoder_count;
+        let encoder_twist_map = &self.device_def.input_mapping.encoder_twist_map;
+        let encoder_press_map = &self.device_def.input_mapping.encoder_press_map;
         let updates = self
             .reader
             .read(timeout, move |key, state| {
+                // Check if this raw byte maps to an encoder twist event
+                if let Some(twist) = encoder_twist_map.get(&key) {
+                    let mut twists = vec![0i8; encoder_count];
+                    if (twist.encoder as usize) < encoder_count {
+                        twists[twist.encoder as usize] = twist.direction;
+                    }
+                    return Ok(DeviceInput::EncoderTwist(twists));
+                }
+
+                // Check if this raw byte maps to an encoder press event
+                if let Some(&encoder_idx) = encoder_press_map.get(&key) {
+                    let mut encoders = vec![false; encoder_count];
+                    if (encoder_idx as usize) < encoder_count {
+                        encoders[encoder_idx as usize] = state != 0;
+                    }
+                    return Ok(DeviceInput::EncoderStateChange(encoders));
+                }
+
+                // Otherwise it's a regular button event
                 // Device reports button indices starting from 1, so subtract 1 to get 0-indexed
                 // This quirk is documented in legacy opendeck-akp153 plugin
                 let key_0indexed = if key > 0 { key - 1 } else { 0 };
