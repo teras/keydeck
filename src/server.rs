@@ -13,7 +13,7 @@ use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
 use crate::pages::KeyDeckConfLoader;
 use crate::services::new_services_state;
-use crate::{error_log, info_log, verbose_log};
+use crate::{detail_log, error_log, info_log, verbose_log};
 use indexmap::IndexMap;
 use keydeck::get_icon_dir;
 use keydeck_types::pages::{Button, Macro, Pages, ServiceConfig};
@@ -140,21 +140,25 @@ pub fn start_server() {
     for message in rx {
         match message {
             DeviceEvent::ButtonDown { sn, button_id } => {
+                detail_log!("[{}] Button {} pressed", sn, button_id);
                 if let Some(device) = devices.get(&sn) {
                     device.button_down(button_id);
                 }
             }
             DeviceEvent::ButtonUp { sn, button_id } => {
+                detail_log!("[{}] Button {} released", sn, button_id);
                 if let Some(device) = devices.get(&sn) {
                     device.button_up(button_id);
                 }
             }
             DeviceEvent::EncoderDown { sn, encoder_id } => {
+                detail_log!("[{}] Encoder {} pressed", sn, encoder_id);
                 if let Some(device) = devices.get(&sn) {
                     device.encoder_down(encoder_id);
                 }
             }
             DeviceEvent::EncoderUp { sn, encoder_id } => {
+                detail_log!("[{}] Encoder {} released", sn, encoder_id);
                 if let Some(device) = devices.get(&sn) {
                     device.encoder_up(encoder_id);
                 }
@@ -164,31 +168,37 @@ pub fn start_server() {
                 encoder_id,
                 value,
             } => {
+                detail_log!("[{}] Encoder {} twisted by {}", sn, encoder_id, value);
                 if let Some(device) = devices.get(&sn) {
                     device.encoder_twist(encoder_id, value);
                 }
             }
             DeviceEvent::TouchPointDown { sn, point_id } => {
+                detail_log!("[{}] Touch point {} down", sn, point_id);
                 if let Some(device) = devices.get(&sn) {
                     device.touch_point_down(point_id);
                 }
             }
             DeviceEvent::TouchPointUp { sn, point_id } => {
+                detail_log!("[{}] Touch point {} up", sn, point_id);
                 if let Some(device) = devices.get(&sn) {
                     device.touch_point_up(point_id);
                 }
             }
             DeviceEvent::TouchScreenPress { sn, x, y } => {
+                detail_log!("[{}] Touch screen press at ({}, {})", sn, x, y);
                 if let Some(device) = devices.get(&sn) {
                     device.touch_screen_press(x, y);
                 }
             }
             DeviceEvent::TouchScreenLongPress { sn, x, y } => {
+                detail_log!("[{}] Touch screen long press at ({}, {})", sn, x, y);
                 if let Some(device) = devices.get(&sn) {
                     device.touch_screen_long_press(x, y);
                 }
             }
             DeviceEvent::TouchScreenSwipe { sn, start, end } => {
+                detail_log!("[{}] Touch screen swipe ({},{}) -> ({},{})", sn, start.0, start.1, end.0, end.1);
                 if let Some(device) = devices.get(&sn) {
                     device.touch_screen_swipe(start, end);
                 }

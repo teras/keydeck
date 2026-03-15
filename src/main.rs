@@ -41,9 +41,10 @@ use crate::device_trait::KeydeckDevice;
 use crate::mirajazz_device::init_registry;
 use crate::server::start_server;
 use std::env;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
 
-pub static DEBUG: AtomicBool = AtomicBool::new(false);
+/// Verbosity level: 0 = normal, 1 = detailed, 2 = verbose/debug
+pub static VERBOSITY: AtomicU8 = AtomicU8::new(0);
 
 fn print_help() {
     println!("Usage: keydeck [OPTION]...");
@@ -55,7 +56,8 @@ fn print_help() {
     println!("      --info <DEVICE>         Show detailed device information as YAML");
     println!("      --validate <FILE>       Validate configuration file and test services");
     println!("      --json                  Output validation results as JSON (use with --validate)");
-    println!("      --verbose               Print verbose messages");
+    println!("  -v, --verbose               Print detailed messages (key presses, page changes)");
+    println!("  -vv, --verbose --verbose    Print all verbose/debug messages");
     println!("      --server                Start the server (default when no arguments)");
     println!("      --help                  Display this help and exit");
 }
@@ -63,10 +65,13 @@ fn print_help() {
 fn main() {
     let args = env::args().skip(1).collect::<Vec<String>>();
 
-    // First pass: process --verbose before anything else
-    if args.iter().any(|a| a == "--verbose") {
-        DEBUG.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
+    // First pass: process verbosity flags before anything else
+    let verbosity = args.iter().fold(0u8, |level, a| match a.as_str() {
+        "-vv" => level.max(2),
+        "-v" | "--verbose" => level.saturating_add(1).min(2),
+        _ => level,
+    });
+    VERBOSITY.store(verbosity, std::sync::atomic::Ordering::Relaxed);
 
     // Initialize device registry: extract embedded JSON files and get search paths
     let device_paths = match initialize_device_registry() {
@@ -135,7 +140,7 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            "--json" | "--verbose" => {} // Processed elsewhere
+            "--json" | "--verbose" | "-v" | "-vv" => {} // Processed elsewhere
             "--server" => should_start_server = true,
             _ => {
                 error_log!("Error: Unknown command '{}'", arg);

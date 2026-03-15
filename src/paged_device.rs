@@ -11,13 +11,13 @@ use crate::keyboard::{process_escape_sequences, send_key_combination, send_strin
 use crate::listener_button::button_listener;
 use crate::listener_time::TimeManager;
 use crate::pages::{
-    Action, Button, ButtonConfig, Direction, DrawConfig, FocusChangeRestorePolicy, GraphicType,
-    MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig,
+    Action, Button, ButtonConfig, Direction, DrawConfig, Encoder, FocusChangeRestorePolicy,
+    GraphicType, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig,
 };
 use crate::services::ServicesState;
 use crate::text_renderer;
 use crate::press_effect::compose_button;
-use crate::{error_log, verbose_log, warn_log};
+use crate::{detail_log, error_log, verbose_log, warn_log};
 use image::imageops::overlay;
 use image::{open, DynamicImage, Rgba, RgbaImage};
 use indexmap::IndexMap;
@@ -733,12 +733,33 @@ impl PagedDevice {
         self.cancel_pending_actions();
     }
 
-    pub fn encoder_up(&self, _encoder_id: u8) {
+    pub fn encoder_up(&self, encoder_id: u8) {
         self.cancel_pending_actions();
+        let current_page = { self.current_page_ref.borrow().clone() };
+        if let Some(encoder) = self.find_encoder(current_page, encoder_id) {
+            if let Some(actions) = &encoder.press {
+                if let Err(e) = self.execute_actions(actions.clone()) {
+                    error_log!("{}", e);
+                }
+            }
+        }
     }
 
-    pub fn encoder_twist(&self, _encoder_id: u8, _value: i8) {
+    pub fn encoder_twist(&self, encoder_id: u8, value: i8) {
         self.cancel_pending_actions();
+        let current_page = { self.current_page_ref.borrow().clone() };
+        if let Some(encoder) = self.find_encoder(current_page, encoder_id) {
+            let actions = if value > 0 {
+                &encoder.twist_right
+            } else {
+                &encoder.twist_left
+            };
+            if let Some(actions) = actions {
+                if let Err(e) = self.execute_actions(actions.clone()) {
+                    error_log!("{}", e);
+                }
+            }
+        }
     }
 
     pub fn touch_point_down(&self, _point_id: u8) {
@@ -936,10 +957,11 @@ impl PagedDevice {
 
         let current_page = { self.current_page_ref.borrow().clone() };
 
-        // Check if button exists in config
-        let button = self
-            .find_button(current_page, button_id)
-            .ok_or_else(|| format!("Button {} not defined in configuration", button_id))?;
+        // If button has no config, nothing to refresh
+        let button = match self.find_button(current_page, button_id) {
+            Some(b) => b,
+            None => return Ok(()),
+        };
 
         // Invalidate cache for this button
         {
@@ -1449,7 +1471,7 @@ impl PagedDevice {
         if let Some(page) = page {
             let old_page = { self.current_page_ref.borrow_mut().clone() };
             if page != old_page {
-                verbose_log!("Setting page to {}", page_name);
+                detail_log!("[{}] Page changed to '{}'", self.serial, page_name);
 
                 if is_auto {
                     if self.last_active_page.borrow().is_none() {
@@ -1508,6 +1530,12 @@ impl PagedDevice {
         } else {
             None
         }
+    }
+
+    fn find_encoder(&self, page_id: usize, encoder_id: u8) -> Option<&Encoder> {
+        let key = format!("encoder{}", encoder_id);
+        let page = self.find_page(page_id)?;
+        page.encoders.as_ref()?.get(&key)
     }
 }
 

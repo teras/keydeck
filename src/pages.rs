@@ -33,6 +33,7 @@ impl KeyDeckConfLoader {
             HashMap<String, ButtonConfig>,
             Option<Vec<Action>>,
             Option<bool>,
+            Option<IndexMap<String, crate::pages::Encoder>>,
         ),
         String,
     > {
@@ -57,11 +58,12 @@ impl KeyDeckConfLoader {
         let mut merged_buttons = HashMap::new();
         let mut merged_on_tick: Option<Vec<Action>> = None;
         let mut merged_lock: Option<bool> = None;
+        let mut merged_encoders: Option<IndexMap<String, crate::pages::Encoder>> = None;
 
         // First, recursively resolve parent templates
         if let Some(parent_templates) = &template.inherits {
             for parent_name in parent_templates {
-                let (parent_buttons, parent_on_tick, parent_lock) =
+                let (parent_buttons, parent_on_tick, parent_lock, parent_encoders) =
                     Self::resolve_template_recursive(parent_name, templates, visited)?;
                 // Merge parent buttons (later parents override earlier ones)
                 merged_buttons.extend(parent_buttons);
@@ -72,6 +74,12 @@ impl KeyDeckConfLoader {
                 // lock is overridden by later parents (not merged)
                 if parent_lock.is_some() {
                     merged_lock = parent_lock;
+                }
+                // Merge parent encoders (later parents override earlier ones)
+                if let Some(parent_enc) = parent_encoders {
+                    merged_encoders
+                        .get_or_insert_with(IndexMap::new)
+                        .extend(parent_enc);
                 }
             }
         }
@@ -89,10 +97,17 @@ impl KeyDeckConfLoader {
             merged_lock = template.lock;
         }
 
+        // Merge this template's encoders (overriding parent encoders)
+        if let Some(template_enc) = &template.encoders {
+            merged_encoders
+                .get_or_insert_with(IndexMap::new)
+                .extend(template_enc.clone());
+        }
+
         // Remove from visited (backtrack for DFS)
         visited.pop();
 
-        Ok((merged_buttons, merged_on_tick, merged_lock))
+        Ok((merged_buttons, merged_on_tick, merged_lock, merged_encoders))
     }
 
     pub fn load() -> KeyDeckConf {
@@ -187,7 +202,7 @@ impl KeyDeckConfLoader {
                             templates_map,
                             &mut visited,
                         ) {
-                            Ok((resolved_buttons, resolved_on_tick, resolved_lock)) => {
+                            Ok((resolved_buttons, resolved_on_tick, resolved_lock, resolved_encoders)) => {
                                 // Merge resolved buttons into page (page buttons take priority)
                                 for (button_name, button_config) in resolved_buttons {
                                     page.buttons.entry(button_name).or_insert(button_config);
@@ -199,6 +214,13 @@ impl KeyDeckConfLoader {
                                 // Merge lock (page's lock takes priority over template's)
                                 if page.lock.is_none() && resolved_lock.is_some() {
                                     page.lock = resolved_lock;
+                                }
+                                // Merge encoders (page's encoders take priority over template's)
+                                if let Some(resolved_enc) = resolved_encoders {
+                                    let page_encoders = page.encoders.get_or_insert_with(IndexMap::new);
+                                    for (enc_name, enc_config) in resolved_enc {
+                                        page_encoders.entry(enc_name).or_insert(enc_config);
+                                    }
                                 }
                             }
                             Err(e) => {

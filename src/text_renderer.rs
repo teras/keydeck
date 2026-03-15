@@ -21,11 +21,8 @@ const DEFAULT_FONT_SIZE: f32 = 28.0;
 static EMOJI_FONT_NAME: OnceLock<String> = OnceLock::new();
 
 // Thread-local FontSystem - initialized once per thread (main event loop thread)
-// FONT_SYSTEM: Main font rendering system
-// RENDERING_DEPTH: Track rendering depth to detect re-entrance
 thread_local! {
     static FONT_SYSTEM: RefCell<FontSystem> = RefCell::new(FontSystem::new());
-    static RENDERING_DEPTH: RefCell<u32> = RefCell::new(0);
 }
 
 /// Get platform-specific color emoji font names in order of preference
@@ -232,20 +229,6 @@ pub fn render_text_on_canvas(
     text_color: Option<Rgba<u8>>,
     outline_color: Option<[u8; 3]>,
 ) {
-    // DEBUG_REENTRANCE: Check for re-entrant calls
-    RENDERING_DEPTH.with(|depth| {
-        let current_depth = *depth.borrow();
-        if current_depth > 0 {
-            eprintln!(
-                "DEBUG_REENTRANCE: Re-entrant call detected! Depth: {} -> {}",
-                current_depth,
-                current_depth + 1
-            );
-            eprintln!("DEBUG_REENTRANCE: Text being rendered: '{}'", text);
-        }
-        *depth.borrow_mut() += 1;
-    });
-
     FONT_SYSTEM.with(|fs| {
         let mut font_system = fs.borrow_mut();
         render_text_on_canvas_internal(
@@ -256,11 +239,6 @@ pub fn render_text_on_canvas(
             outline_color,
             &mut font_system,
         );
-    });
-
-    // DEBUG_REENTRANCE: Decrement depth on exit
-    RENDERING_DEPTH.with(|depth| {
-        *depth.borrow_mut() -= 1;
     });
 }
 

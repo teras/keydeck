@@ -214,4 +214,34 @@ pub trait KeydeckDevice: Send + Sync {
     fn set_boot_logo(&self, _image: DynamicImage) -> Result<(), DeviceError> {
         Ok(()) // No-op for devices without boot logo support
     }
+
+    // === RGB LED Strip Control ===
+
+    /// Get number of RGB LEDs, or 0 if device has no LED strip
+    fn led_count(&self) -> u8 {
+        0
+    }
+
+    /// Set RGB LED strip brightness (0-100). No-op for devices without RGB LEDs.
+    fn set_led_brightness(&self, _brightness: u8) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    /// Set RGB LED strip colors. Each tuple is (r, g, b) for one LED.
+    /// No-op for devices without RGB LEDs.
+    fn set_led_color(&self, _colors: &[(u8, u8, u8)]) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    /// Reset RGB LED strip to default state. No-op for devices without RGB LEDs.
+    fn reset_led_color(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    // === Power Management ===
+
+    /// Wake device from sleep (CRT DIS).
+    fn wakeup(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
 }

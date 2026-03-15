@@ -4,7 +4,16 @@
 #[macro_export]
 macro_rules! verbose_log {
     ($($arg:tt)*) => {
-        if crate::DEBUG.load(std::sync::atomic::Ordering::Relaxed) {
+        if crate::VERBOSITY.load(std::sync::atomic::Ordering::Relaxed) >= 2 {
+            println!($($arg)*);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! detail_log {
+    ($($arg:tt)*) => {
+        if crate::VERBOSITY.load(std::sync::atomic::Ordering::Relaxed) >= 1 {
             println!($($arg)*);
         }
     };

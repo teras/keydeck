@@ -143,7 +143,7 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
                         templates_map,
                         &mut visited,
                     ) {
-                        Ok((resolved_buttons, resolved_on_tick, resolved_lock)) => {
+                        Ok((resolved_buttons, resolved_on_tick, resolved_lock, resolved_encoders)) => {
                             for (button_name, button_config) in resolved_buttons {
                                 page.buttons.entry(button_name).or_insert(button_config);
                             }
@@ -152,6 +152,12 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
                             }
                             if page.lock.is_none() && resolved_lock.is_some() {
                                 page.lock = resolved_lock;
+                            }
+                            if let Some(resolved_enc) = resolved_encoders {
+                                let page_encoders = page.encoders.get_or_insert_with(indexmap::IndexMap::new);
+                                for (enc_name, enc_config) in resolved_enc {
+                                    page_encoders.entry(enc_name).or_insert(enc_config);
+                                }
                             }
                         }
                         Err(e) => {
@@ -556,7 +562,7 @@ fn validate_icon_files(conf: &KeyDeckConf, result: &mut ValidationResult, json_o
             result.unreferenced_icons = unreferenced_icons.clone();
 
             // In verbose mode (non-JSON), also print to console
-            if !json_output && crate::DEBUG.load(std::sync::atomic::Ordering::Relaxed) {
+            if !json_output && crate::VERBOSITY.load(std::sync::atomic::Ordering::Relaxed) >= 2 {
                 verbose_log!("\n  Unreferenced icon files:");
                 for icon in unreferenced_icons {
                     verbose_log!("  {} # icon not referenced in configuration", icon);

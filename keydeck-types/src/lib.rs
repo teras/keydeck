@@ -16,7 +16,7 @@ pub mod device_info;
 pub use pages::{
     KeyDeckConf, Pages, Page, Button, ButtonConfig, Action, TextConfig, DrawConfig,
     ServiceConfig, Macro, MacroCall, FocusChangeRestorePolicy, GraphicType, Direction,
-    ColorMapEntry, RefreshTarget, PressEffectConfig,
+    ColorMapEntry, RefreshTarget, PressEffectConfig, Encoder,
 };
 
 // Re-export device info types

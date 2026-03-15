@@ -274,10 +274,33 @@ pub struct Page {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_tick: Option<Vec<Action>>,
 
+    /// Map of encoder configurations for this page, referenced by encoder index in the form
+    /// of "encoder#", where "#" is the encoder index starting from 1.
+    /// Encoders support twist (left/right rotation) and press actions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoders: Option<IndexMap<String, Encoder>>,
+
     /// Map of button configurations for this page, referenced by button index in the form
     /// of "button#", where "#" is the button index starting from 1.
     #[serde(flatten)]
     pub buttons: HashMap<String, ButtonConfig>,
+}
+
+/// Configuration for a rotary encoder (knob).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Encoder {
+    /// Actions to execute when the encoder is twisted clockwise (right).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twist_right: Option<Vec<Action>>,
+
+    /// Actions to execute when the encoder is twisted counter-clockwise (left).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twist_left: Option<Vec<Action>>,
+
+    /// Actions to execute when the encoder is pressed (pushed down and released).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub press: Option<Vec<Action>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

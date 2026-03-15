@@ -132,7 +132,7 @@ impl MirajazzDevice {
             .borrow_mut()
             .get_or_insert_with(|| {
                 {
-                    let mut device = Device::connect(
+                    let mut device = Device::connect_with_report_id(
                         &self.hid_api,
                         self.vid,
                         self.pid,
@@ -141,6 +141,7 @@ impl MirajazzDevice {
                         self.device_def.protocol.protocol_version > 2, // supports_both_states
                         self.device_def.layout.key_count(),
                         self.device_def.layout.encoder_count,
+                        self.device_def.protocol.report_id.unwrap_or(0x00),
                     )
                     .unwrap_or_else(|e| {
                         error_log!(
@@ -400,6 +401,41 @@ impl KeydeckDevice for MirajazzDevice {
         device
             .shutdown()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to shutdown: {}", e)))
+    }
+
+    fn led_count(&self) -> u8 {
+        self.device_def.led.as_ref().map(|l| l.count).unwrap_or(0)
+    }
+
+    fn set_led_brightness(&self, brightness: u8) -> Result<(), DeviceError> {
+        if self.device_def.led.is_none() { return Ok(()); }
+        let device = self.get_device();
+        verbose_log!("Setting LED brightness {} on device '{}'", brightness, self.serial);
+        device.set_led_brightness(brightness)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to set LED brightness: {}", e)))
+    }
+
+    fn set_led_color(&self, colors: &[(u8, u8, u8)]) -> Result<(), DeviceError> {
+        if self.device_def.led.is_none() { return Ok(()); }
+        let device = self.get_device();
+        verbose_log!("Setting LED colors ({} LEDs) on device '{}'", colors.len(), self.serial);
+        device.set_led_color(colors)
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to set LED color: {}", e)))
+    }
+
+    fn reset_led_color(&self) -> Result<(), DeviceError> {
+        if self.device_def.led.is_none() { return Ok(()); }
+        let device = self.get_device();
+        verbose_log!("Resetting LED colors on device '{}'", self.serial);
+        device.reset_led_color()
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to reset LED color: {}", e)))
+    }
+
+    fn wakeup(&self) -> Result<(), DeviceError> {
+        let device = self.get_device();
+        verbose_log!("Waking up device '{}'", self.serial);
+        device.wakeup()
+            .map_err(|e| DeviceError::LibraryError(format!("Failed to wake up device: {}", e)))
     }
 }
 

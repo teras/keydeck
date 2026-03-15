@@ -4,10 +4,10 @@
 // Public library interface for keydeck
 // This allows other crates (like keydeck-config) to use keydeck's types
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU8;
 
-/// Debug flag for verbose logging
-pub static DEBUG: AtomicBool = AtomicBool::new(false);
+/// Verbosity level: 0 = normal, 1 = detailed, 2 = verbose/debug
+pub static VERBOSITY: AtomicU8 = AtomicU8::new(0);
 
 #[macro_use]
 pub mod utils;
