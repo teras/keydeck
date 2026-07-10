@@ -37,6 +37,9 @@
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
   let openActionIndex = $state<number>(-1);
+  // Drag & drop reordering state for the top-level action list.
+  let actionDragFrom = $state<number | null>(null);
+  let actionDragOver = $state<number | null>(null);
   let isDraggingOver = $state(false);
 
   let showButtonDefDropdown = $state(false);
@@ -851,6 +854,18 @@
     }
   }
 
+  // Reorder the top-level action list by dropping the dragged entry onto `to`.
+  function reorderAction(to: number | null) {
+    if (actionDragFrom === null || to === null) return;
+    const from = actionDragFrom;
+    const detailed = getDetailedConfig();
+    if (!detailed.actions || from === to) return;
+    const actions = [...detailed.actions];
+    actions.splice(to, 0, actions.splice(from, 1)[0]);
+    openActionIndex = to;
+    updateButton({ actions });
+  }
+
   function getTextValue(): string {
     const detailed = getDetailedConfig();
     if (!detailed?.text) return '';
@@ -1361,9 +1376,15 @@
             {config}
             {deviceSerial}
             initiallyOpen={i === openActionIndex}
+            dragging={actionDragFrom === i}
+            dragOver={actionDragOver === i && actionDragFrom !== i}
             onToggle={() => openActionIndex = i}
             onUpdate={(newAction) => updateAction(i, newAction)}
             onDelete={() => removeAction(i)}
+            onDragStart={() => { actionDragFrom = i; }}
+            onDragEnter={() => { actionDragOver = i; }}
+            onDrop={() => { reorderAction(i); actionDragFrom = null; actionDragOver = null; }}
+            onDragEnd={() => { actionDragFrom = null; actionDragOver = null; }}
             disabled={isReadOnly}
             isReference={buttonDefReference !== null}
             isInherited={inheritedSource !== null}

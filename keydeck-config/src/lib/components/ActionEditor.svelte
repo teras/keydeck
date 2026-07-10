@@ -11,6 +11,12 @@
     onUpdate: (action: any) => void;
     onDelete: () => void;
     index: number;
+    onDragStart?: () => void;
+    onDragEnter?: () => void;
+    onDrop?: () => void;
+    onDragEnd?: () => void;
+    dragging?: boolean;
+    dragOver?: boolean;
     depth?: number;
     config?: any;
     deviceSerial?: string;
@@ -21,7 +27,25 @@
     isInherited?: boolean;
   }
 
-  let { action, onUpdate, onDelete, index, depth = 0, config, deviceSerial, initiallyOpen = false, onToggle, disabled = false, isReference = false, isInherited = false }: Props = $props();
+  let { action, onUpdate, onDelete, index, onDragStart, onDragEnter, onDrop, onDragEnd, dragging = false, dragOver = false, depth = 0, config, deviceSerial, initiallyOpen = false, onToggle, disabled = false, isReference = false, isInherited = false }: Props = $props();
+
+  // Native HTML5 drag & drop state for nested action lists (try/else/and/or),
+  // mirroring the reorder pattern used in PageList/ButtonGrid.
+  let dragCtx = $state<{ list: string; from: number } | null>(null);
+  let dragOverCtx = $state<{ list: string; index: number } | null>(null);
+
+  // Reorder an entry of a nested list by dropping it onto position `to`.
+  // Assigns a NEW array so the change is tracked (reference change).
+  function reorderNested(listName: string, to: number) {
+    if (!dragCtx || dragCtx.list !== listName) return;
+    const from = dragCtx.from;
+    const arr = action[listName];
+    if (from === to || !arr) return;
+    const copy = [...arr];
+    copy.splice(to, 0, copy.splice(from, 1)[0]);
+    action[listName] = copy;
+    onUpdate(action);
+  }
 
   // Get list of available pages
   let availablePages = $derived.by(() => {
@@ -174,12 +198,29 @@
   });
 </script>
 
-<div class="action-editor" class:reference={isReference} class:inherited={isInherited} style="--depth: {depth}">
+<div
+  class="action-editor"
+  class:reference={isReference}
+  class:inherited={isInherited}
+  class:dragging
+  class:drag-over={dragOver}
+  style="--depth: {depth}"
+  ondragover={(e) => { if (onDrop) { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; onDragEnter?.(); } }}
+  ondrop={(e) => { if (onDrop) { e.preventDefault(); e.stopPropagation(); onDrop?.(); } }}
+>
   <div class="action-header" onclick={() => {
     isExpanded = !isExpanded;
     if (onToggle) onToggle();
   }}>
-    <span class="action-index">#{index + 1}</span>
+    <span
+      class="action-index"
+      class:draggable={!disabled && !!onDragStart}
+      draggable={!disabled && !!onDragStart}
+      onclick={(e) => e.stopPropagation()}
+      ondragstart={(e) => { e.stopPropagation(); if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(index)); } onDragStart?.(); }}
+      ondragend={(e) => { e.stopPropagation(); onDragEnd?.(); }}
+      title={!disabled && onDragStart ? 'Drag to reorder' : ''}
+    >#{index + 1}</span>
     <span class="action-summary">{actionSummary}</span>
     <div class="action-controls">
       {#if !disabled}
@@ -470,6 +511,8 @@
                     {disabled}
                     {isReference}
                     {isInherited}
+                    dragging={dragCtx?.list === 'try' && dragCtx.from === i}
+                    dragOver={dragOverCtx?.list === 'try' && dragOverCtx.index === i && dragCtx?.from !== i}
                     onUpdate={(newAction) => {
                       action.try[i] = newAction;
                       onUpdate(action);
@@ -478,6 +521,10 @@
                       action.try.splice(i, 1);
                       onUpdate(action);
                     }}
+                    onDragStart={() => { dragCtx = { list: 'try', from: i }; }}
+                    onDragEnter={() => { dragOverCtx = { list: 'try', index: i }; }}
+                    onDrop={() => { reorderNested('try', i); dragCtx = null; dragOverCtx = null; }}
+                    onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
                 {/each}
               {:else}
@@ -509,6 +556,8 @@
                     {disabled}
                     {isReference}
                     {isInherited}
+                    dragging={dragCtx?.list === 'else' && dragCtx.from === i}
+                    dragOver={dragOverCtx?.list === 'else' && dragOverCtx.index === i && dragCtx?.from !== i}
                     onUpdate={(newAction) => {
                       action.else[i] = newAction;
                       onUpdate(action);
@@ -517,6 +566,10 @@
                       action.else.splice(i, 1);
                       onUpdate(action);
                     }}
+                    onDragStart={() => { dragCtx = { list: 'else', from: i }; }}
+                    onDragEnter={() => { dragOverCtx = { list: 'else', index: i }; }}
+                    onDrop={() => { reorderNested('else', i); dragCtx = null; dragOverCtx = null; }}
+                    onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
                 {/each}
               {:else}
@@ -551,6 +604,8 @@
                     {disabled}
                     {isReference}
                     {isInherited}
+                    dragging={dragCtx?.list === 'and' && dragCtx.from === i}
+                    dragOver={dragOverCtx?.list === 'and' && dragOverCtx.index === i && dragCtx?.from !== i}
                     onUpdate={(newAction) => {
                       action.and[i] = newAction;
                       onUpdate(action);
@@ -559,6 +614,10 @@
                       action.and.splice(i, 1);
                       onUpdate(action);
                     }}
+                    onDragStart={() => { dragCtx = { list: 'and', from: i }; }}
+                    onDragEnter={() => { dragOverCtx = { list: 'and', index: i }; }}
+                    onDrop={() => { reorderNested('and', i); dragCtx = null; dragOverCtx = null; }}
+                    onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
                 {/each}
               {:else}
@@ -593,6 +652,8 @@
                     {disabled}
                     {isReference}
                     {isInherited}
+                    dragging={dragCtx?.list === 'or' && dragCtx.from === i}
+                    dragOver={dragOverCtx?.list === 'or' && dragOverCtx.index === i && dragCtx?.from !== i}
                     onUpdate={(newAction) => {
                       action.or[i] = newAction;
                       onUpdate(action);
@@ -601,6 +662,10 @@
                       action.or.splice(i, 1);
                       onUpdate(action);
                     }}
+                    onDragStart={() => { dragCtx = { list: 'or', from: i }; }}
+                    onDragEnter={() => { dragOverCtx = { list: 'or', index: i }; }}
+                    onDrop={() => { reorderNested('or', i); dragCtx = null; dragOverCtx = null; }}
+                    onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
                 {/each}
               {:else}
@@ -716,6 +781,34 @@
 
   .btn-delete:hover {
     color: #ff6b6b;
+  }
+
+  .action-index.draggable {
+    cursor: grab;
+    border-radius: 3px;
+    padding: 1px 4px;
+    transition: background 0.12s, color 0.12s;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: element;
+  }
+
+  .action-index.draggable:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cccccc;
+  }
+
+  .action-index.draggable:active {
+    cursor: grabbing;
+  }
+
+  .action-editor.dragging {
+    opacity: 0.4;
+  }
+
+  .action-editor.drag-over {
+    outline: 2px dashed #6a9cff;
+    outline-offset: -2px;
   }
 
   .expand-icon {
