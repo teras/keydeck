@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use strum::EnumString;
 use tokio::runtime::Runtime;
 
-use crate::keyboard::process_escape_sequences;
+use crate::platform::process_escape_sequences;
 
 /// Wayland keyboard session using xdg-desktop-portal RemoteDesktop.
 /// Created once at startup, reused for all keyboard events.

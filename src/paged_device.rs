@@ -5,9 +5,8 @@ use crate::device_manager::find_path;
 use crate::device_trait::KeydeckDevice;
 use crate::dynamic_params::evaluate_dynamic_params;
 use crate::event::{DeviceEvent, WaitEventType};
-use crate::focus_property::set_focus;
 use crate::graphics_renderer;
-use crate::keyboard::{process_escape_sequences, send_key_combination, send_string};
+use crate::platform::{process_escape_sequences, send_key_combination, send_string, set_focus};
 use crate::listener_button::button_listener;
 use crate::listener_time::TimeManager;
 use crate::pages::{
@@ -90,6 +89,12 @@ impl PagedDevice {
         });
         let button_count = { device.button_count() as usize };
         let active_events = Arc::new(AtomicBool::new(true));
+        // Input reading strategy is platform-specific (see `listener_button`).
+        // Windows shares this device's single handle (passes the reader); Linux
+        // and macOS open their own handle by serial.
+        #[cfg(target_os = "windows")]
+        button_listener(device.get_reader(), &serial, tx, &active_events);
+        #[cfg(not(target_os = "windows"))]
         button_listener(&serial, tx, &active_events);
         device
             .reset()
@@ -545,10 +550,11 @@ impl PagedDevice {
         while let Some(action) = actions_iter.next() {
             match action {
                 Action::Exec { exec, wait } => {
+                    let (shell, flag) = crate::platform::exec_shell();
                     if wait.unwrap_or(false) {
                         // Synchronous: wait for command to complete and check exit status
-                        let output = std::process::Command::new("bash")
-                            .arg("-c")
+                        let output = std::process::Command::new(shell)
+                            .arg(flag)
                             .arg(&exec)
                             .output()
                             .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;
@@ -568,8 +574,8 @@ impl PagedDevice {
                         }
                     } else {
                         // Asynchronous: fire and forget (original behavior)
-                        std::process::Command::new("bash")
-                            .arg("-c")
+                        std::process::Command::new(shell)
+                            .arg(flag)
                             .arg(&exec)
                             .spawn()
                             .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;

@@ -13,9 +13,7 @@ use std::path::PathBuf;
 pub use keydeck_types::*;
 
 fn get_default_config_path() -> PathBuf {
-    let mut path = PathBuf::from(std::env::var("HOME").expect("Could not find home directory"));
-    path.push(".config/keydeck/config.yaml");
-    path
+    keydeck_types::get_config_path()
 }
 
 /// Backend-specific configuration loader

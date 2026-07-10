@@ -9,32 +9,46 @@ mod dynamic_detection;
 mod dynamic_params;
 mod elgato_device;
 mod event;
-mod focus_property;
-mod focus_property_wayland;
 mod graphics_renderer;
-mod keyboard;
-mod keyboard_wayland;
-mod kwin_script;
 mod listener_button;
 mod listener_device;
-mod listener_focus;
-mod listener_focus_wayland;
-mod listener_signal;
-mod listener_sleep;
 mod listener_tick;
 mod listener_time;
 mod lock;
 mod mirajazz_device;
 mod paged_device;
+mod platform;
 mod press_effect;
 mod pages;
 mod server;
 mod services;
-mod session;
 mod system_info;
 mod text_renderer;
 mod utils;
 mod validate;
+
+// Linux-only native backends (X11 / Wayland / KWin / logind / signals).
+// On Windows and macOS these are provided by `platform::{windows,macos}`.
+#[cfg(target_os = "linux")]
+mod focus_property;
+#[cfg(target_os = "linux")]
+mod focus_property_wayland;
+#[cfg(target_os = "linux")]
+mod keyboard;
+#[cfg(target_os = "linux")]
+mod keyboard_wayland;
+#[cfg(target_os = "linux")]
+mod kwin_script;
+#[cfg(target_os = "linux")]
+mod listener_focus;
+#[cfg(target_os = "linux")]
+mod listener_focus_wayland;
+#[cfg(target_os = "linux")]
+mod listener_signal;
+#[cfg(target_os = "linux")]
+mod listener_sleep;
+#[cfg(target_os = "linux")]
+mod session;
 
 use crate::device_registry_init::initialize_device_registry;
 use crate::device_trait::KeydeckDevice;
@@ -56,6 +70,14 @@ fn print_help() {
     println!("      --info <DEVICE>         Show detailed device information as YAML");
     println!("      --validate <FILE>       Validate configuration file and test services");
     println!("      --json                  Output validation results as JSON (use with --validate)");
+    println!("      --daemon <ACTION>       Manage the daemon lifecycle. ACTION is one of:");
+    println!("                                install    register autostart at login");
+    println!("                                uninstall  remove autostart entry");
+    println!("                                start      start the daemon now");
+    println!("                                stop       stop the running daemon");
+    println!("                                restart    restart the daemon");
+    println!("                                status     print JSON {{running,pid,enabled}}");
+    println!("                                reload     reload config of running daemon");
     println!("  -v, --verbose               Print detailed messages (key presses, page changes)");
     println!("  -vv, --verbose --verbose    Print all verbose/debug messages");
     println!("      --server                Start the server (default when no arguments)");
@@ -78,14 +100,11 @@ fn main() {
         Ok(paths) => paths,
         Err(e) => {
             error_log!("Failed to initialize device registry: {}", e);
-            // Fallback to default paths if initialization fails
-            vec![
-                "/usr/share/keydeck/devices".to_string(),
-                format!(
-                    "{}/.config/keydeck/devices",
-                    env::var("HOME").unwrap_or_default()
-                ),
-            ]
+            // Fallback to the user config directory if initialization fails
+            vec![keydeck::get_config_dir()
+                .join("devices")
+                .to_string_lossy()
+                .into_owned()]
         }
     };
 
@@ -138,6 +157,23 @@ fn main() {
                 } else {
                     error_log!("Error: --validate requires a configuration file path argument");
                     std::process::exit(1);
+                }
+            }
+            "--daemon" => {
+                use crate::platform::lifecycle::Action;
+                let action = arg_iter.next().and_then(|a| Action::parse(a));
+                match action {
+                    Some(action) => match crate::platform::lifecycle::run(action) {
+                        Ok(code) => std::process::exit(code),
+                        Err(e) => {
+                            error_log!("Daemon control failed: {}", e);
+                            std::process::exit(1);
+                        }
+                    },
+                    None => {
+                        error_log!("Error: --daemon requires an action ({})", Action::NAMES);
+                        std::process::exit(1);
+                    }
                 }
             }
             "--json" | "--verbose" | "-v" | "-vv" => {} // Processed elsewhere

@@ -24,19 +24,38 @@ pub use device_info::{
     DeviceInfo, ButtonLayout, ButtonImage, LcdStrip,
 };
 
-/// Default icon directory path relative to home directory
+/// Default icon directory path relative to home directory (Linux legacy layout).
 pub const DEFAULT_ICON_DIR_REL: &str = ".config/keydeck/icons";
 
-/// Get the absolute path to the default icon directory
-pub fn get_icon_dir() -> String {
-    if let Ok(home) = std::env::var("HOME") {
-        format!("{}/{}", home, DEFAULT_ICON_DIR_REL)
+/// Returns the KeyDeck configuration directory for the current platform.
+///
+/// * Linux: `~/.config/keydeck`
+/// * Windows: `%APPDATA%\keydeck`
+/// * macOS: `~/Library/Application Support/keydeck`
+///
+/// Falls back to `~/.config/keydeck` (or a relative path) if the platform
+/// config directory cannot be determined.
+pub fn get_config_dir() -> PathBuf {
+    if let Some(dir) = dirs::config_dir() {
+        dir.join("keydeck")
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".config").join("keydeck")
     } else {
-        DEFAULT_ICON_DIR_REL.to_string()
+        PathBuf::from(".config").join("keydeck")
     }
 }
 
-/// Get the icon directory as PathBuf
+/// Absolute path to the configuration file (`config.yaml`) in the config dir.
+pub fn get_config_path() -> PathBuf {
+    get_config_dir().join("config.yaml")
+}
+
+/// Get the absolute path to the default icon directory.
+pub fn get_icon_dir() -> String {
+    get_icon_dir_path().to_string_lossy().into_owned()
+}
+
+/// Get the icon directory as PathBuf.
 pub fn get_icon_dir_path() -> PathBuf {
-    PathBuf::from(get_icon_dir())
+    get_config_dir().join("icons")
 }

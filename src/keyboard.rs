@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Panayotis Katsaloulis
 
 use crate::keyboard_wayland::WaylandKeyboardSession;
+use crate::platform::process_escape_sequences;
 use crate::session::{detect_session_type, SessionType};
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -61,54 +62,6 @@ pub fn send_string(text: &str) -> Result<(), String> {
         KeyboardBackend::X11 => send_string_x11(text),
         KeyboardBackend::Wayland(session) => session.send_string(text),
     }
-}
-
-// --- Shared utilities ---
-
-/// Processes escape sequences in a string and returns the actual characters.
-/// Supported escape sequences: \n (newline/Enter), \t (Tab), \r (carriage return), \\ (backslash), \e (Escape)
-/// This is used both for keyboard input and for text display rendering.
-pub fn process_escape_sequences(text: &str) -> Vec<char> {
-    let mut result = Vec::new();
-    let mut chars = text.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            if let Some(&next_ch) = chars.peek() {
-                match next_ch {
-                    'n' => {
-                        chars.next();
-                        result.push('\n');
-                    }
-                    't' => {
-                        chars.next();
-                        result.push('\t');
-                    }
-                    'r' => {
-                        chars.next();
-                        result.push('\r');
-                    }
-                    '\\' => {
-                        chars.next();
-                        result.push('\\');
-                    }
-                    'e' => {
-                        chars.next();
-                        result.push('\x1b');
-                    }
-                    _ => {
-                        result.push(ch);
-                    }
-                }
-            } else {
-                result.push(ch);
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-
-    result
 }
 
 // --- X11 backend ---

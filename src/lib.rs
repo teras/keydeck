@@ -23,10 +23,10 @@ pub mod text_renderer;
 
 // Re-export types from keydeck-types
 pub use keydeck_types::{
-    get_icon_dir, get_icon_dir_path, Action, Button, ButtonConfig, ButtonImage, ButtonLayout,
-    ColorMapEntry, DeviceInfo, Direction, DrawConfig, FocusChangeRestorePolicy, GraphicType,
-    KeyDeckConf, LcdStrip, Macro, MacroCall, Page, Pages, RefreshTarget, ServiceConfig, TextConfig,
-    DEFAULT_ICON_DIR_REL,
+    get_config_dir, get_config_path, get_icon_dir, get_icon_dir_path, Action, Button, ButtonConfig,
+    ButtonImage, ButtonLayout, ColorMapEntry, DeviceInfo, Direction, DrawConfig,
+    FocusChangeRestorePolicy, GraphicType, KeyDeckConf, LcdStrip, Macro, MacroCall, Page, Pages,
+    RefreshTarget, ServiceConfig, TextConfig, DEFAULT_ICON_DIR_REL,
 };
 
 // Re-export backend-specific loader

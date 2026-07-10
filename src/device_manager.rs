@@ -11,6 +11,19 @@ use image::DynamicImage;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Creates a `HidApi` context configured for the current platform.
+///
+/// On macOS, hidapi opens HID devices in *exclusive* mode by default, which
+/// fails for Stream Deck / Mirabox controllers because the OS already holds an
+/// open handle on their keyboard/consumer HID interface ("exclusive access and
+/// device already open"). Opening non-exclusively fixes this. No-op elsewhere.
+fn new_hidapi_configured() -> hidapi::HidResult<hidapi::HidApi> {
+    let api = new_hidapi()?;
+    #[cfg(target_os = "macos")]
+    api.set_open_exclusive(false);
+    Ok(api)
+}
+
 /// Enum wrapper for different device types
 pub enum Device {
     Elgato(ElgatoDevice),
@@ -220,7 +233,7 @@ pub struct DeviceManager {
 
 impl DeviceManager {
     pub fn new() -> Self {
-        let hidapi = Arc::new(new_hidapi().ok().expect("Failed to create hidapi context"));
+        let hidapi = Arc::new(new_hidapi_configured().ok().expect("Failed to create hidapi context"));
         let mut devices: Vec<Device> = vec![];
 
         // Priority-based device detection:
@@ -316,7 +329,7 @@ impl DeviceManager {
     /// Note: For Mirajazz devices with force_serial enabled, this returns the USB serial.
     /// The actual serial transformation happens in MirajazzDevice::new().
     pub fn enumerate_connected_devices() -> Vec<String> {
-        let hidapi = match new_hidapi().ok() {
+        let hidapi = match new_hidapi_configured().ok() {
             Some(api) => Arc::new(api),
             None => return Vec::new(),
         };
@@ -438,7 +451,7 @@ pub fn find_path(file: &str, dir: Option<String>) -> Option<String> {
 }
 
 pub fn find_device_by_serial(device_sn: &str) -> Option<Device> {
-    let hidapi = match new_hidapi().ok() {
+    let hidapi = match new_hidapi_configured().ok() {
         Some(api) => Arc::new(api),
         None => {
             error_log!("Failed to create hidapi context when searching for device");

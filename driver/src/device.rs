@@ -72,6 +72,45 @@ pub fn list_devices(hidapi: &HidApi, vids: &[u16]) -> Vec<(u16, u16, String)> {
         .collect()
 }
 
+/// Opens the correct HID interface for a device.
+///
+/// On Windows a composite HID device is split into several collections (a
+/// vendor-defined one plus keyboard/consumer ones), each a separate handle.
+/// `open_serial` picks the first match non-deterministically and may return a
+/// keyboard/consumer collection that neither accepts image writes nor delivers
+/// button input. The vendor collection (usage page `0xff00`+) carries both, so
+/// on Windows we open it explicitly by path. On Linux/macOS `open_serial`
+/// already opens the correct node, so it is kept unchanged there.
+#[cfg(target_os = "windows")]
+fn open_device(
+    hidapi: &HidApi,
+    vid: u16,
+    pid: u16,
+    serial: &str,
+) -> Result<HidDevice, MirajazzError> {
+    let vendor_path = hidapi.device_list().find(|d| {
+        d.vendor_id() == vid
+            && d.product_id() == pid
+            && d.serial_number() == Some(serial)
+            && d.usage_page() >= 0xff00
+    });
+
+    match vendor_path {
+        Some(info) => Ok(hidapi.open_path(info.path())?),
+        None => Ok(hidapi.open_serial(vid, pid, serial)?),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_device(
+    hidapi: &HidApi,
+    vid: u16,
+    pid: u16,
+    serial: &str,
+) -> Result<HidDevice, MirajazzError> {
+    Ok(hidapi.open_serial(vid, pid, serial)?)
+}
+
 /// Extracts string from byte array, removing \0 symbols
 pub fn extract_str(bytes: &[u8]) -> Result<String, Utf8Error> {
     Ok(from_utf8(bytes)?.replace('\0', "").to_string())
@@ -102,8 +141,13 @@ pub struct Device {
     packet_size: usize,
     /// HID report ID (0x00 for most devices, 0x04 for K1Pro)
     report_id: u8,
-    /// Connected HIDDevice
-    hid_device: HidDevice,
+    /// Connected HIDDevice, guarded by a mutex so reads and writes are
+    /// serialized. On Windows `hidapi` shares one overlapped I/O structure per
+    /// handle between reads and writes; a concurrent render (write) and input
+    /// read on the same handle corrupt each other. Serializing (and polling
+    /// with non-blocking reads, as `elgato-streamdeck`'s async wrapper does)
+    /// keeps a single handle working across platforms.
+    hid_device: Mutex<HidDevice>,
     /// Temporarily cache the image before sending it to the device
     image_cache: RwLock<Vec<ImageCache>>,
     /// Device needs to be initialized
@@ -138,7 +182,7 @@ impl Device {
         encoder_count: usize,
         report_id: u8,
     ) -> Result<Device, MirajazzError> {
-        let hid_device = hidapi.open_serial(vid, pid, serial)?;
+        let hid_device = open_device(hidapi, vid, pid, serial)?;
 
         Ok(Device {
             vid,
@@ -150,7 +194,7 @@ impl Device {
             encoder_count,
             packet_size: if protocol_version >= 2 { 1024 } else { 512 },
             report_id,
-            hid_device,
+            hid_device: Mutex::new(hid_device),
             image_cache: RwLock::new(vec![]),
             initialized: false.into(),
         })
@@ -173,6 +217,8 @@ impl Device {
     pub fn manufacturer(&self) -> Result<String, MirajazzError> {
         Ok(self
             .hid_device
+            .lock()
+            .unwrap()
             .get_manufacturer_string()?
             .unwrap_or_else(|| "Unknown".to_string()))
     }
@@ -181,13 +227,15 @@ impl Device {
     pub fn product(&self) -> Result<String, MirajazzError> {
         Ok(self
             .hid_device
+            .lock()
+            .unwrap()
             .get_product_string()?
             .unwrap_or_else(|| "Unknown".to_string()))
     }
 
     /// Returns serial number of the device
     pub fn serial_number(&self) -> Result<String, MirajazzError> {
-        let serial = self.hid_device.get_serial_number_string()?;
+        let serial = self.hid_device.lock().unwrap().get_serial_number_string()?;
         match serial {
             Some(serial) => {
                 if serial.is_empty() {
@@ -723,14 +771,14 @@ impl Device {
         buff.insert(0, report_id);
 
         // Getting feature report
-        self.hid_device.get_feature_report(buff.as_mut_slice())?;
+        self.hid_device.lock().unwrap().get_feature_report(buff.as_mut_slice())?;
 
         Ok(buff)
     }
 
     /// Performs send_feature_report on [HidDevice]
     pub fn send_feature_report(&self, payload: &[u8]) -> Result<(), MirajazzError> {
-        self.hid_device.send_feature_report(payload)?;
+        self.hid_device.lock().unwrap().send_feature_report(payload)?;
 
         Ok(())
     }
@@ -741,15 +789,16 @@ impl Device {
         length: usize,
         timeout: Option<Duration>,
     ) -> Result<Vec<u8>, MirajazzError> {
-        self.hid_device.set_blocking_mode(timeout.is_some())?;
+        let device = self.hid_device.lock().unwrap();
+        device.set_blocking_mode(timeout.is_some())?;
 
         let mut buf = vec![0u8; length];
 
         match timeout {
-            Some(timeout) => self
-                .hid_device
-                .read_timeout(buf.as_mut_slice(), timeout.as_millis() as i32),
-            None => self.hid_device.read(buf.as_mut_slice()),
+            Some(timeout) => {
+                device.read_timeout(buf.as_mut_slice(), timeout.as_millis() as i32)
+            }
+            None => device.read(buf.as_mut_slice()),
         }?;
 
         Ok(buf)
@@ -757,13 +806,13 @@ impl Device {
 
     /// Writes data to [HidDevice]
     pub fn write_data(&self, payload: &[u8]) -> Result<usize, MirajazzError> {
-        Ok(self.hid_device.write(payload)?)
+        Ok(self.hid_device.lock().unwrap().write(payload)?)
     }
 
     /// Writes data to [HidDevice]
     pub fn write_extended_data(&self, payload: &mut Vec<u8>) -> Result<usize, MirajazzError> {
         payload.extend(vec![0u8; 1 + self.packet_size - payload.len()]);
 
-        Ok(self.hid_device.write(payload)?)
+        Ok(self.hid_device.lock().unwrap().write(payload)?)
     }
 }

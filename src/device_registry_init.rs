@@ -12,10 +12,7 @@ include!(concat!(env!("OUT_DIR"), "/embedded_devices.rs"));
 
 /// Get the user's device directory path
 fn get_user_devices_dir() -> Result<PathBuf, String> {
-    let home =
-        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
-
-    Ok(PathBuf::from(home).join(".config/keydeck/devices"))
+    Ok(keydeck::get_config_dir().join("devices"))
 }
 
 /// Ensure a directory exists, creating it if necessary
@@ -28,9 +25,15 @@ fn ensure_directory(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Get the system device directory path
-fn get_system_devices_dir() -> PathBuf {
-    PathBuf::from("/usr/share/keydeck/devices")
+/// Get the system device directory path (Linux only; no equivalent on Windows/macOS).
+#[cfg(target_os = "linux")]
+fn get_system_devices_dir() -> Option<PathBuf> {
+    Some(PathBuf::from("/usr/share/keydeck/devices"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_system_devices_dir() -> Option<PathBuf> {
+    None
 }
 
 /// Get the modification time of the running executable
@@ -57,11 +60,11 @@ fn extract_embedded_devices() -> Result<(), String> {
     let mut skipped_user = 0;
 
     for (filename, content) in EMBEDDED_DEVICES {
-        let system_path = system_dir.join(filename);
+        let system_path = system_dir.as_ref().map(|d| d.join(filename));
         let user_path = user_dir.join(filename);
 
         // Check system path first (higher priority)
-        if system_path.exists() {
+        if system_path.as_ref().is_some_and(|p| p.exists()) {
             verbose_log!("Device file exists in system path, skipping: {}", filename);
             skipped_system += 1;
         }
@@ -117,13 +120,13 @@ pub fn initialize_device_registry() -> Result<Vec<String>, String> {
     }
 
     // Return search paths in priority order (system first, then user overrides)
-    let paths = vec![
-        "/usr/share/keydeck/devices".to_string(),
-        format!(
-            "{}/.config/keydeck/devices",
-            std::env::var("HOME").unwrap_or_default()
-        ),
-    ];
+    let mut paths = Vec::new();
+    if let Some(system_dir) = get_system_devices_dir() {
+        paths.push(system_dir.to_string_lossy().into_owned());
+    }
+    if let Ok(user_dir) = get_user_devices_dir() {
+        paths.push(user_dir.to_string_lossy().into_owned());
+    }
 
     verbose_log!("Device registry search paths:");
     for (i, path) in paths.iter().enumerate() {

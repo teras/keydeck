@@ -4,10 +4,8 @@
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
 use crate::listener_device::listener_device;
-use crate::listener_focus::listener_focus;
-use crate::listener_signal::listener_signal;
-use crate::listener_sleep::listener_sleep;
 use crate::listener_tick::listener_tick;
+use crate::platform;
 use crate::listener_time::TimeManager;
 use crate::lock::{cleanup_lock, ensure_lock};
 use crate::paged_device::PagedDevice;
@@ -128,17 +126,25 @@ pub fn start_server() {
     let mut services_state = new_services_state();
     let mut services_active = Arc::new(AtomicBool::new(true));
 
-    listener_sleep(&tx, &still_active.clone(), &should_reset_devices);
+    platform::spawn_sleep_listener(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
-    listener_focus(&tx, &still_active.clone());
-    listener_signal(&tx);
+    platform::spawn_focus_listener(&tx, &still_active.clone());
+    platform::spawn_control_listener(&tx, &still_active.clone());
     listener_tick(&tx, &still_active.clone(), conf_tick_time.clone());
 
-    let mut devices: HashMap<String, PagedDevice> = HashMap::new();
-    // Track saved page states across reload events
-    let mut saved_pages: HashMap<String, String> = HashMap::new();
-    for message in rx {
-        match message {
+    // The event loop is wrapped in a closure so that, on macOS, it can run on a
+    // worker thread while the main thread runs the Cocoa run loop — required to
+    // receive NSWorkspace focus/sleep notifications, which AppKit only delivers
+    // to a thread running a CFRunLoop. On other platforms it runs on the main
+    // thread directly.
+    #[cfg(target_os = "macos")]
+    let active_main = still_active.clone();
+    let mut event_loop = move || {
+        let mut devices: HashMap<String, PagedDevice> = HashMap::new();
+        // Track saved page states across reload events
+        let mut saved_pages: HashMap<String, String> = HashMap::new();
+        for message in rx {
+            match message {
             DeviceEvent::ButtonDown { sn, button_id } => {
                 detail_log!("[{}] Button {} pressed", sn, button_id);
                 if let Some(device) = devices.get(&sn) {
@@ -339,8 +345,8 @@ pub fn start_server() {
                 }
                 still_active.store(false, std::sync::atomic::Ordering::Relaxed);
 
-                // Clean up KWin scripts before exiting (for Wayland)
-                crate::kwin_script::KWinScriptClient::cleanup_stale_scripts_static();
+                // Platform-specific cleanup before exiting (e.g. KWin scripts on Wayland).
+                platform::on_exit_cleanup();
 
                 cleanup_lock();
                 break; // Exit the event loop gracefully
@@ -376,5 +382,17 @@ pub fn start_server() {
                 }
             }
         }
+        }
+    };
+
+    // Dispatch the event loop. On macOS the mpsc loop runs on a worker thread
+    // and the main thread runs the Cocoa run loop; elsewhere it runs inline.
+    #[cfg(target_os = "macos")]
+    {
+        let handle = std::thread::spawn(event_loop);
+        platform::run_main_thread(&active_main);
+        let _ = handle.join();
     }
+    #[cfg(not(target_os = "macos"))]
+    event_loop();
 }
