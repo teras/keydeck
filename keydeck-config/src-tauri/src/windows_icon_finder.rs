@@ -119,15 +119,18 @@ fn scan_directory_for_shortcuts(
 
 /// Parse a .lnk shortcut file and extract application info
 fn parse_shortcut(lnk_path: &Path) -> Result<AppInfo, String> {
-    // Parse the .lnk file using the lnk crate
+    // Parse the .lnk file using the lnk crate. `lnk::Error` does not implement
+    // Display, so format it with `{:?}`.
     let shortcut =
-        lnk::ShellLink::open(lnk_path).map_err(|e| format!("Failed to parse shortcut: {}", e))?;
+        lnk::ShellLink::open(lnk_path).map_err(|e| format!("Failed to parse shortcut: {:?}", e))?;
 
-    // Get the target path
+    // Get the target path. The accessors return references to `Option`s
+    // (`&Option<..>`), so clone the inner values out to own them.
     let target_path = shortcut
         .link_info()
-        .and_then(|info| info.local_base_path())
-        .or_else(|| shortcut.relative_path())
+        .as_ref()
+        .and_then(|info| info.local_base_path().clone())
+        .or_else(|| shortcut.relative_path().clone())
         .ok_or_else(|| "No target path found in shortcut".to_string())?;
 
     // Get the application name from the shortcut filename
@@ -140,7 +143,7 @@ fn parse_shortcut(lnk_path: &Path) -> Result<AppInfo, String> {
     // Get icon location (prefer explicit icon, fallback to target exe)
     let icon_path = shortcut
         .icon_location()
-        .map(|s| s.to_string())
+        .clone()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| target_path.to_string());
 
@@ -228,11 +231,12 @@ fn extract_icon_from_pe(source_path: &Path, output_path: &Path) -> Result<(), St
         return Err("No icons found in executable".to_string());
     }
 
-    // Get the first (usually largest/best quality) icon
-    let icon_data = &icons[0];
-
-    // Save as PNG (exeico returns PNG data)
-    fs::write(output_path, icon_data).map_err(|e| format!("Failed to write icon file: {}", e))?;
+    // `Ico::data` is ICO-format bytes; decode it and re-encode as PNG so the
+    // frontend (which treats stored icons as PNGs) can render it.
+    let img = image::load_from_memory_with_format(&icons[0].data, image::ImageFormat::Ico)
+        .map_err(|e| format!("Failed to decode extracted icon: {}", e))?;
+    img.save_with_format(output_path, image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to write icon file: {}", e))?;
 
     Ok(())
 }

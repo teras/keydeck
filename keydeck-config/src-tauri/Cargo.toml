@@ -26,7 +26,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10.0"
 keydeck-types = { path = "../../keydeck-types" }
-nix = { version = "0.31", features = ["signal"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 resvg = "0.47"
 rayon = "1.10"
@@ -41,6 +40,22 @@ walkdir = "2.5"
 [target.'cfg(target_os = "windows")'.dependencies]
 lnk = "0.5"
 exeico = "0.1"
+# Adds ICO decoding on top of the base `image` features so PE-extracted icons
+# can be re-encoded as PNG (cargo unions features across dependency entries).
+image = { version = "0.25", default-features = false, features = ["ico"] }
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+icns = "0.3"
+plist = "1"
+objc2-app-kit = { version = "0.2", features = [
+    "NSWorkspace",
+    "NSRunningApplication",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = "0.13"

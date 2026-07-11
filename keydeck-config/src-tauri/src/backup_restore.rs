@@ -3,7 +3,7 @@
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use walkdir::WalkDir;
 use zip::write::{SimpleFileOptions, ZipWriter};
 use zip::CompressionMethod;
@@ -183,9 +183,17 @@ pub fn restore_config_directory(zip_path: &str) -> Result<(), String> {
                     .map_err(|e| format!("Failed to remove existing symlink: {}", e))?;
             }
 
-            // Create symlink
+            // Create symlink (symlinks are a Unix-only construct in the config
+            // layout; on other platforms we degrade gracefully and skip them).
+            #[cfg(unix)]
             std::os::unix::fs::symlink(&target, &outpath)
                 .map_err(|e| format!("Failed to create symlink: {}", e))?;
+            #[cfg(not(unix))]
+            eprintln!(
+                "Skipping symlink '{}' -> '{}' (symlinks are not restored on this platform)",
+                outpath.display(),
+                target
+            );
         } else {
             // Extract regular file
             // Create parent directory if needed
@@ -220,12 +228,8 @@ pub fn restore_config_directory(zip_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Gets the keydeck config directory path (~/.config/keydeck/)
+/// Gets the keydeck config directory path for the current platform.
 /// Returns the path without requiring it to exist (will be created if needed)
 fn get_config_dir_path() -> Result<PathBuf, String> {
-    let home =
-        std::env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
-    let config_dir = Path::new(&home).join(".config").join("keydeck");
-
-    Ok(config_dir)
+    Ok(keydeck_types::get_config_dir())
 }
