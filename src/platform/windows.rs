@@ -15,16 +15,19 @@ use std::thread;
 use std::time::Duration;
 
 use windows::core::{w, PWSTR};
-use windows::Win32::Foundation::{CloseHandle, BOOL, HINSTANCE, HWND, LPARAM, LRESULT, TRUE, WPARAM};
+use windows::Win32::Foundation::{
+    CloseHandle, BOOL, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, TRUE, WPARAM,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Power::RegisterSuspendResumeNotification;
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, EnumWindows, GetForegroundWindow,
     GetMessageW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
-    RegisterClassW, SetForegroundWindow, TranslateMessage, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_POWERBROADCAST, WNDCLASSW,
+    RegisterClassW, SetForegroundWindow, TranslateMessage, DEVICE_NOTIFY_WINDOW_HANDLE,
+    HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_POWERBROADCAST, WNDCLASSW,
 };
 
 // Power-broadcast event codes (from WinUser.h; not re-exported by the
@@ -278,6 +281,17 @@ pub fn spawn_sleep_listener(
                 return;
             }
         };
+
+        // A message-only (HWND_MESSAGE) window does NOT receive the system's
+        // WM_POWERBROADCAST suspend/resume broadcast, which is delivered only to
+        // top-level windows. RegisterSuspendResumeNotification explicitly routes
+        // those events to our window handle regardless (Windows 8+), so the
+        // wndproc above actually fires on real suspend/resume. The returned
+        // handle is intentionally kept for the process lifetime.
+        match RegisterSuspendResumeNotification(HANDLE(hwnd.0), DEVICE_NOTIFY_WINDOW_HANDLE) {
+            Ok(_notify) => verbose_log!("Registered for suspend/resume notifications"),
+            Err(e) => error_log!("RegisterSuspendResumeNotification failed: {}", e),
+        }
 
         verbose_log!("Windows power listener started");
 
