@@ -264,7 +264,12 @@ mod imp {
 
     fn install() -> io::Result<i32> {
         let exe = current_exe()?;
-        let value = format!("\"{exe}\" --server");
+        // Autostart via `--daemon start` (not `--server` directly) so the
+        // login-launched daemon goes through start(), which redirects its
+        // stdout/stderr to the log file. Launching `--server` raw from the Run
+        // key would discard all output, leaving the log viewer empty for the
+        // common (autostarted) case. start() is idempotent, so this is safe.
+        let value = format!("\"{exe}\" --daemon start");
         let status = Command::new("reg")
             .args(["add", RUN_KEY, "/v", LABEL, "/t", "REG_SZ", "/d", &value, "/f"])
             .status()?;
@@ -290,11 +295,26 @@ mod imp {
             return Ok(0);
         }
         let exe = current_exe()?;
+        // Capture the detached daemon's stdout/stderr to a log file so the
+        // config UI can tail it (Windows has no per-service journal). The file
+        // is truncated on each explicit start. If it cannot be opened, fall
+        // back to discarding output rather than failing to start.
+        let log = keydeck::get_log_path();
+        if let Some(parent) = log.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let (out, err) = match std::fs::File::create(&log) {
+            Ok(f) => match f.try_clone() {
+                Ok(f2) => (Stdio::from(f), Stdio::from(f2)),
+                Err(_) => (Stdio::null(), Stdio::null()),
+            },
+            Err(_) => (Stdio::null(), Stdio::null()),
+        };
         Command::new(&exe)
             .arg("--server")
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(out)
+            .stderr(err)
             .creation_flags(DETACHED_PROCESS)
             .spawn()?;
         println!("keydeck started.");
@@ -375,6 +395,14 @@ mod imp {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        // Capture the daemon's stdout/stderr to a log file so the config UI can
+        // tail it (macOS has no per-service journal). launchd opens these paths
+        // before exec, so the directory must already exist.
+        let log = keydeck::get_log_path();
+        if let Some(parent) = log.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let log = log.to_string_lossy();
         let plist = format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
              <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
@@ -391,6 +419,10 @@ mod imp {
              \t<true/>\n\
              \t<key>KeepAlive</key>\n\
              \t<true/>\n\
+             \t<key>StandardOutPath</key>\n\
+             \t<string>{log}</string>\n\
+             \t<key>StandardErrorPath</key>\n\
+             \t<string>{log}</string>\n\
              </dict>\n\
              </plist>\n",
         );

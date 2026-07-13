@@ -34,7 +34,12 @@
     try {
       const data = JSON.parse(jsonLine);
       const message = data.MESSAGE || "";
-      const timestamp = new Date(parseInt(data.__REALTIME_TIMESTAMP) / 1000).toLocaleTimeString();
+      // Windows/macOS file-tail carries the daemon's own timestamp string;
+      // Linux journal provides __REALTIME_TIMESTAMP (microseconds). Prefer the
+      // former verbatim, fall back to the latter.
+      const timestamp = data.TIMESTAMP_STR
+        ? data.TIMESTAMP_STR
+        : new Date(parseInt(data.__REALTIME_TIMESTAMP) / 1000).toLocaleTimeString();
 
       // Determine log level from systemd PRIORITY and message content
       const priority = parseInt(data.PRIORITY || "6");

@@ -33,7 +33,8 @@ mod macos_icon_finder;
 
 // Re-export keydeck types and functions for frontend
 pub use keydeck_types::{
-    get_config_dir, get_config_path, get_icon_dir, DeviceInfo, KeyDeckConf, DEFAULT_ICON_DIR_REL,
+    get_config_dir, get_config_path, get_icon_dir, get_log_path, DeviceInfo, KeyDeckConf,
+    DEFAULT_ICON_DIR_REL,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -947,20 +948,112 @@ async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-/// Non-Linux fallback: no queryable log store, emit an informational entry.
+/// Non-Linux (Windows/macOS): tail the daemon's captured log file.
+///
+/// There is no per-service journal on these platforms, so the daemon's
+/// stdout/stderr is redirected to `get_log_path()` (via the LaunchAgent's
+/// `Standard*Path` on macOS, or a redirected detached process on Windows).
+/// We emit the last chunk of history, then poll for appended lines. Each raw
+/// daemon line (`[HH:MM:SS.mmm] message`) is wrapped into the journal-JSON
+/// shape the LogViewer parses, carrying the daemon's own timestamp so it is
+/// displayed verbatim rather than as "Invalid Date".
 #[cfg(not(target_os = "linux"))]
 #[tauri::command]
 async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Seek, SeekFrom};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let log_path = get_log_path();
+
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        // Journal-JSON shaped entry so the frontend LogViewer can parse it.
-        let msg = serde_json::json!({
-            "MESSAGE": "Log streaming is not available on this platform. \
-                        The daemon logs to its own stdout/stderr.",
-            "PRIORITY": "6",
-        })
-        .to_string();
-        let _ = window.emit("log-entry", msg);
+        std::thread::sleep(Duration::from_millis(100));
+
+        // Wrap one raw daemon line into the journal-JSON shape the LogViewer
+        // expects. Returns false if the window is gone (stop the loop).
+        let emit_line = |line: &str| -> bool {
+            let line = line.trim_end();
+            if line.is_empty() {
+                return true;
+            }
+            // Split the leading "[HH:MM:SS.mmm] " timestamp our log macros add.
+            let (ts, msg) = match line.strip_prefix('[').and_then(|r| r.split_once(']')) {
+                Some((ts, rest)) => (ts.to_string(), rest.trim_start().to_string()),
+                None => (String::new(), line.to_string()),
+            };
+            let priority = if msg.starts_with("ERROR:") {
+                "3"
+            } else if msg.starts_with("WARNING:") {
+                "4"
+            } else {
+                "6"
+            };
+            // Fallback timestamp (ingest time) so entries without our prefix
+            // still render a valid date; TIMESTAMP_STR takes precedence.
+            let now_us = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_micros())
+                .unwrap_or(0);
+            let entry = serde_json::json!({
+                "MESSAGE": msg,
+                "PRIORITY": priority,
+                "TIMESTAMP_STR": ts,
+                "__REALTIME_TIMESTAMP": now_us.to_string(),
+            })
+            .to_string();
+            window.emit("log-entry", entry).is_ok()
+        };
+
+        // Where we've read up to. Start after the last ~200 lines of history.
+        let mut offset: u64 = 0;
+        let mut announced_missing = false;
+
+        if let Ok(file) = std::fs::File::open(&log_path) {
+            let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+            let reader = BufReader::new(file);
+            let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+            let start = lines.len().saturating_sub(200);
+            for line in &lines[start..] {
+                if !emit_line(line) {
+                    return;
+                }
+            }
+            offset = len;
+        }
+
+        // Poll for appended lines until the window (LogViewer) closes.
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            match std::fs::File::open(&log_path) {
+                Ok(mut file) => {
+                    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+                    if len < offset {
+                        // File was truncated/rotated (e.g. daemon restarted).
+                        offset = 0;
+                    }
+                    if len > offset {
+                        if file.seek(SeekFrom::Start(offset)).is_ok() {
+                            let reader = BufReader::new(file);
+                            for line in reader.lines().map_while(Result::ok) {
+                                if !emit_line(&line) {
+                                    return;
+                                }
+                            }
+                        }
+                        offset = len;
+                    }
+                }
+                Err(_) => {
+                    if !announced_missing {
+                        announced_missing = true;
+                        if !emit_line(
+                            "No log file yet — start the daemon to begin capturing output.",
+                        ) {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
     });
 
     Ok(())

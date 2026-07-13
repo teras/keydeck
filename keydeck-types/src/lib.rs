@@ -50,6 +50,18 @@ pub fn get_config_path() -> PathBuf {
     get_config_dir().join("config.yaml")
 }
 
+/// Absolute path to the daemon log file (`keydeck.log`) in the config dir.
+///
+/// On Linux the daemon runs as a systemd user service and logs to the journal,
+/// so this file is unused there. On Windows and macOS there is no system
+/// journal, so the daemon's stdout/stderr is captured to this file (via the
+/// LaunchAgent's `Standard*Path` keys on macOS, or a redirected detached
+/// process on Windows) and the config UI tails it. Kept next to `config.yaml`
+/// so the daemon and the UI agree on the location without extra plumbing.
+pub fn get_log_path() -> PathBuf {
+    get_config_dir().join("keydeck.log")
+}
+
 /// Get the absolute path to the default icon directory.
 pub fn get_icon_dir() -> String {
     get_icon_dir_path().to_string_lossy().into_owned()
