@@ -1059,8 +1059,41 @@ async fn stream_journal_logs(window: tauri::Window) -> Result<(), String> {
     Ok(())
 }
 
-/// Upload custom icon file to keydeck icons directory
-/// Returns the filename of the saved icon
+/// Sanitizes a base filename to `[A-Za-z0-9_-]`, replacing everything else with `_`.
+fn sanitize_icon_base(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Returns a non-colliding `(destination, filename)` in the icon dir for
+/// `base_name.ext`, appending `_2`, `_3`, … if a file already exists.
+fn dedup_icon_dest(icon_dir: &std::path::Path, base_name: &str, ext: &str) -> (PathBuf, String) {
+    let mut filename = format!("{}.{}", base_name, ext);
+    let mut dest = icon_dir.join(&filename);
+    let mut counter = 2;
+    while dest.exists() {
+        filename = format!("{}_{}.{}", base_name, counter, ext);
+        dest = icon_dir.join(&filename);
+        counter += 1;
+    }
+    (dest, filename)
+}
+
+/// Ensures the icon directory exists and returns its path.
+fn icon_dir_ready() -> Result<PathBuf, String> {
+    let icon_dir = PathBuf::from(get_icon_dir());
+    std::fs::create_dir_all(&icon_dir)
+        .map_err(|e| format!("Failed to create icon directory: {}", e))?;
+    Ok(icon_dir)
+}
+
 #[tauri::command]
 fn upload_custom_icon(file_path: String, suggested_name: Option<String>) -> Result<String, String> {
     use std::fs;
@@ -1071,58 +1104,42 @@ fn upload_custom_icon(file_path: String, suggested_name: Option<String>) -> Resu
         return Err(format!("Icon file not found: {}", file_path));
     }
 
-    // Get icon directory
-    let icon_dir = PathBuf::from(get_icon_dir());
-
-    // Ensure icon directory exists
-    fs::create_dir_all(&icon_dir).map_err(|e| format!("Failed to create icon directory: {}", e))?;
+    let icon_dir = icon_dir_ready()?;
 
     // Get extension from source file
     let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("png");
 
-    // Determine base filename
-    let base_name = if let Some(name) = suggested_name {
-        // Use suggested name, sanitized
-        name.chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect::<String>()
-    } else {
-        // Use original filename without extension
-        source
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("custom_icon")
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect::<String>()
-    };
+    // Determine base filename: suggested name, else the source file's stem.
+    let base_name = sanitize_icon_base(match &suggested_name {
+        Some(name) => name.as_str(),
+        None => source.file_stem().and_then(|s| s.to_str()).unwrap_or("custom_icon"),
+    });
 
-    // Find an available filename
-    let mut filename = format!("{}.{}", base_name, ext);
-    let mut dest = icon_dir.join(&filename);
-    let mut counter = 2;
+    let (dest, filename) = dedup_icon_dest(&icon_dir, &base_name, ext);
 
-    // If file exists, try _2, _3, _4, etc.
-    while dest.exists() {
-        filename = format!("{}_{}.{}", base_name, counter, ext);
-        dest = icon_dir.join(&filename);
-        counter += 1;
-    }
-
-    // Copy the file
     fs::copy(&source, &dest).map_err(|e| format!("Failed to copy icon: {}", e))?;
+
+    Ok(filename)
+}
+
+/// Saves a dropped/uploaded icon from raw bytes. Used by the HTML5 drop handler,
+/// which (unlike a file dialog) has the file contents but no filesystem path —
+/// so the daemon can't be given a path to copy from. `file_name` is the
+/// original name (with extension); its stem becomes the sanitized base name.
+#[tauri::command]
+fn upload_custom_icon_bytes(file_name: String, data: Vec<u8>) -> Result<String, String> {
+    use std::fs;
+
+    let source = PathBuf::from(&file_name);
+    let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("png");
+    let base_name = sanitize_icon_base(
+        source.file_stem().and_then(|s| s.to_str()).unwrap_or("custom_icon"),
+    );
+
+    let icon_dir = icon_dir_ready()?;
+    let (dest, filename) = dedup_icon_dest(&icon_dir, &base_name, ext);
+
+    fs::write(&dest, &data).map_err(|e| format!("Failed to save icon: {}", e))?;
 
     Ok(filename)
 }
@@ -1133,35 +1150,53 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Set the window icon
-            if let Some(window) = app.get_webview_window("main") {
-                let icon_bytes = include_bytes!("../icons/icon.png");
-                if let Ok(icon) = image::load_from_memory(icon_bytes) {
-                    let rgba = icon.to_rgba8();
-                    let (width, height) = rgba.dimensions();
-                    let tauri_icon = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
-                    let _ = window.set_icon(tauri_icon);
+            // The main window is built here (rather than in tauri.conf.json) so we
+            // can attach an on_navigation handler. On Linux/WebKitGTK the webview
+            // blocks JS from reading a dropped file's data (dataTransfer.files is
+            // empty and getData is neutered), but dropping a file makes the webview
+            // navigate to its file:// URL. We intercept that navigation to recover
+            // the real path, forward it to the frontend as `os-file-drop`, and
+            // cancel the navigation — which also suppresses the "open the file"
+            // default on every platform. macOS/Windows read the bytes via HTML5.
+            let handle = app.handle().clone();
+            let main = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::App("index.html".into()),
+            )
+            .title("KeyDeck Configuration")
+            .inner_size(1200.0, 800.0)
+            .decorations(false)
+            .visible(false)
+            .disable_drag_drop_handler()
+            .on_navigation(move |url| {
+                if url.scheme() == "file" {
+                    // to_file_path() percent-decodes the path (spaces, etc.).
+                    if let Ok(path) = url.to_file_path() {
+                        let _ = handle.emit("os-file-drop", path.to_string_lossy().to_string());
+                    }
+                    return false;
                 }
+                true
+            })
+            .build()?;
+
+            // Set the window icon
+            let icon_bytes = include_bytes!("../icons/icon.png");
+            if let Ok(icon) = image::load_from_memory(icon_bytes) {
+                let rgba = icon.to_rgba8();
+                let (width, height) = rgba.dimensions();
+                let tauri_icon = tauri::image::Image::new_owned(rgba.into_raw(), width, height);
+                let _ = main.set_icon(tauri_icon);
             }
 
-            // Handle splashscreen: close it when main window is ready
-            let splashscreen_window = app.get_webview_window("splashscreen");
-            let main_window = app.get_webview_window("main");
-
-            if let (Some(splashscreen), Some(main)) = (splashscreen_window, main_window) {
-                // Listen for the main window to finish loading
+            // Handle splashscreen: reveal main and close splash after a short delay.
+            if let Some(splashscreen) = app.get_webview_window("splashscreen") {
                 let main_clone = main.clone();
-                let splashscreen_clone = splashscreen.clone();
-
                 std::thread::spawn(move || {
-                    // Wait a bit for the main window to be ready
                     std::thread::sleep(std::time::Duration::from_millis(500));
-
-                    // Show main window
                     let _ = main_clone.show();
-
-                    // Close splashscreen
-                    let _ = splashscreen_clone.close();
+                    let _ = splashscreen.close();
                 });
             }
 
@@ -1195,6 +1230,7 @@ pub fn run() {
             execute_icon_cleanup,
             get_icon_data_url,
             upload_custom_icon,
+            upload_custom_icon_bytes,
             stream_journal_logs,
         ])
         .run(tauri::generate_context!())

@@ -12,16 +12,6 @@
   "app": {
     "windows": [
       {
-        "label": "main",
-        "title": "KeyDeck Configuration",
-        "width": 1200,
-        "height": 800,
-        "decorations": false,
-        "dragDropEnabled": true,
-        "visible": false,
-        "backgroundColor": "#1e1e1e"
-      },
-      {
         "label": "splashscreen",
         "title": "Loading...",
         "width": 400,

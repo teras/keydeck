@@ -522,7 +522,7 @@
                       onUpdate(action);
                     }}
                     onDragStart={() => { dragCtx = { list: 'try', from: i }; }}
-                    onDragEnter={() => { dragOverCtx = { list: 'try', index: i }; }}
+                    onDragEnter={() => { if (dragCtx) dragOverCtx = { list: 'try', index: i }; }}
                     onDrop={() => { reorderNested('try', i); dragCtx = null; dragOverCtx = null; }}
                     onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
@@ -567,7 +567,7 @@
                       onUpdate(action);
                     }}
                     onDragStart={() => { dragCtx = { list: 'else', from: i }; }}
-                    onDragEnter={() => { dragOverCtx = { list: 'else', index: i }; }}
+                    onDragEnter={() => { if (dragCtx) dragOverCtx = { list: 'else', index: i }; }}
                     onDrop={() => { reorderNested('else', i); dragCtx = null; dragOverCtx = null; }}
                     onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
@@ -615,7 +615,7 @@
                       onUpdate(action);
                     }}
                     onDragStart={() => { dragCtx = { list: 'and', from: i }; }}
-                    onDragEnter={() => { dragOverCtx = { list: 'and', index: i }; }}
+                    onDragEnter={() => { if (dragCtx) dragOverCtx = { list: 'and', index: i }; }}
                     onDrop={() => { reorderNested('and', i); dragCtx = null; dragOverCtx = null; }}
                     onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />
@@ -663,7 +663,7 @@
                       onUpdate(action);
                     }}
                     onDragStart={() => { dragCtx = { list: 'or', from: i }; }}
-                    onDragEnter={() => { dragOverCtx = { list: 'or', index: i }; }}
+                    onDragEnter={() => { if (dragCtx) dragOverCtx = { list: 'or', index: i }; }}
                     onDrop={() => { reorderNested('or', i); dragCtx = null; dragOverCtx = null; }}
                     onDragEnd={() => { dragCtx = null; dragOverCtx = null; }}
                   />

@@ -10,8 +10,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { onMount, onDestroy } from 'svelte';
   import { ask, message } from '@tauri-apps/plugin-dialog';
-  import { getCurrentWindow } from '@tauri-apps/api/window';
-  import type { UnlistenFn } from '@tauri-apps/api/event';
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { iconRefreshTrigger } from '$lib/stores';
 
   interface Props {
@@ -45,10 +44,14 @@
   let showButtonDefDropdown = $state(false);
   let buttonDefSearchFilter = $state("");
 
-  let unlistenFileDropHover: UnlistenFn | null = null;
-
   let iconDropZoneRef: HTMLDivElement | null = null;
-  let isHoveringDropZone = $state(false);
+  let unlistenOsFileDrop: UnlistenFn | null = null;
+  // Set when a file is dropped on the icon zone but the webview gave us no File
+  // object (Linux/WebKitGTK). The real path then arrives via the `os-file-drop`
+  // event (captured by the Rust navigation handler); this flag tells us that
+  // path belongs to the icon zone. Cleared after a short window.
+  let awaitingOsFileDrop = false;
+  let awaitingOsFileDropTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Supported image extensions for icon upload
   const VALID_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'];
@@ -260,28 +263,41 @@
     }
   }
 
-  // Setup Tauri file drop listeners
+  function clearAwaitingOsFileDrop() {
+    awaitingOsFileDrop = false;
+    if (awaitingOsFileDropTimer) {
+      clearTimeout(awaitingOsFileDropTimer);
+      awaitingOsFileDropTimer = null;
+    }
+  }
+
   onMount(async () => {
-    const window = getCurrentWindow();
     loadEnvVarSuggestions();
 
-    // Listen for file drop events
-    unlistenFileDropHover = await window.onDragDropEvent((event) => {
-      if (event.payload.type === 'drop') {
-        isDraggingOver = false;
-
-        // Only handle drop if we're hovering over the icon drop zone
-        if (!isReadOnly && isHoveringDropZone && event.payload.paths && event.payload.paths.length > 0) {
-          handleTauriFileDrop(event.payload.paths);
-        }
-      } else if (event.payload.type === 'leave') {
-        isDraggingOver = false;
+    // Linux/WebKitGTK path for external file drops: the DOM can't read the
+    // dropped file, but the Rust navigation handler recovers the real path and
+    // forwards it here. We only consume it if a drop just landed on the icon
+    // zone (awaitingOsFileDrop). macOS/Windows read the bytes directly in
+    // handleFileDrop and never reach this.
+    unlistenOsFileDrop = await listen<string>('os-file-drop', (event) => {
+      if (!awaitingOsFileDrop || isReadOnly) return;
+      clearAwaitingOsFileDrop();
+      const path = event.payload;
+      const ext = path.split('.').pop()?.toLowerCase();
+      if (ext && VALID_IMAGE_EXTENSIONS.includes(ext)) {
+        uploadIconFiles([path]);
+      } else {
+        message('No valid image files found in drop. Supported formats: PNG, JPG, GIF, BMP, SVG, WebP', {
+          title: 'Invalid Files',
+          kind: 'warning'
+        });
       }
     });
   });
 
   onDestroy(() => {
-    if (unlistenFileDropHover) unlistenFileDropHover();
+    if (unlistenOsFileDrop) unlistenOsFileDrop();
+    clearAwaitingOsFileDrop();
   });
 
   async function loadEnvVarSuggestions() {
@@ -297,21 +313,54 @@
     }
   }
 
-  async function handleTauriFileDrop(paths: string[]) {
-    // Filter for image files
-    const imagePaths = paths.filter(path => {
-      const ext = path.split('.').pop()?.toLowerCase();
+  // Drop of image files onto the icon zone — two platform paths:
+  //  - macOS/Windows: the webview exposes the dropped files as File objects, so
+  //    we read the bytes and save immediately (preventDefault stops the browser
+  //    from navigating to the file).
+  //  - Linux/WebKitGTK: no File object is available; instead we let the drop's
+  //    default navigation proceed so the Rust on_navigation handler can recover
+  //    the path (delivered back via `os-file-drop`). We just flag that a drop
+  //    landed on this zone so that event is attributed here.
+  async function handleFileDrop(event: DragEvent) {
+    event.stopPropagation();
+    isDraggingOver = false;
+    if (isReadOnly) {
+      event.preventDefault();
+      return;
+    }
+
+    const files = Array.from(event.dataTransfer?.files ?? []).filter(f => {
+      const ext = f.name.split('.').pop()?.toLowerCase();
       return ext && VALID_IMAGE_EXTENSIONS.includes(ext);
     });
 
-    if (imagePaths.length > 0) {
-      await uploadIconFiles(imagePaths);
-    } else {
-      await message('No valid image files found in drop. Supported formats: PNG, JPG, GIF, BMP, SVG, WebP', {
-        title: 'Invalid Files',
-        kind: 'warning'
-      });
+    if (files.length > 0) {
+      // macOS/Windows: bytes are available; handle and prevent navigation.
+      event.preventDefault();
+      try {
+        let lastIconFilename = '';
+        for (const file of files) {
+          const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+          lastIconFilename = await invoke<string>('upload_custom_icon_bytes', {
+            fileName: file.name,
+            data: bytes
+          });
+        }
+        await loadIcons();
+        iconRefreshTrigger.update(n => n + 1);
+        if (lastIconFilename) updateIcon(lastIconFilename);
+      } catch (e) {
+        console.error('Failed to upload dropped icon:', e);
+        await message(`Failed to upload icon: ${e}`, { title: 'Error', kind: 'error' });
+      }
+      return;
     }
+
+    // Linux: no File object — do NOT preventDefault (let the navigation fire so
+    // Rust captures the path); flag that we expect an os-file-drop for this zone.
+    awaitingOsFileDrop = true;
+    if (awaitingOsFileDropTimer) clearTimeout(awaitingOsFileDropTimer);
+    awaitingOsFileDropTimer = setTimeout(clearAwaitingOsFileDrop, 3000);
   }
 
   // Reload icons when config changes
@@ -987,7 +1036,6 @@
     event.preventDefault();
     event.stopPropagation();
     isDraggingOver = true;
-    isHoveringDropZone = true;
   }
 
   function handleDragLeave(event: DragEvent) {
@@ -1001,14 +1049,12 @@
 
     if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
       isDraggingOver = false;
-      isHoveringDropZone = false;
     }
   }
 
   function handleDragEnter(event: DragEvent) {
     event.preventDefault();
     event.stopPropagation();
-    isHoveringDropZone = true;
     isDraggingOver = true;
   }
 
@@ -1236,6 +1282,7 @@
       ondragenter={handleDragEnter}
       ondragover={handleDragOver}
       ondragleave={handleDragLeave}
+      ondrop={handleFileDrop}
     >
       <button class="icon-search-btn" onclick={openIconSearchDialog} title="Search for application icons" disabled={isReadOnly}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1382,7 +1429,7 @@
             onUpdate={(newAction) => updateAction(i, newAction)}
             onDelete={() => removeAction(i)}
             onDragStart={() => { actionDragFrom = i; }}
-            onDragEnter={() => { actionDragOver = i; }}
+            onDragEnter={() => { if (actionDragFrom !== null) actionDragOver = i; }}
             onDrop={() => { reorderAction(i); actionDragFrom = null; actionDragOver = null; }}
             onDragEnd={() => { actionDragFrom = null; actionDragOver = null; }}
             disabled={isReadOnly}
