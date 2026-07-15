@@ -366,7 +366,7 @@ mod imp {
             Action::Install => install(),
             Action::Uninstall => uninstall(),
             Action::Start => launchctl(&["load", &plist_str()?]),
-            Action::Stop => launchctl(&["unload", &plist_str()?]),
+            Action::Stop => stop(),
             Action::Restart => {
                 let p = plist_str()?;
                 let _ = launchctl(&["unload", &p]);
@@ -430,6 +430,35 @@ mod imp {
         // Registered for autostart; `start` (launchctl load) runs it now.
         println!("Autostart installed: {}", path.display());
         Ok(0)
+    }
+
+    /// Stops the running daemon authoritatively.
+    ///
+    /// "Running" is defined by the lock file (see [`super::status`]), so Stop
+    /// must terminate whatever the lock file reports — even a daemon started
+    /// outside launchd (manually, or by an older plist). The LaunchAgent is
+    /// unloaded first so `KeepAlive` cannot respawn it, then the process is
+    /// killed if it is still alive. Mirrors the Windows backend.
+    fn stop() -> io::Result<i32> {
+        // Unloading a plist that was never loaded prints an expected I/O error;
+        // silence it since the authoritative kill below is what matters.
+        if let Ok(p) = plist_str() {
+            let _ = Command::new("launchctl")
+                .args(["unload", &p])
+                .stderr(Stdio::null())
+                .status();
+        }
+        match crate::lock::running_pid() {
+            Some(pid) => {
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+                println!("keydeck stopped.");
+                Ok(0)
+            }
+            None => {
+                println!("keydeck is not running.");
+                Ok(0)
+            }
+        }
     }
 
     fn uninstall() -> io::Result<i32> {
