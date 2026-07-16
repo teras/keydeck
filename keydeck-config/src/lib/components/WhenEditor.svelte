@@ -34,7 +34,11 @@
 
   let { when, resetKey, onUpdate }: Props = $props();
 
+  // Keys that test the focused window (drive value autocomplete + placeholders).
   const RESERVED = ["window", "class", "title"];
+  // Keys offered as suggestions. `context` is the conventional context-variable
+  // key (any non-reserved key works, but this makes it discoverable).
+  const KEY_SUGGESTIONS = [...RESERVED, "context"];
 
   function whenToGroups(value: any): Group[] {
     if (!value) return [];
@@ -123,7 +127,7 @@
   </p>
 
   <datalist id="when-keys">
-    {#each RESERVED as k}
+    {#each KEY_SUGGESTIONS as k}
       <option value={k}></option>
     {/each}
   </datalist>

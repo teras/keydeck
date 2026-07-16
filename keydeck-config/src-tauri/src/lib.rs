@@ -431,6 +431,73 @@ async fn reinstall_daemon_service() -> Result<(), String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// JSON shape emitted by `keydeck --integration <name> status`.
+#[derive(Debug, Serialize, Deserialize)]
+struct IntegrationStatusJson {
+    /// The watcher/payload script is present on disk.
+    script: bool,
+    /// The integration is registered with the host app (e.g. kitty.conf include).
+    registered: bool,
+    /// Fully installed (both of the above).
+    installed: bool,
+}
+
+/// Query an integration's install status via `keydeck --integration <name> status`.
+///
+/// The daemon prints `{"script":..,"registered":..,"installed":..}` to stdout
+/// regardless of exit code (0 = installed, 1 = not), so we parse stdout
+/// unconditionally — mirroring `query_daemon_status`.
+#[tauri::command]
+fn integration_status(name: String) -> Result<IntegrationStatusJson, String> {
+    let keydeck_bin = find_keydeck_binary()?;
+
+    let output = Command::new(&keydeck_bin)
+        .args(["--integration", &name, "status"])
+        .output()
+        .map_err(|e| format!("Failed to execute keydeck: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    serde_json::from_str(stdout.trim()).map_err(|e| {
+        format!(
+            "Failed to parse integration status: {} (output: {})",
+            e,
+            stdout.trim()
+        )
+    })
+}
+
+/// Enable or disable an integration by shelling out to
+/// `keydeck --integration <name> install|uninstall`.
+#[tauri::command]
+async fn set_integration(name: String, enabled: bool) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let keydeck_bin = find_keydeck_binary()?;
+        let action = if enabled { "install" } else { "uninstall" };
+
+        let output = Command::new(&keydeck_bin)
+            .args(["--integration", &name, action])
+            .output()
+            .map_err(|e| format!("Failed to execute keydeck: {}", e))?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let msg = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            format!("keydeck --integration {} {} failed", name, action)
+        };
+        Err(msg)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 /// Backup entire config directory to a zip file
 #[tauri::command]
 fn backup_config_directory(path: String) -> Result<(), String> {
@@ -1220,6 +1287,8 @@ pub fn run() {
             start_daemon_service,
             stop_daemon_service,
             reinstall_daemon_service,
+            integration_status,
+            set_integration,
             list_env_vars,
             list_window_classes,
             reload_keydeck,

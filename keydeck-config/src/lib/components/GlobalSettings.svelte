@@ -3,6 +3,8 @@
 
 <script lang="ts">
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { invoke } from '@tauri-apps/api/core';
+  import { onMount } from 'svelte';
   import ColorPicker from './ColorPicker.svelte';
   import CleanUpIcons from './CleanUpIcons.svelte';
 
@@ -11,6 +13,40 @@
   }
 
   let { config }: Props = $props();
+
+  // --- Terminal integration (kitty) -----------------------------------------
+  // System-level install (not part of the YAML config): shells out to
+  // `keydeck --integration kitty install|uninstall|status`, so it never touches
+  // `config` and never dirties the unsaved-changes indicator.
+  interface IntegrationStatus { script: boolean; registered: boolean; installed: boolean; }
+  let kittyInstalled = $state(false);
+  let kittyBusy = $state(false);
+  let kittyError = $state<string | null>(null);
+
+  async function refreshKittyStatus() {
+    try {
+      const s = await invoke<IntegrationStatus>('integration_status', { name: 'kitty' });
+      kittyInstalled = s.installed;
+    } catch {
+      kittyInstalled = false;
+    }
+  }
+
+  async function toggleKitty() {
+    if (kittyBusy) return;
+    kittyBusy = true;
+    kittyError = null;
+    try {
+      await invoke('set_integration', { name: 'kitty', enabled: !kittyInstalled });
+      await refreshKittyStatus();
+    } catch (e) {
+      kittyError = String(e);
+    } finally {
+      kittyBusy = false;
+    }
+  }
+
+  onMount(refreshKittyStatus);
 
   function updateTickTime(value: string) {
     const num = parseFloat(value);
@@ -51,13 +87,14 @@
     if (value.trim()) {
       config.background_image = value.trim();
     } else {
-      delete config.background_image;
+      // `null` (not `delete`) so the cleared value serializes to Option::None and the
+      // YAML omits it (skip_serializing_if).
+      config.background_image = null;
     }
   }
 
   function clearBackgroundImage() {
-    delete config.background_image;
-    config = config;
+    config.background_image = null;
   }
 
   // Protected icons management
@@ -272,6 +309,32 @@
     </div>
 
     <div class="section">
+      <h4>Integrations</h4>
+      <div class="integration-row">
+        <div class="integration-info">
+          <span class="integration-name">Terminal awareness (kitty)</span>
+        </div>
+        <button
+          class="toggle"
+          class:on={kittyInstalled}
+          disabled={kittyBusy}
+          onclick={toggleKitty}
+          role="switch"
+          aria-checked={kittyInstalled}
+          title={kittyInstalled ? 'Click to disable' : 'Click to enable'}
+        >
+          <span class="knob"></span>
+        </button>
+      </div>
+      {#if kittyInstalled}
+        <p class="help kitty-hint">✓ Enabled — restart kitty (or open a new window) to load the watcher.</p>
+      {/if}
+      {#if kittyError}
+        <p class="kitty-error">{kittyError}</p>
+      {/if}
+    </div>
+
+    <div class="section">
     <div class="color-header">
       <h4>Colors</h4>
       <button class="add-btn" onclick={toggleAddColor}>+</button>
@@ -467,6 +530,77 @@
   .section {
     padding-top: 12px;
     border-top: 1px solid #3e3e42;
+  }
+
+  .integration-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .integration-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .integration-name {
+    font-size: 13px;
+    color: #cccccc;
+    font-weight: 500;
+  }
+
+  .toggle {
+    flex-shrink: 0;
+    position: relative;
+    width: 40px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 11px;
+    background-color: #555;
+    cursor: pointer;
+    transition: background-color 0.15s;
+    margin-top: 2px;
+  }
+
+  .toggle.on {
+    background-color: #2d7d46;
+  }
+
+  .toggle:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .toggle .knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background-color: white;
+    transition: transform 0.15s;
+  }
+
+  .toggle.on .knob {
+    transform: translateX(18px);
+  }
+
+  .kitty-hint {
+    color: #7bb87b !important;
+    font-style: normal !important;
+    margin-top: 8px;
+  }
+
+  .kitty-error {
+    color: #f48771;
+    font-size: 12px;
+    margin: 8px 0 0 0;
   }
 
   .color-header {
