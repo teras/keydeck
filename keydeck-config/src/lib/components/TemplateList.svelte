@@ -62,8 +62,49 @@
     onTemplateSelected(templateName);
   }
 
+  // Find every page and template that inherits `templateName`, so we can block
+  // deletion while it is still referenced (a dangling `inherits` crashes the daemon).
+  function findInheritors(templateName: string): string[] {
+    const inheritsList = (obj: any): string[] => {
+      if (!obj?.inherits) return [];
+      return Array.isArray(obj.inherits) ? obj.inherits : [obj.inherits];
+    };
+    const users: string[] = [];
+
+    // Other templates inheriting this one
+    for (const [name, tmpl] of Object.entries(config.templates || {})) {
+      if (name !== templateName && inheritsList(tmpl).includes(templateName)) {
+        users.push(`template "${name}"`);
+      }
+    }
+
+    // Pages inheriting this template
+    const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
+    for (const [groupName, group] of Object.entries(config.page_groups || {})) {
+      for (const [pageName, page] of Object.entries(group as any)) {
+        if (knownFields.includes(pageName)) continue;
+        if (inheritsList(page).includes(templateName)) {
+          const device = groupName === 'default' ? 'default device' : `device ${groupName}`;
+          users.push(`page "${pageName}" — ${device}`);
+        }
+      }
+    }
+
+    return users;
+  }
+
   async function deleteTemplate(templateName: string) {
     showTemplateMenu = null;
+
+    const inheritors = findInheritors(templateName);
+    if (inheritors.length > 0) {
+      await ask(
+        `Template "${templateName}" is still used by:\n\n${inheritors.join('\n')}\n\n` +
+        `Remove it from those pages/templates first, then delete it.`,
+        { title: 'Cannot Delete Template', kind: 'error' }
+      );
+      return;
+    }
 
     const confirmed = await ask(`Delete template "${templateName}"?`, {
       title: 'Confirm Delete',

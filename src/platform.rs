@@ -67,6 +67,23 @@ pub fn process_escape_sequences(text: &str) -> Vec<char> {
 // Daemon lifecycle management (install/uninstall/start/stop/restart/status/reload).
 pub mod lifecycle;
 
+/// External context-variable control socket. Unix (Linux + macOS) only; a no-op on
+/// Windows, where the socket channel is not yet implemented.
+#[cfg(unix)]
+pub fn spawn_context_listener(
+    tx: &std::sync::mpsc::Sender<crate::event::DeviceEvent>,
+    active: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    crate::listener_context::spawn_context_listener(tx, active);
+}
+
+#[cfg(not(unix))]
+pub fn spawn_context_listener(
+    _tx: &std::sync::mpsc::Sender<crate::event::DeviceEvent>,
+    _active: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+}
+
 // ---------------------------------------------------------------------------
 // Linux backend — delegate to the existing native implementations
 // ---------------------------------------------------------------------------

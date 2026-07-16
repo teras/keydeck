@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
+use crate::context::ContextVars;
 use crate::pages::ServiceConfig;
 use crate::services::{ensure_service_started, get_service_value, ServicesState};
 use crate::system_info::get_system_value;
@@ -16,11 +17,12 @@ use std::sync::Arc;
 pub const ERROR_INDICATOR: &str = "⚠";
 
 /// Evaluates all dynamic parameters in a string and returns a map of parameter -> value.
-/// Supports four provider types:
+/// Supports five provider types:
 /// - ${time:FORMAT} - Current time using strftime format
 /// - ${env:VAR} - Environment variable
 /// - ${service:NAME} - Cached service value
 /// - ${system:METRIC} - Built-in system metrics (CPU, RAM, temperatures)
+/// - ${var:NAME} - External context variable (set via `keydeck --set`)
 ///
 /// On error, returns ERROR_INDICATOR for that parameter.
 pub fn evaluate_dynamic_params(
@@ -28,6 +30,7 @@ pub fn evaluate_dynamic_params(
     services_config: &Option<IndexMap<String, ServiceConfig>>,
     services_state: &ServicesState,
     services_active: &Arc<AtomicBool>,
+    context_vars: &ContextVars,
 ) -> HashMap<String, String> {
     let mut params = HashMap::new();
 
@@ -46,6 +49,7 @@ pub fn evaluate_dynamic_params(
                     evaluate_service_provider(arg, services_config, services_state, services_active)
                 }
                 "system" => evaluate_system_provider(arg),
+                "var" => evaluate_var_provider(arg, context_vars),
                 _ => {
                     // Unknown provider
                     ERROR_INDICATOR.to_string()
@@ -76,6 +80,17 @@ fn evaluate_time_provider(format: &str) -> String {
 /// Evaluates ${env:VAR} provider
 fn evaluate_env_provider(var_name: &str) -> String {
     env::var(var_name).unwrap_or_else(|_| ERROR_INDICATOR.to_string())
+}
+
+/// Evaluates ${var:NAME} provider — an external context variable set via `keydeck --set`.
+/// Returns an empty string when the variable is unset (unlike other providers, an absent
+/// context variable is normal, not an error).
+fn evaluate_var_provider(name: &str, context_vars: &ContextVars) -> String {
+    context_vars
+        .read()
+        .ok()
+        .and_then(|vars| vars.get(name).cloned())
+        .unwrap_or_default()
 }
 
 /// Evaluates ${service:NAME} provider
@@ -136,14 +151,26 @@ mod tests {
     fn test_evaluate_dynamic_params() {
         env::set_var("USER_TEST", "testuser");
 
-        let text = "Time: ${time:%H:%M} User: ${env:USER_TEST}";
+        let text = "Time: ${time:%H:%M} User: ${env:USER_TEST} Ctx: ${var:mode}";
         let services_state = new_services_state();
         let services_active = Arc::new(AtomicBool::new(true));
-        let params = evaluate_dynamic_params(text, &None, &services_state, &services_active);
+        let context_vars = crate::context::new_context_vars();
+        context_vars
+            .write()
+            .unwrap()
+            .insert("mode".to_string(), "focus".to_string());
+        let params = evaluate_dynamic_params(
+            text,
+            &None,
+            &services_state,
+            &services_active,
+            &context_vars,
+        );
 
         assert!(params.contains_key("time:%H:%M"));
         assert!(params.contains_key("env:USER_TEST"));
         assert_eq!(params.get("env:USER_TEST").unwrap(), "testuser");
+        assert_eq!(params.get("var:mode").unwrap(), "focus");
     }
 
     #[test]

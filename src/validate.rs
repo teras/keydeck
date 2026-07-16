@@ -108,20 +108,23 @@ pub fn validate_config(config_path: &str, json_output: bool) -> bool {
         return false;
     }
 
-    // Validate that templates don't have window_name (only valid for pages)
+    // Upgrade legacy `window_name` into the unified `when` structure.
+    conf.migrate_legacy_window_name();
+
+    // Validate that templates don't have auto-switch conditions (only valid for pages)
     if let Some(templates) = &conf.templates {
         for (template_name, template) in templates {
-            if template.window_name.is_some() {
+            if template.when.is_some() {
                 eprintln!(
-                    "Error: Template '{}' has 'window_name' field",
+                    "Error: Template '{}' has a 'when' (or legacy 'window_name') field",
                     template_name
                 );
-                eprintln!("The 'window_name' field is only valid in pages, not templates.");
+                eprintln!("Auto-switch conditions are only valid in pages, not templates.");
                 eprintln!(
-                    "Templates are never directly displayed, so window matching doesn't apply."
+                    "Templates are never directly displayed, so window/context matching doesn't apply."
                 );
                 eprintln!(
-                    "\nPlease remove the 'window_name' field from template '{}'",
+                    "\nPlease remove the 'when'/'window_name' field from template '{}'",
                     template_name
                 );
                 return false;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
+use crate::context::ContextVars;
 use crate::device_manager::find_path;
 use crate::device_trait::KeydeckDevice;
 use crate::dynamic_params::evaluate_dynamic_params;
@@ -50,6 +51,7 @@ pub struct PagedDevice {
     services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
     services_state: ServicesState,
     services_active: Arc<AtomicBool>,
+    context_vars: ContextVars,
     image_dir: Option<String>,
     current_page_ref: RefCell<usize>,
     button_images: RefCell<Vec<String>>,
@@ -76,6 +78,7 @@ impl PagedDevice {
         services_config: Arc<Option<IndexMap<String, ServiceConfig>>>,
         services_state: ServicesState,
         services_active: Arc<AtomicBool>,
+        context_vars: ContextVars,
         device: Box<dyn KeydeckDevice>,
         tx: &Sender<DeviceEvent>,
         time_manager: Arc<TimeManager>,
@@ -160,6 +163,7 @@ impl PagedDevice {
             services_config,
             services_state,
             services_active,
+            context_vars,
             image_dir,
             // Initialize to sentinel value so first set_page() will trigger refresh
             current_page_ref: RefCell::new(usize::MAX),
@@ -849,21 +853,32 @@ impl PagedDevice {
             }
         }
 
-        // Determine what page the auto-matching logic would select
+        // Determine what page the auto-matching logic would select. A page matches when
+        // its `when` condition holds (DNF: any group; all keys in a group; any value of a
+        // key). Reserved keys `window`/`class`/`title` test the focused window
+        // (case-insensitive substring); any other key tests an external context variable.
+        let class_lower = class.to_lowercase();
+        let title_lower = title.to_lowercase();
+        let vars = self.context_vars.read().unwrap();
         let mut target_page: Option<String> = None;
         for (name, page) in &self.pages.pages {
-            if let Some(pattern) = &page.window_name {
-                let pattern_lower = pattern.to_lowercase();
-                let class_lower = class.to_lowercase();
-                let title_lower = title.to_lowercase();
-
-                // Check if pattern matches either window class OR title
-                if class_lower.contains(&pattern_lower) || title_lower.contains(&pattern_lower) {
+            if let Some(when) = &page.when {
+                let matched = when.matches(|key, value| {
+                    let value = value.to_lowercase();
+                    match key {
+                        "window" => class_lower.contains(&value) || title_lower.contains(&value),
+                        "class" => class_lower.contains(&value),
+                        "title" => title_lower.contains(&value),
+                        _ => vars.get(key).is_some_and(|cur| cur.to_lowercase() == value),
+                    }
+                });
+                if matched {
                     target_page = Some(name.clone());
                     break;
                 }
             }
         }
+        drop(vars);
 
         // Compare with the last auto-selected target page (skip if force_change=true, e.g., from auto_jump)
         if !force_change {
@@ -1093,6 +1108,7 @@ impl PagedDevice {
                 &self.services_config,
                 &self.services_state,
                 &self.services_active,
+                &self.context_vars,
             );
             // Substitute parameters
             for (pattern, value) in params {
@@ -1232,6 +1248,7 @@ impl PagedDevice {
                         &self.services_config,
                         &self.services_state,
                         &self.services_active,
+                        &self.context_vars,
                     );
                     for (pattern, value) in params {
                         let full_pattern = format!("${{{}}}", pattern);

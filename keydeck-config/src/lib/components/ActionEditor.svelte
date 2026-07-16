@@ -52,7 +52,7 @@
     if (!config || !deviceSerial) return [];
     const pageGroup = config.page_groups?.[deviceSerial] || config.page_groups?.default;
     if (!pageGroup) return [];
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+    const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
     return Object.keys(pageGroup).filter(key => !knownFields.includes(key));
   });
 

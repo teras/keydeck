@@ -499,9 +499,28 @@
     return searchActionsRecursive(buttonConfig.actions);
   }
 
-  // Get all pages with their window names from the configuration
-  function getPagesWithWindowNames(): { pageName: string; windowName: string | null }[] {
-    const pages: { pageName: string; windowName: string | null }[] = [];
+  // Collect window/class/title match patterns from a page's `when` conditions.
+  // A `when` is a single group (mapping) or a list of groups; the built-in keys
+  // window/class/title carry the window patterns (a value may be a list = OR).
+  function whenWindowPatterns(when: any): string[] {
+    if (!when) return [];
+    const groups = Array.isArray(when) ? when : [when];
+    const patterns: string[] = [];
+    for (const group of groups) {
+      if (!group || typeof group !== 'object') continue;
+      for (const key of ['window', 'class', 'title']) {
+        const value = group[key];
+        if (value === undefined) continue;
+        if (Array.isArray(value)) patterns.push(...value.map(String));
+        else patterns.push(String(value));
+      }
+    }
+    return patterns;
+  }
+
+  // Get all pages with their window match patterns from the configuration
+  function getPagesWithWindowNames(): { pageName: string; windowNames: string[] }[] {
+    const pages: { pageName: string; windowNames: string[] }[] = [];
 
     // Check if pages are in page_groups
     if (config?.page_groups) {
@@ -509,7 +528,7 @@
         const group = groupConfig as any;
 
         // Known fields that are not page names
-        const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+        const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
 
         // Iterate through all keys in the group
         for (const [key, value] of Object.entries(group)) {
@@ -521,7 +540,7 @@
           if (typeof page === 'object' && page !== null) {
             pages.push({
               pageName: key,
-              windowName: page.window_name || null
+              windowNames: whenWindowPatterns(page.when)
             });
           }
         }
@@ -567,9 +586,9 @@
     let bestScore = 0;
 
     for (const page of allPages) {
-      // Only match against pages that have a window name
-      if (page.windowName) {
-        const score = fuzzyMatch(target, page.windowName);
+      // Match against every window pattern the page declares in its `when`
+      for (const windowName of page.windowNames) {
+        const score = fuzzyMatch(target, windowName);
         if (score > bestScore) {
           bestScore = score;
           bestMatch = page.pageName;

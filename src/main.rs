@@ -4,13 +4,17 @@
 mod device_info;
 mod device_manager;
 mod device_registry_init;
+mod context;
 mod device_trait;
 mod dynamic_detection;
 mod dynamic_params;
 mod elgato_device;
 mod event;
+mod integrations;
 mod graphics_renderer;
 mod listener_button;
+#[cfg(unix)]
+mod listener_context;
 mod listener_device;
 mod listener_tick;
 mod listener_time;
@@ -70,6 +74,8 @@ fn print_help() {
     println!("      --info <DEVICE>         Show detailed device information as YAML");
     println!("      --validate <FILE>       Validate configuration file and test services");
     println!("      --json                  Output validation results as JSON (use with --validate)");
+    println!("      --set <KEY=VALUE>       Set a context variable on the running daemon");
+    println!("                                (empty value clears it; used by external watchers)");
     println!("      --daemon <ACTION>       Manage the daemon lifecycle. ACTION is one of:");
     println!("                                install    register autostart at login");
     println!("                                uninstall  remove autostart entry");
@@ -78,6 +84,9 @@ fn print_help() {
     println!("                                restart    restart the daemon");
     println!("                                status     print JSON {{running,pid,enabled}}");
     println!("                                reload     reload config of running daemon");
+    println!("      --integration <NAME> <ACTION>");
+    println!("                              Manage a terminal integration (NAME: kitty).");
+    println!("                              ACTION: install, uninstall, status");
     println!("  -v, --verbose               Print detailed messages (key presses, page changes)");
     println!("  -vv, --verbose --verbose    Print all verbose/debug messages");
     println!("      --server                Start the server (default when no arguments)");
@@ -172,6 +181,38 @@ fn main() {
                     },
                     None => {
                         error_log!("Error: --daemon requires an action ({})", Action::NAMES);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            "--set" => {
+                if let Some(kv) = arg_iter.next() {
+                    #[cfg(unix)]
+                    crate::listener_context::send_context_var(kv);
+                    #[cfg(not(unix))]
+                    {
+                        let _ = kv;
+                        error_log!("Error: --set is not supported on this platform");
+                        std::process::exit(1);
+                    }
+                } else {
+                    error_log!("Error: --set requires a KEY=VALUE argument");
+                    std::process::exit(1);
+                }
+            }
+            "--integration" => {
+                let name = arg_iter.next();
+                let action = arg_iter.next();
+                match (name, action) {
+                    (Some(name), Some(action)) => {
+                        std::process::exit(crate::integrations::run(name, action));
+                    }
+                    _ => {
+                        error_log!(
+                            "Error: --integration requires <NAME> <ACTION> (names: {}; actions: {})",
+                            crate::integrations::NAMES,
+                            crate::integrations::ACTIONS
+                        );
                         std::process::exit(1);
                     }
                 }

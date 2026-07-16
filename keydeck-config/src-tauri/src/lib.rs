@@ -132,7 +132,12 @@ fn load_config(path: Option<String>) -> Result<KeyDeckConf, String> {
         return Ok(KeyDeckConf::default());
     }
 
-    serde_yaml_ng::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))
+    let mut conf: KeyDeckConf =
+        serde_yaml_ng::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
+    // Upgrade legacy `window_name` into the unified `when` structure so the UI only ever
+    // deals with `when`; saving then rewrites the config in the new shape (auto-migration).
+    conf.migrate_legacy_window_name();
+    Ok(conf)
 }
 
 /// List environment variable names available to the frontend for autocomplete

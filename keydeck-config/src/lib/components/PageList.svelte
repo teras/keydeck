@@ -20,7 +20,7 @@
   // Filter out known page group fields to get actual pages
   let pages = $derived.by(() => {
     if (!pageGroup) return [];
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+    const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
     return Object.keys(pageGroup).filter(key => !knownFields.includes(key));
   });
 
@@ -94,7 +94,7 @@
     showPageMenu = null;
 
     const groupKey = getGroupKey();
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+    const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
 
     // Check if this is the last page
     const currentPages = Object.keys(config.page_groups[groupKey] || {})
@@ -254,7 +254,7 @@
     }
 
     // Rebuild the page group object in the new order
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+    const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
     const newPageGroup: any = {};
 
     // Keep known fields at the beginning

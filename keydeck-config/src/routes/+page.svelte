@@ -228,7 +228,7 @@
     }
 
     // Try to get main_page from config, otherwise find first available page
-    const knownFields = ['main_page', 'restore_mode', 'on_tick'];
+    const knownFields = ['main_page', 'restore_mode', 'on_tick', 'press_effect'];
     const mainPageName = pageGroup.main_page || 'Main';
     const availablePages = Object.keys(pageGroup).filter(key => !knownFields.includes(key));
 

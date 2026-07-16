@@ -52,6 +52,10 @@ pub enum DeviceEvent {
     /// Window focus changed
     FocusChanges { class: String, title: String },
 
+    /// Set or clear an external context variable (from the control socket).
+    /// `value: None` clears the variable.
+    SetContextVar { key: String, value: Option<String> },
+
     /// A tick of the timer clock
     Tick,
 

@@ -2,7 +2,7 @@
 // Copyright (C) 2025 Panayotis Katsaloulis
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -78,6 +78,32 @@ pub struct KeyDeckConf {
     /// When no specific page group is found, the "default" page group is used.
     #[serde(flatten)]
     pub page_groups: IndexMap<String, Pages>,
+}
+
+impl KeyDeckConf {
+    /// Migrates the legacy `window_name` field on every page and template into the
+    /// unified [`When`] structure. Applied right after deserialization (daemon loader
+    /// and config UI load), so old configs keep auto-switching and get rewritten as
+    /// `when` on the next save. Idempotent; a no-op once configs are upgraded.
+    pub fn migrate_legacy_window_name(&mut self) {
+        fn migrate(page: &mut Page) {
+            if let Some(pattern) = page.window_name.take() {
+                if page.when.is_none() {
+                    page.when = Some(When::window(pattern));
+                }
+            }
+        }
+        if let Some(templates) = &mut self.templates {
+            for (_, template) in templates.iter_mut() {
+                migrate(template);
+            }
+        }
+        for (_, pages) in self.page_groups.iter_mut() {
+            for (_, page) in pages.pages.iter_mut() {
+                migrate(page);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,12 +279,101 @@ fn default_restore_mode() -> FocusChangeRestorePolicy {
     FocusChangeRestorePolicy::Main // Default is set to Main
 }
 
+/// A single filter value inside a `when` group, or a list of them.
+/// A list means OR: the filter matches if ANY listed value matches.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum WhenValue {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl WhenValue {
+    /// Returns true if `pred` accepts any of the values (OR semantics).
+    pub fn any<F: Fn(&str) -> bool>(&self, pred: F) -> bool {
+        match self {
+            WhenValue::One(v) => pred(v),
+            WhenValue::Many(vs) => vs.iter().any(|v| pred(v)),
+        }
+    }
+}
+
+/// Auto-switch conditions in disjunctive normal form (map = AND, list = OR).
+///
+/// `groups` is a list of AND-groups joined by OR: a page activates when ANY group
+/// matches, and a group matches when ALL its key/value filters match. Each value may
+/// itself be a list (OR among values). Reserved keys `window`/`class`/`title` match the
+/// focused window (case-insensitive substring); any other key matches an external
+/// context variable (exact match, set via `keydeck --set key=value`).
+///
+/// In YAML this accepts either a single mapping (one group) or a list of mappings
+/// (many groups), and is serialized back in the same shape. Values must be strings
+/// (quote numbers, e.g. `git: "1"`).
+#[derive(Debug, Clone, Default)]
+pub struct When {
+    pub groups: Vec<IndexMap<String, WhenValue>>,
+}
+
+impl When {
+    /// Builds a single-group `when` matching a window pattern (legacy `window_name`).
+    pub fn window(pattern: String) -> Self {
+        let mut group = IndexMap::new();
+        group.insert("window".to_string(), WhenValue::One(pattern));
+        When {
+            groups: vec![group],
+        }
+    }
+
+    /// Evaluates the condition. `check(key, value)` reports whether a single
+    /// key/value filter matches the current state (focus + context variables).
+    pub fn matches<F: Fn(&str, &str) -> bool>(&self, check: F) -> bool {
+        self.groups.iter().any(|group| {
+            group
+                .iter()
+                .all(|(key, value)| value.any(|v| check(key, v)))
+        })
+    }
+}
+
+impl Serialize for When {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Round-trips in the friendly shape: a lone group as a mapping, else a list.
+        if self.groups.len() == 1 {
+            self.groups[0].serialize(serializer)
+        } else {
+            self.groups.serialize(serializer)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for When {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Single(IndexMap<String, WhenValue>),
+            Multi(Vec<IndexMap<String, WhenValue>>),
+        }
+        let groups = match Repr::deserialize(deserializer)? {
+            Repr::Single(group) => vec![group],
+            Repr::Multi(groups) => groups,
+        };
+        Ok(When { groups })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Page {
-    /// Optional window name pattern for auto-switching to this page.
-    /// Matches against both window class AND window title (case-insensitive substring match, OR logic).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Legacy per-page window pattern. Superseded by `when`; still accepted on read and
+    /// migrated into `when` (see [`KeyDeckConf::migrate_legacy_window_name`]), but never
+    /// written back — the config UI upgrades it to `when` on the next save.
+    #[serde(default, skip_serializing)]
     pub window_name: Option<String>,
+
+    /// Auto-switch conditions: activate this page when the focused window and/or external
+    /// context variables match. See [`When`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub when: Option<When>,
 
     /// Locking page. If true the page cannot be automatically changed when focus changes.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -581,4 +696,98 @@ pub enum Action {
         #[serde(default = "default_refresh_target")]
         refresh: RefreshTarget,
     },
+}
+
+#[cfg(test)]
+mod when_tests {
+    use super::*;
+
+    fn parse_page(yaml: &str) -> Page {
+        serde_yaml_ng::from_str(yaml).expect("page should parse")
+    }
+
+    #[test]
+    fn single_group_round_trips_as_mapping() {
+        let page = parse_page("when: { window: kitty, context: claude }\n");
+        let when = page.when.as_ref().unwrap();
+        assert_eq!(when.groups.len(), 1);
+        let out = serde_yaml_ng::to_string(&page).unwrap();
+        // A lone group serializes back as a mapping, not a list.
+        assert!(out.contains("when:"));
+        assert!(!out.trim_start().starts_with("when:\n-"));
+        let reparsed = parse_page(&out);
+        assert_eq!(reparsed.when.as_ref().unwrap().groups.len(), 1);
+    }
+
+    #[test]
+    fn value_list_is_or() {
+        let page = parse_page("when: { window: [kitty, konsole] }\n");
+        let when = page.when.as_ref().unwrap();
+        let val = when.groups[0].get("window").unwrap();
+        assert!(val.any(|v| v == "konsole"));
+        assert!(!val.any(|v| v == "firefox"));
+    }
+
+    #[test]
+    fn group_list_is_or_of_ands() {
+        let page = parse_page(
+            "when:\n  - { window: konsole, context: mc }\n  - { window: kitty, context: claude }\n",
+        );
+        let when = page.when.as_ref().unwrap();
+        assert_eq!(when.groups.len(), 2);
+        // Round-trips back to a list of two groups.
+        let out = serde_yaml_ng::to_string(&page).unwrap();
+        let reparsed = parse_page(&out);
+        assert_eq!(reparsed.when.as_ref().unwrap().groups.len(), 2);
+    }
+
+    #[test]
+    fn matches_dnf_semantics() {
+        // (konsole AND mc) OR (kitty AND claude)
+        let page = parse_page(
+            "when:\n  - { window: konsole, context: mc }\n  - { window: kitty, context: claude }\n",
+        );
+        let when = page.when.as_ref().unwrap();
+        // kitty + claude matches the second group.
+        assert!(when.matches(|k, v| match k {
+            "window" => v == "kitty",
+            _ => v == "claude",
+        }));
+        // konsole + claude matches neither group.
+        assert!(!when.matches(|k, v| match k {
+            "window" => v == "konsole",
+            _ => v == "claude",
+        }));
+    }
+
+    #[test]
+    fn legacy_window_name_migrates_to_when() {
+        let mut conf: KeyDeckConf =
+            serde_yaml_ng::from_str("pages:\n  Foo:\n    window_name: firefox\n").unwrap();
+        conf.migrate_legacy_window_name();
+        let page = &conf.page_groups["pages"].pages["Foo"];
+        assert!(page.window_name.is_none());
+        let when = page.when.as_ref().unwrap();
+        assert_eq!(when.groups.len(), 1);
+        assert!(when.groups[0].get("window").unwrap().any(|v| v == "firefox"));
+        // Serializes as `when`, never as legacy `window_name`.
+        let out = serde_yaml_ng::to_string(&conf).unwrap();
+        assert!(out.contains("when:"));
+        assert!(!out.contains("window_name"));
+    }
+
+    #[test]
+    fn explicit_when_wins_over_legacy() {
+        let mut page = parse_page("window_name: firefox\nwhen: { window: kitty }\n");
+        // migration is a no-op when `when` already present
+        if let Some(name) = page.window_name.take() {
+            if page.when.is_none() {
+                page.when = Some(When::window(name));
+            }
+        }
+        assert!(page.when.unwrap().groups[0]
+            .get("window")
+            .unwrap()
+            .any(|v| v == "kitty"));
+    }
 }

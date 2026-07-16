@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Panayotis Katsaloulis
 
+use crate::context::{new_context_vars, ContextVars};
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
 use crate::listener_device::listener_device;
@@ -40,6 +41,7 @@ fn initialize_device(
     conf_services: &Arc<Option<IndexMap<String, ServiceConfig>>>,
     services_state: &crate::services::ServicesState,
     services_active: &Arc<AtomicBool>,
+    context_vars: &ContextVars,
     icon_dir: Option<&String>,
     tx: &std::sync::mpsc::Sender<DeviceEvent>,
     time_manager: &Arc<TimeManager>,
@@ -84,6 +86,7 @@ fn initialize_device(
             conf_services.clone(),
             services_state.clone(),
             services_active.clone(),
+            context_vars.clone(),
             Box::new(device),
             tx,
             time_manager.clone(),
@@ -99,6 +102,9 @@ fn initialize_device(
 pub fn start_server() {
     ensure_lock();
     info_log!("Starting KeyDeck Server");
+
+    // Keep any installed terminal integration's watcher in sync with this binary.
+    crate::integrations::refresh_installed();
 
     // Configuration - now reloadable via SIGHUP using Arc
     let conf = Arc::new(KeyDeckConfLoader::load());
@@ -126,10 +132,15 @@ pub fn start_server() {
     let mut services_state = new_services_state();
     let mut services_active = Arc::new(AtomicBool::new(true));
 
+    // External context variables (set via `keydeck --set`). Independent of the config
+    // file, so it is created once and survives reloads.
+    let context_vars: ContextVars = new_context_vars();
+
     platform::spawn_sleep_listener(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
     platform::spawn_focus_listener(&tx, &still_active.clone());
     platform::spawn_control_listener(&tx, &still_active.clone());
+    platform::spawn_context_listener(&tx, &still_active.clone());
     listener_tick(&tx, &still_active.clone(), conf_tick_time.clone());
 
     // The event loop is wrapped in a closure so that, on macOS, it can run on a
@@ -222,6 +233,25 @@ pub fn start_server() {
                     device.focus_changed(&current_class, &current_title, false);
                 }
             }
+            DeviceEvent::SetContextVar { key, value } => {
+                {
+                    let mut vars = context_vars.write().unwrap();
+                    match value {
+                        Some(v) => {
+                            verbose_log!("Context variable {}={}", key, v);
+                            vars.insert(key, v);
+                        }
+                        None => {
+                            verbose_log!("Context variable {} cleared", key);
+                            vars.shift_remove(&key);
+                        }
+                    }
+                }
+                // Re-evaluate page matching against the new context (same fan-out as focus).
+                for device in devices.values() {
+                    device.focus_changed(&current_class, &current_title, false);
+                }
+            }
             ref message @ DeviceEvent::Tick => {
                 // Dispatch wait event first
                 dispatch_wait_event(message, &devices);
@@ -254,6 +284,7 @@ pub fn start_server() {
                         &conf_services,
                         &services_state,
                         &services_active,
+                        &context_vars,
                         icon_dir.as_ref(),
                         &tx,
                         &time_manager,
@@ -278,12 +309,21 @@ pub fn start_server() {
             DeviceEvent::Reload => {
                 info_log!("Reloading Configuration (SIGHUP received)");
 
+                // Load the new configuration BEFORE disrupting anything. An invalid
+                // config must not kill a running daemon, so on error we log it and
+                // keep the current in-memory configuration untouched.
+                info_log!("Reloading configuration from file...");
+                let new_conf = match KeyDeckConfLoader::try_load() {
+                    Ok(conf) => Arc::new(conf),
+                    Err(e) => {
+                        error_log!("Failed to reload configuration; keeping the running configuration:");
+                        error_log!("{}", e);
+                        continue;
+                    }
+                };
+
                 // Stop old services (but keep devices running)
                 services_active.store(false, std::sync::atomic::Ordering::Relaxed);
-
-                // Reload configuration from file
-                info_log!("Reloading configuration from file...");
-                let new_conf = Arc::new(KeyDeckConfLoader::load());
                 conf_pages = Arc::new(new_conf.page_groups.clone());
                 conf_colors = Arc::new(new_conf.colors.clone());
                 conf_buttons = Arc::new(new_conf.buttons.clone());

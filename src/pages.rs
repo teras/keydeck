@@ -108,79 +108,92 @@ impl KeyDeckConfLoader {
         Ok((merged_buttons, merged_on_tick, merged_lock, merged_encoders))
     }
 
+    /// Load and fully resolve the configuration, exiting the process on any error.
+    ///
+    /// Use this only for the initial startup load, where an invalid config means
+    /// the daemon has nothing to run. For live reloads (SIGHUP) use [`try_load`],
+    /// which reports the error instead of killing a running daemon.
+    ///
+    /// [`try_load`]: Self::try_load
     pub fn load() -> KeyDeckConf {
+        Self::try_load().unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        })
+    }
+
+    /// Load and fully resolve the configuration, returning a descriptive error
+    /// string instead of terminating the process. The error is a ready-to-print,
+    /// possibly multi-line message.
+    pub fn try_load() -> Result<KeyDeckConf, String> {
         let path = get_default_config_path();
 
         // Check if file exists, create empty file if not
         if !path.exists() {
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).unwrap_or_else(|e| {
-                    eprintln!(
-                        "Error: Failed to create config directory at {}",
-                        parent.display()
-                    );
-                    eprintln!("Reason: {}", e);
-                    std::process::exit(1);
-                });
+                fs::create_dir_all(parent).map_err(|e| {
+                    format!(
+                        "Error: Failed to create config directory at {}\nReason: {}",
+                        parent.display(),
+                        e
+                    )
+                })?;
             }
-            fs::write(&path, "").unwrap_or_else(|e| {
-                eprintln!(
-                    "Error: Failed to create empty config file at {}",
-                    path.display()
-                );
-                eprintln!("Reason: {}", e);
-                std::process::exit(1);
-            });
+            fs::write(&path, "").map_err(|e| {
+                format!(
+                    "Error: Failed to create empty config file at {}\nReason: {}",
+                    path.display(),
+                    e
+                )
+            })?;
         }
 
-        let data = fs::read_to_string(&path).unwrap_or_else(|e| {
-            eprintln!("Error: Failed to read config file at {}", path.display());
-            eprintln!("Reason: {}", e);
-            eprintln!("\nPlease create a config file at ~/.config/keydeck/config.yaml");
-            eprintln!("See the documentation for configuration format.");
-            std::process::exit(1);
-        });
+        let data = fs::read_to_string(&path).map_err(|e| {
+            format!(
+                "Error: Failed to read config file at {}\nReason: {}\n\nPlease create a config file at ~/.config/keydeck/config.yaml\nSee the documentation for configuration format.",
+                path.display(),
+                e
+            )
+        })?;
 
         // If the file is empty, use default config
         let mut conf: KeyDeckConf = if data.trim().is_empty() {
             KeyDeckConf::default()
         } else {
             let deserializer = serde_yaml_ng::Deserializer::from_str(&data);
-            serde_path_to_error::deserialize(deserializer).unwrap_or_else(|e| {
-                eprintln!("Error parsing config file: {}", path.display());
-                eprintln!();
-                eprintln!("Path: {}", e.path());
-                eprintln!("{}", e.into_inner());
-                std::process::exit(1);
-            })
+            serde_path_to_error::deserialize(deserializer).map_err(|e| {
+                let err_path = e.path().to_string();
+                format!(
+                    "Error parsing config file: {}\n\nPath: {}\n{}",
+                    path.display(),
+                    err_path,
+                    e.into_inner()
+                )
+            })?
         };
 
         // Validate tick_time is within range (1-60 seconds)
         if conf.tick_time < 1.0 || conf.tick_time > 60.0 {
-            eprintln!("Error: tick_time must be between 1 and 60 seconds");
-            eprintln!("Current value: {}", conf.tick_time);
-            eprintln!("\nPlease update your config file at {}", path.display());
-            std::process::exit(1);
+            return Err(format!(
+                "Error: tick_time must be between 1 and 60 seconds\nCurrent value: {}\n\nPlease update your config file at {}",
+                conf.tick_time,
+                path.display()
+            ));
         }
 
-        // Validate that templates don't have window_name (only valid for pages)
+        // Upgrade legacy `window_name` into the unified `when` structure.
+        conf.migrate_legacy_window_name();
+
+        // Validate that templates don't have auto-switch conditions (only valid for pages)
         if let Some(templates) = &conf.templates {
             for (template_name, template) in templates {
-                if template.window_name.is_some() {
-                    eprintln!(
-                        "Error: Template '{}' has 'window_name' field",
-                        template_name
-                    );
-                    eprintln!("The 'window_name' field is only valid in pages, not templates.");
-                    eprintln!(
-                        "Templates are never directly displayed, so window matching doesn't apply."
-                    );
-                    eprintln!(
-                        "\nPlease remove the 'window_name' field from template '{}'",
-                        template_name
-                    );
-                    eprintln!("Config file: {}", path.display());
-                    std::process::exit(1);
+                if template.when.is_some() {
+                    return Err(format!(
+                        "Error: Template '{}' has a 'when' (or legacy 'window_name') field\nAuto-switch conditions are only valid in pages, not templates.\nTemplates are never directly displayed, so window/context matching doesn't apply.\n\nPlease remove the 'when'/'window_name' field from template '{}'\nConfig file: {}",
+                        template_name,
+                        template_name,
+                        path.display()
+                    ));
                 }
             }
         }
@@ -222,14 +235,10 @@ impl KeyDeckConfLoader {
                                 }
                             }
                             Err(e) => {
-                                eprintln!(
-                                    "Error resolving templates for page '{}': {}",
+                                return Err(format!(
+                                    "Error resolving templates for page '{}': {}\n\nPlease check your template inheritance configuration.",
                                     page_name, e
-                                );
-                                eprintln!(
-                                    "\nPlease check your template inheritance configuration."
-                                );
-                                std::process::exit(1);
+                                ));
                             }
                         }
                     }
@@ -240,6 +249,6 @@ impl KeyDeckConfLoader {
         // Compute dynamic flags for all buttons after template resolution
         crate::dynamic_detection::compute_all_dynamic_flags(&mut conf);
 
-        conf
+        Ok(conf)
     }
 }
