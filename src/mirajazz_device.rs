@@ -127,56 +127,60 @@ impl MirajazzDevice {
         self.enabled
     }
 
-    fn get_device(&self) -> Arc<Device> {
-        self.device
-            .borrow_mut()
-            .get_or_insert_with(|| {
-                {
-                    let mut device = Device::connect_with_report_id(
-                        &self.hid_api,
-                        self.vid,
-                        self.pid,
-                        &self.serial,
-                        self.device_def.protocol.protocol_version,
-                        self.device_def.protocol.protocol_version > 2, // supports_both_states
-                        self.device_def.layout.key_count(),
-                        self.device_def.layout.encoder_count,
-                        self.device_def.protocol.report_id.unwrap_or(0x00),
-                    )
-                    .unwrap_or_else(|e| {
-                        error_log!(
-                            "Failed to connect to Mirajazz device '{}': {}",
-                            self.serial,
-                            e
-                        );
-                        error_log!("This may be due to:");
-                        error_log!("  - Device was unplugged");
-                        error_log!("  - Insufficient USB permissions");
-                        error_log!("  - Device busy/in use by another process");
-                        panic!("Cannot continue without device connection");
-                    });
+    fn get_device(&self) -> Result<Arc<Device>, DeviceError> {
+        if let Some(device) = self.device.borrow().clone() {
+            return Ok(device);
+        }
 
-                    // Apply encoder toggle quirk
-                    if self.device_def.quirks.force_encoder_toggle {
-                        device = device.with_supports_both_encoder_states(false);
-                    }
+        let mut device = Device::connect_with_report_id(
+            &self.hid_api,
+            self.vid,
+            self.pid,
+            &self.serial,
+            self.device_def.protocol.protocol_version,
+            self.device_def.protocol.protocol_version > 2, // supports_both_states
+            self.device_def.layout.key_count(),
+            self.device_def.layout.encoder_count,
+            self.device_def.protocol.report_id.unwrap_or(0x00),
+        )
+        .map_err(|e| {
+            error_log!(
+                "Failed to connect to Mirajazz device '{}': {}",
+                self.serial,
+                e
+            );
+            error_log!("This may be due to:");
+            error_log!("  - Device was unplugged");
+            error_log!("  - Insufficient USB permissions (check udev rules / uaccess)");
+            error_log!("  - Device busy/in use by another process");
+            DeviceError::ConnectionFailed(format!(
+                "could not open Mirajazz device '{}': {}",
+                self.serial, e
+            ))
+        })?;
 
-                    // Set device mode for multimodal devices
-                    if let Some(mode) = self.device_def.protocol.device_mode {
-                        device.set_mode(mode).unwrap_or_else(|e| {
-                            error_log!("Failed to set device mode {}: {}", mode, e);
-                        });
-                    }
+        // Apply encoder toggle quirk
+        if self.device_def.quirks.force_encoder_toggle {
+            device = device.with_supports_both_encoder_states(false);
+        }
 
-                    Arc::new(device)
-                }
-            })
-            .clone()
+        // Set device mode for multimodal devices
+        if let Some(mode) = self.device_def.protocol.device_mode {
+            device.set_mode(mode).unwrap_or_else(|e| {
+                error_log!("Failed to set device mode {}: {}", mode, e);
+            });
+        }
+
+        let device = Arc::new(device);
+        *self.device.borrow_mut() = Some(device.clone());
+        Ok(device)
     }
 
     fn get_reader_arc(&self) -> Arc<DeviceStateReader> {
         if self.reader.borrow().is_none() {
-            let device = self.get_device();
+            let device = self
+                .get_device()
+                .expect("device connection required to create input reader");
             *self.reader.borrow_mut() = Some(device.get_reader());
         }
 
@@ -214,14 +218,14 @@ impl MirajazzDevice {
 
 impl KeydeckDevice for MirajazzDevice {
     fn serial_number(&self) -> Result<String, DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         device
             .serial_number()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to get serial number: {}", e)))
     }
 
     fn firmware_version(&self) -> Result<String, DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         device.firmware_version().map_err(|e| {
             DeviceError::LibraryError(format!("Failed to get firmware version: {}", e))
         })
@@ -266,7 +270,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn reset(&self) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!(
             "Resetting device '{}' (set brightness 100% and clear all images)",
             self.serial
@@ -277,7 +281,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn set_brightness(&self, brightness: u8) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!(
             "Setting brightness {} on device '{}'",
             brightness,
@@ -289,7 +293,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn set_button_image(&self, button_idx: u8, image: DynamicImage) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         let mapped_idx = self.map_button_index(button_idx);
         let format = self.get_image_format_for_button(mapped_idx);
 
@@ -304,7 +308,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn clear_button_image(&self, button_idx: u8) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         let mapped_idx = self.map_button_index(button_idx);
 
         verbose_log!(
@@ -318,7 +322,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn clear_all_button_images(&self) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Cleared all button images on device '{}'", self.serial);
         device.clear_all_button_images().map_err(|e| {
             DeviceError::LibraryError(format!("Failed to clear all button images: {}", e))
@@ -326,7 +330,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn flush(&self) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Flushing device '{}'", self.serial);
         device
             .flush()
@@ -334,7 +338,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn sleep(&self) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Putting device '{}' to sleep", self.serial);
         device
             .sleep()
@@ -342,7 +346,9 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn keep_alive(&self) {
-        let device = self.get_device();
+        let Ok(device) = self.get_device() else {
+            return; // Ignore connection errors for keep_alive
+        };
         verbose_log!("Sending keep-alive to device '{}'", self.serial);
         let _ = device.keep_alive(); // Ignore errors for keep_alive
     }
@@ -364,7 +370,7 @@ impl KeydeckDevice for MirajazzDevice {
     fn set_background_image(&self, image: DynamicImage) -> Result<(), DeviceError> {
         if self.device_def.background.is_none() { return Ok(()); }
         let (image_data, bg_config) = self.convert_background_image(image)?;
-        let device = self.get_device();
+        let device = self.get_device()?;
         let w = bg_config.resolution[0];
         let h = bg_config.resolution[1];
         verbose_log!(
@@ -377,7 +383,7 @@ impl KeydeckDevice for MirajazzDevice {
 
     fn clear_background_image(&self) -> Result<(), DeviceError> {
         if self.device_def.background.is_none() { return Ok(()); }
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Clearing background image (BGCLE) on device '{}'", self.serial);
         device.clear_background_image(0x03)
             .map_err(|e| DeviceError::LibraryError(format!("Failed to send BGCLE: {}", e)))
@@ -386,7 +392,7 @@ impl KeydeckDevice for MirajazzDevice {
     fn set_boot_logo(&self, image: DynamicImage) -> Result<(), DeviceError> {
         if self.device_def.background.is_none() { return Ok(()); }
         let (image_data, bg_config) = self.convert_background_image(image)?;
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!(
             "Setting boot logo (LOG) on device '{}' ({}x{}, {} bytes)",
             self.serial, bg_config.resolution[0], bg_config.resolution[1], image_data.len()
@@ -396,7 +402,7 @@ impl KeydeckDevice for MirajazzDevice {
     }
 
     fn shutdown(&self) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Shutting down device '{}'", self.serial);
         device
             .shutdown()
@@ -409,7 +415,7 @@ impl KeydeckDevice for MirajazzDevice {
 
     fn set_led_brightness(&self, brightness: u8) -> Result<(), DeviceError> {
         if self.device_def.led.is_none() { return Ok(()); }
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Setting LED brightness {} on device '{}'", brightness, self.serial);
         device.set_led_brightness(brightness)
             .map_err(|e| DeviceError::LibraryError(format!("Failed to set LED brightness: {}", e)))
@@ -417,7 +423,7 @@ impl KeydeckDevice for MirajazzDevice {
 
     fn set_led_color(&self, colors: &[(u8, u8, u8)]) -> Result<(), DeviceError> {
         if self.device_def.led.is_none() { return Ok(()); }
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Setting LED colors ({} LEDs) on device '{}'", colors.len(), self.serial);
         device.set_led_color(colors)
             .map_err(|e| DeviceError::LibraryError(format!("Failed to set LED color: {}", e)))
@@ -425,14 +431,14 @@ impl KeydeckDevice for MirajazzDevice {
 
     fn reset_led_color(&self) -> Result<(), DeviceError> {
         if self.device_def.led.is_none() { return Ok(()); }
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Resetting LED colors on device '{}'", self.serial);
         device.reset_led_color()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to reset LED color: {}", e)))
     }
 
     fn wakeup(&self) -> Result<(), DeviceError> {
-        let device = self.get_device();
+        let device = self.get_device()?;
         verbose_log!("Waking up device '{}'", self.serial);
         device.wakeup()
             .map_err(|e| DeviceError::LibraryError(format!("Failed to wake up device: {}", e)))
