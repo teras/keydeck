@@ -291,37 +291,15 @@
 
       if (lastConfigSnapshot === undefined) {
         // First load - just save snapshot, don't mark as changed
-        console.log('Initial snapshot set');
         lastConfigSnapshot = currentSnapshot;
       } else {
         // Check if current state matches the saved state
-        const hasChanges = currentSnapshot !== lastConfigSnapshot;
-
-        if (hasChanges !== $hasUnsavedChanges) {
-          console.log('Unsaved changes state changed:', hasChanges);
-          if (hasChanges) {
-            console.log('Current config:', currentSnapshot.substring(0, 500));
-            console.log('Saved config:', lastConfigSnapshot.substring(0, 500));
-
-            // Find where they differ
-            for (let i = 0; i < Math.min(currentSnapshot.length, lastConfigSnapshot.length); i++) {
-              if (currentSnapshot[i] !== lastConfigSnapshot[i]) {
-                console.log('First difference at position', i);
-                console.log('Context:', currentSnapshot.substring(Math.max(0, i - 50), i + 100));
-                console.log('vs:', lastConfigSnapshot.substring(Math.max(0, i - 50), i + 100));
-                break;
-              }
-            }
-          }
-        }
-
-        $hasUnsavedChanges = hasChanges;
+        $hasUnsavedChanges = currentSnapshot !== lastConfigSnapshot;
       }
     }
   });
 
   function handleDeviceSelected(device: DeviceInfo | null) {
-    console.log("Device selected:", device);
     selectedDevice = device;
   }
 

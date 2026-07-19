@@ -35,7 +35,7 @@ show_help() {
     echo "  app     - Build both daemon and UI binaries"
     echo "  daemon  - Build only keydeck daemon (CLI) binary"
     echo "  ui      - Build only keydeck-config UI binary"
-    echo "  install - Stop service, copy binaries to ~/Works/System/bin, and restart service"
+    echo "  install - Stop service, copy binaries to ~/.local/bin, and restart service"
     echo "  clean   - Remove all build artifacts and return to fresh state"
     echo "  check   - Check for missing license headers in source files"
     echo "  help    - Show this help message"
@@ -135,7 +135,7 @@ if [ "$1" = "install" ]; then
     echo "======================================"
     echo ""
 
-    INSTALL_DIR="$HOME/Works/System/bin"
+    INSTALL_DIR="$HOME/.local/bin"
     KEYDECK_BIN="$DIST_DIR/keydeck"
     KEYDECK_CONFIG_BIN="$DIST_DIR/keydeck-config"
 

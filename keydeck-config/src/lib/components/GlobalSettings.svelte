@@ -48,6 +48,24 @@
 
   onMount(refreshKittyStatus);
 
+  // Terminal integrations are Linux-only (kitty watcher / konsole D-Bus + KWin), so
+  // the whole section is hidden elsewhere. The config fields still round-trip so a
+  // config authored on Linux stays portable to macOS/Windows.
+  let hostOs = $state<string>('');
+  onMount(async () => {
+    try {
+      hostOs = await invoke<string>('host_os');
+    } catch {
+      hostOs = '';
+    }
+  });
+
+  // konsole awareness is a plain config flag (not a file-installing integration like
+  // kitty), so it just toggles `config.konsole_context` and takes effect on save/reload.
+  function toggleKonsole() {
+    config.konsole_context = !config.konsole_context;
+  }
+
   function updateTickTime(value: string) {
     const num = parseFloat(value);
     if (num >= 1 && num <= 60) {
@@ -308,6 +326,7 @@
       <p class="help">Runtime background displayed behind buttons on supported devices</p>
     </div>
 
+    {#if hostOs === 'linux'}
     <div class="section">
       <h4>Integrations</h4>
       <div class="integration-row">
@@ -332,7 +351,27 @@
       {#if kittyError}
         <p class="kitty-error">{kittyError}</p>
       {/if}
+
+      <div class="integration-row">
+        <div class="integration-info">
+          <span class="integration-name">Terminal awareness (konsole)</span>
+        </div>
+        <button
+          class="toggle"
+          class:on={!!config.konsole_context}
+          onclick={toggleKonsole}
+          role="switch"
+          aria-checked={!!config.konsole_context}
+          title={config.konsole_context ? 'Click to disable' : 'Click to enable'}
+        >
+          <span class="knob"></span>
+        </button>
+      </div>
+      {#if config.konsole_context}
+        <p class="help kitty-hint">✓ Enabled — reports the focused konsole tab's program (KDE/Wayland).</p>
+      {/if}
     </div>
+    {/if}
 
     <div class="section">
     <div class="color-header">

@@ -7,7 +7,7 @@
   import TriStateCheckbox from './TriStateCheckbox.svelte';
   import DrawConfigEditor from './DrawConfigEditor.svelte';
   import TextAutocomplete from './TextAutocomplete.svelte';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import { onMount, onDestroy } from 'svelte';
   import { ask, message } from '@tauri-apps/plugin-dialog';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -32,7 +32,7 @@
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
 
-  let availableIcons = $state<{filename: string; data_url: string}[]>([]);
+  let availableIcons = $state<{filename: string; path: string}[]>([]);
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
   let openActionIndex = $state<number>(-1);
@@ -255,7 +255,7 @@
   // Load available icons from hard-coded image directory
   async function loadIcons() {
     try {
-      const icons = await invoke<{filename: string; data_url: string}[]>('list_icons');
+      const icons = await invoke<{filename: string; path: string}[]>('list_icons');
       availableIcons = icons || [];
     } catch (e) {
       console.error('Failed to load icons:', e);
@@ -378,11 +378,11 @@
   });
 
 
-  // Get icon data URL by filename from availableIcons
+  // Resolve an icon filename to an asset-protocol URL for <img src>
   function getIconDataUrl(filename: string): string {
     if (!filename) return '';
     const icon = availableIcons.find(i => i.filename === filename);
-    return icon?.data_url || '';
+    return icon ? convertFileSrc(icon.path) : '';
   }
 
   function selectIcon(iconFilename: string) {
@@ -1355,7 +1355,7 @@
                   class:selected={getDetailedConfig()?.icon === icon.filename}
                   onclick={() => selectIcon(icon.filename)}
                 >
-                  <img src={icon.data_url} alt="" class="icon-thumb" />
+                  <img src={convertFileSrc(icon.path)} alt="" class="icon-thumb" />
                   <span>{icon.filename}</span>
                 </button>
               {/each}

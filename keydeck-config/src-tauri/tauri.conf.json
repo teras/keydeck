@@ -10,6 +10,12 @@
     "frontendDist": "../build"
   },
   "app": {
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$CONFIG/keydeck/icons/**"]
+      }
+    },
     "windows": [
       {
         "label": "splashscreen",

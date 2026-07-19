@@ -4,6 +4,7 @@
 use crate::context::{new_context_vars, ContextVars};
 use crate::device_manager::find_device_by_serial;
 use crate::event::DeviceEvent;
+use crate::konsole::KonsoleResolver;
 use crate::listener_device::listener_device;
 use crate::listener_tick::listener_tick;
 use crate::platform;
@@ -136,6 +137,17 @@ pub fn start_server() {
     // file, so it is created once and survives reloads.
     let context_vars: ContextVars = new_context_vars();
 
+    // Konsole terminal-context resolver. Triggered on konsole focus/caption events;
+    // publishes `context`/`git` like the kitty watcher. Idle (and thread-lazy) unless
+    // `konsole_context` is on. A no-op stub on non-Linux platforms.
+    let mut conf_konsole_context = conf.konsole_context;
+    let konsole = KonsoleResolver::spawn(
+        tx.clone(),
+        conf.konsole_apps
+            .clone()
+            .unwrap_or_else(crate::konsole::default_apps),
+    );
+
     platform::spawn_sleep_listener(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
     platform::spawn_focus_listener(&tx, &still_active.clone());
@@ -231,6 +243,11 @@ pub fn start_server() {
                 // Then handle normal focus change
                 for device in devices.values() {
                     device.focus_changed(&current_class, &current_title, false);
+                }
+                // Konsole context tracking reuses the same focus/caption stream: on a
+                // konsole focus event, ask it (over D-Bus) which tab/program is active.
+                if conf_konsole_context && class.to_lowercase().contains("konsole") {
+                    konsole.trigger();
                 }
             }
             DeviceEvent::SetContextVar { key, value } => {
@@ -332,6 +349,13 @@ pub fn start_server() {
                 // icon_dir remains hard-coded - no need to update
                 conf_brightness = new_conf.brightness;
                 conf_background_image = new_conf.background_image.clone();
+                conf_konsole_context = new_conf.konsole_context;
+                konsole.set_apps(
+                    new_conf
+                        .konsole_apps
+                        .clone()
+                        .unwrap_or_else(crate::konsole::default_apps),
+                );
 
                 // Update tick_time in the mutex (will be used in next tick cycle)
                 *conf_tick_time.lock().unwrap() = new_conf.tick_time;

@@ -16,20 +16,23 @@ Event-driven, mirroring kitty's layout_switch.py convention:
   * on_cmd_startstop  — launching/exiting a program in the focused window
                         (requires kitty shell integration; ignored if unavailable)
   * on_title_change   — catches in-place launches: an app sets its title once it is
-                        up and visible in /proc, so the tree read is accurate then
+                        up and in the foreground, so the /proc read is accurate then
 
-Detection walks the process tree under the shell breadth-first (outermost first)
-and returns the first program of interest it meets. So for a chain
-kitty -> fish -> mc -> claude, `mc` wins (it is the outer/containing program),
-even though claude runs underneath. Order of APPS does not matter; tree depth
-decides. Extend APPS with your own programs of interest.
+Detection reports the terminal's foreground program — the process group in the
+foreground of the shell's controlling terminal (tpgid). So for a chain
+kitty -> fish -> mc -> claude, `claude` wins (it is what you are interacting
+with); a Ctrl-Z'd background job does not count. This matches the konsole
+integration, which reads the same foreground process. Only programs listed in
+APPS are reported; extend it with your own.
 """
 
 import os
 import subprocess
 
-# Programs of interest inside a terminal (a set; tree depth decides the winner).
-APPS = {"claude", "mc"}
+# Programs of interest inside a terminal: only these are reported as `context`
+# (anything else, including the bare shell, reports empty). Kept in sync with the
+# konsole integration's default set; extend with your own.
+APPS = {"claude", "codex", "opencode", "mc"}
 
 
 def _proc_name(pid):
@@ -44,29 +47,23 @@ def _proc_name(pid):
     return ""
 
 
-def _children(pid):
+def _foreground_pid(shell_pid):
+    """Foreground process-group leader on the shell's controlling terminal (tpgid) —
+    the program you are actually interacting with. Ignores Ctrl-Z'd background jobs
+    and matches what konsole's foregroundProcessId returns. Falls back to the shell."""
     try:
-        with open("/proc/%d/task/%d/children" % (pid, pid)) as f:
-            return [int(x) for x in f.read().split()]
-    except (OSError, ValueError):
-        return []
-
-
-def _tree_names(root_pid):
-    """Process names under root_pid, breadth-first (outermost first)."""
-    names = []
-    queue = _children(root_pid)
-    seen = set()
-    while queue:
-        pid = queue.pop(0)
-        if pid in seen:
-            continue
-        seen.add(pid)
-        name = _proc_name(pid)
-        if name:
-            names.append(name)
-        queue.extend(_children(pid))
-    return names
+        with open("/proc/%d/stat" % shell_pid) as f:
+            data = f.read()
+        # comm (field 2) is parenthesised and may contain spaces or ')', so split
+        # after the last ')' to keep the remaining field offsets stable:
+        # state ppid pgrp session tty_nr tpgid ...
+        after = data[data.rfind(")") + 1:].split()
+        tpgid = int(after[5])
+        if tpgid > 0:
+            return tpgid
+    except (OSError, ValueError, IndexError):
+        pass
+    return shell_pid
 
 
 def _shell_pid(window):
@@ -83,14 +80,11 @@ def _cwd(pid):
         return ""
 
 
-def _detect_context(names) -> str:
-    # Outermost program of interest wins. Only known APPS are reported — the shell
-    # runs many transient helpers (git/date/… for its prompt) that fire cmd events;
+def _detect_context(name) -> str:
+    # Only known APPS are reported. At the bare shell the foreground program is the
+    # shell itself (and transient prompt helpers like git/date flit through it);
     # reporting those would make the context flicker, so anything not in APPS = "".
-    for name in names:
-        if name in APPS:
-            return name
-    return ""
+    return name if name in APPS else ""
 
 
 def _is_git_repo(cwd: str) -> bool:
@@ -121,9 +115,9 @@ def _push(window) -> None:
     pid = _shell_pid(window)
     if pid is None:
         return
-    names = _tree_names(pid)
-    ctx = _detect_context(names)
-    git = "1" if _is_git_repo(_cwd(pid)) else ""
+    fg = _foreground_pid(pid)
+    ctx = _detect_context(_proc_name(fg))
+    git = "1" if _is_git_repo(_cwd(fg)) else ""
     if ctx != _last["context"]:
         _last["context"] = ctx
         _set("context", ctx)

@@ -9,7 +9,7 @@ use tauri::{Emitter, Manager};
 #[derive(Debug, Serialize, Deserialize)]
 struct IconInfo {
     filename: String,
-    data_url: String,
+    path: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -294,8 +294,13 @@ fn run_daemon(verb: &str) -> Result<(), String> {
 }
 
 /// Check if keydeck daemon is running (delegates to `keydeck --daemon status`)
+///
+/// Async + `spawn_blocking` on purpose: this is polled every few seconds, and
+/// `query_daemon_status` spawns a `keydeck --daemon status` subprocess that can
+/// occasionally stall (e.g. the daemon busy holding its lock). Running it inline
+/// as a sync command would block the WebKitGTK main thread and freeze the UI.
 #[tauri::command]
-fn check_daemon_status() -> DaemonStatus {
+async fn check_daemon_status() -> DaemonStatus {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let timestamp = SystemTime::now()
@@ -303,13 +308,13 @@ fn check_daemon_status() -> DaemonStatus {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
-    match query_daemon_status() {
-        Ok(s) => DaemonStatus {
+    match tokio::task::spawn_blocking(query_daemon_status).await {
+        Ok(Ok(s)) => DaemonStatus {
             running: s.running,
             pid: s.pid.map(|p| p as i32),
             timestamp,
         },
-        Err(_) => DaemonStatus {
+        _ => DaemonStatus {
             running: false,
             pid: None,
             timestamp,
@@ -318,9 +323,17 @@ fn check_daemon_status() -> DaemonStatus {
 }
 
 /// Check if the daemon is registered for autostart (delegates to `keydeck --daemon status`)
+///
+/// Async for the same reason as [`check_daemon_status`]: keep the polled
+/// subprocess off the main thread.
 #[tauri::command]
-fn check_service_enabled() -> bool {
-    query_daemon_status().map(|s| s.enabled).unwrap_or(false)
+async fn check_service_enabled() -> bool {
+    tokio::task::spawn_blocking(query_daemon_status)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|s| s.enabled)
+        .unwrap_or(false)
 }
 
 /// Check if we should show the service prompt (shows for first 3 launches)
@@ -498,6 +511,13 @@ async fn set_integration(name: String, enabled: bool) -> Result<(), String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// Host operating system (`"linux"`, `"macos"`, `"windows"`, …), so the UI can hide
+/// platform-specific options such as the Linux-only terminal integrations.
+#[tauri::command]
+fn host_os() -> String {
+    std::env::consts::OS.to_string()
+}
+
 /// Backup entire config directory to a zip file
 #[tauri::command]
 fn backup_config_directory(path: String) -> Result<(), String> {
@@ -559,15 +579,14 @@ fn list_icons() -> Result<Vec<IconInfo>, String> {
                     if valid_extensions.contains(&ext_str.to_lowercase().as_str()) {
                         if let Some(filename) = path.file_name() {
                             if let Some(filename_str) = filename.to_str() {
-                                // Convert to data URL
-                                if let Ok(data_url) =
-                                    get_icon_data_url(path.to_string_lossy().to_string())
-                                {
-                                    icons.push(IconInfo {
-                                        filename: filename_str.to_string(),
-                                        data_url,
-                                    });
-                                }
+                                // Return the absolute path; the frontend loads it
+                                // via the Tauri asset protocol (convertFileSrc)
+                                // instead of a base64 data URL, avoiding a large
+                                // IPC payload that stalls the webview main thread.
+                                icons.push(IconInfo {
+                                    filename: filename_str.to_string(),
+                                    path: path.to_string_lossy().to_string(),
+                                });
                             }
                         }
                     }
@@ -1289,6 +1308,7 @@ pub fn run() {
             reinstall_daemon_service,
             integration_status,
             set_integration,
+            host_os,
             list_env_vars,
             list_window_classes,
             reload_keydeck,

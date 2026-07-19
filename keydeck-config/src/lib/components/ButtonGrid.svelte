@@ -2,7 +2,8 @@
 <!-- Copyright (C) 2025 Panayotis Katsaloulis -->
 
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+  import { ask } from '@tauri-apps/plugin-dialog';
   import DeviceSelector from './DeviceSelector.svelte';
   import HelperButtons from './HelperButtons.svelte';
   import { processEscapeSequences } from '$lib/utils/escapeChars';
@@ -57,11 +58,11 @@
   let isAltPressed = $state<boolean>(false);
 
   // Load available icons with data URLs
-  let availableIcons = $state<{filename: string; data_url: string}[]>([]);
+  let availableIcons = $state<{filename: string; path: string}[]>([]);
 
   async function loadIcons() {
     try {
-      const icons = await invoke<{filename: string; data_url: string}[]>('list_icons');
+      const icons = await invoke<{filename: string; path: string}[]>('list_icons');
       availableIcons = icons || [];
     } catch (e) {
       console.error('Failed to load icons:', e);
@@ -377,9 +378,9 @@
 
     if (!buttonConfig.icon) return null;
 
-    // Find icon data URL from loaded icons
+    // Resolve the icon file to an asset-protocol URL loaded natively by the webview
     const icon = availableIcons.find(i => i.filename === buttonConfig.icon);
-    return icon?.data_url || null;
+    return icon ? convertFileSrc(icon.path) : null;
   }
 
   function getButtonOutline(index: number): string | null {
@@ -685,16 +686,8 @@
     if (draggedButtonIndex === null) return;
     if (draggedButtonIndex === index) return; // Can't drop on itself
 
-    // Allow dropping on:
-    // 1. Empty buttons (no config at all)
-    // 2. Inherited buttons (no local config, only inherited)
-    // Don't allow dropping on:
-    // 1. Locally configured buttons (would overwrite user's config)
-    // 2. Button def references (these are intentional references, not empty)
-    if (hasConfig(index) && !isInherited(index)) {
-      return; // Don't allow dropping on locally configured buttons or references
-    }
-
+    // Allow dropping on any other button. If the target already has its own
+    // content, handleDrop asks for confirmation before replacing it.
     event.preventDefault();
     event.dataTransfer!.dropEffect = 'copy';
     dropTargetIndex = index;
@@ -706,21 +699,34 @@
     }
   }
 
-  function handleDrop(event: DragEvent, targetIndex: number) {
+  async function handleDrop(event: DragEvent, targetIndex: number) {
     event.preventDefault();
 
-    if (draggedButtonIndex === null) return;
-    if (!hasConfig(draggedButtonIndex)) return;
+    // Capture the source synchronously: dragend fires around now and resets
+    // draggedButtonIndex, which would be null by the time the confirm dialog resolves.
+    const sourceIndex = draggedButtonIndex;
+    if (sourceIndex === null) return;
+    if (sourceIndex === targetIndex) return; // Can't drop on itself
+    if (!hasConfig(sourceIndex)) return;
 
-    // Don't allow dropping on locally configured buttons or button def references
-    if (hasConfig(targetIndex) && !isInherited(targetIndex)) return;
+    // If the target already has its own (non-inherited) content, confirm before
+    // replacing it. Inherited/empty targets are overridden silently, as before.
+    if (hasConfig(targetIndex) && !isInherited(targetIndex)) {
+      const confirmed = await ask(`Button ${targetIndex} already has content. Replace it?`, {
+        title: 'Replace button?',
+        kind: 'warning',
+      });
+      if (!confirmed) {
+        dropTargetIndex = null;
+        draggedButtonIndex = null;
+        return;
+      }
+    }
 
-    // Get the source button config
-    const sourceButtonKey = `button${draggedButtonIndex}`;
     const targetButtonKey = `button${targetIndex}`;
 
     // Get the source config
-    let sourceConfig = getButtonConfig(draggedButtonIndex);
+    let sourceConfig = getButtonConfig(sourceIndex);
     if (!sourceConfig) return;
 
     // Deep clone the config to avoid reference issues

@@ -11,6 +11,7 @@ mod dynamic_params;
 mod elgato_device;
 mod event;
 mod integrations;
+mod konsole;
 mod graphics_renderer;
 mod listener_button;
 #[cfg(unix)]

@@ -73,6 +73,20 @@ pub struct KeyDeckConf {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protected_icons: Option<Vec<String>>,
 
+    /// Enables the konsole terminal-context resolver (Linux/KDE only). When on, the
+    /// daemon asks the focused konsole which program runs in the active tab and
+    /// reports it as the `context`/`git` variables, exactly like the kitty
+    /// integration. Ignored on non-Linux platforms; kept in the file regardless so
+    /// configs stay portable across machines.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub konsole_context: bool,
+
+    /// Programs of interest for the konsole resolver: only these are reported as the
+    /// `context` variable (anything else, including the bare shell, reports empty),
+    /// mirroring the kitty watcher's APPS list. Defaults to a common set when unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub konsole_apps: Option<Vec<String>>,
+
     /// A collection of pages, each group identified by the device serial number. When a
     /// device is connected, the corresponding page group is loaded.
     /// When no specific page group is found, the "default" page group is used.
@@ -256,6 +270,8 @@ impl Default for KeyDeckConf {
             brightness: default_brightness(),
             background_image: None,
             protected_icons: None,
+            konsole_context: false,
+            konsole_apps: None,
             page_groups: IndexMap::new(),
         }
     }
