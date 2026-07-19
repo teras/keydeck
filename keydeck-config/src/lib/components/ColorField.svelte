@@ -8,6 +8,7 @@
     value: string;
     placeholder?: string;
     onUpdate: (value: string) => void;
+    namedColors?: Record<string, string>;
     disabled?: boolean;
     readonly?: boolean;
     reference?: boolean;
@@ -18,6 +19,7 @@
     value,
     placeholder = "0xRRGGBB",
     onUpdate,
+    namedColors,
     disabled = false,
     readonly = false,
     reference = false,
@@ -36,6 +38,7 @@
       {value}
       {placeholder}
       {onUpdate}
+      {namedColors}
       disabled={disabled || readonly}
     />
   </div>

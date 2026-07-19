@@ -32,6 +32,10 @@
   // Compute the display name for the button
   let buttonDisplayName = $derived(customTitle || `Button ${buttonIndex}`);
 
+  // Named colors from the config `colors:` section, so color fields can validate
+  // and preview references (e.g. background: background) the daemon resolves.
+  let namedColors = $derived(config?.colors ?? undefined);
+
   let availableIcons = $state<{filename: string; path: string}[]>([]);
   let showIconDropdown = $state(false);
   let iconSearchFilter = $state("");
@@ -1449,6 +1453,7 @@
       value={getDetailedConfig()?.text_color || ""}
       placeholder="0xRRGGBB"
       onUpdate={updateTextColor}
+      {namedColors}
       readonly={isReadOnly}
       reference={buttonDefReference !== null}
       inherited={inheritedSource !== null}
@@ -1461,6 +1466,7 @@
       value={getDetailedConfig()?.background || ""}
       placeholder="0xRRGGBB"
       onUpdate={updateBackground}
+      {namedColors}
       readonly={isReadOnly}
       reference={buttonDefReference !== null}
       inherited={inheritedSource !== null}
@@ -1473,6 +1479,7 @@
       value={getDetailedConfig()?.outline || ""}
       placeholder="0xRRGGBB"
       onUpdate={updateOutline}
+      {namedColors}
       readonly={isReadOnly}
       reference={buttonDefReference !== null}
       inherited={inheritedSource !== null}

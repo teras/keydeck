@@ -7,10 +7,26 @@
     placeholder?: string;
     onUpdate: (value: string) => void;
     dataColorName?: string;
+    namedColors?: Record<string, string>;
     disabled?: boolean;
   }
 
-  let { value, placeholder = "0xRRGGBB", onUpdate, dataColorName, disabled = false }: Props = $props();
+  let { value, placeholder = "0xRRGGBB", onUpdate, dataColorName, namedColors, disabled = false }: Props = $props();
+
+  // Resolve a named-color reference (e.g. "background") to its concrete value from
+  // the config `colors:` section, following a chain of references. Mirrors the
+  // daemon's string_to_color lookup so the UI treats named colors as valid and can
+  // preview them. Non-references pass through unchanged.
+  function resolveNamedColor(color: string): string {
+    if (!namedColors) return color;
+    let current = color;
+    const seen = new Set<string>();
+    while (namedColors[current] !== undefined && !seen.has(current)) {
+      seen.add(current);
+      current = namedColors[current];
+    }
+    return current;
+  }
 
   function updateColorFromText(newValue: string) {
     if (newValue.startsWith('#')) {
@@ -30,28 +46,32 @@
   function isValidColor(color: string): boolean {
     if (isEmpty(color)) return true; // Empty is considered "valid" (not invalid)
 
+    // A known named-color reference resolves to its hex value; validate that.
+    const resolved = resolveNamedColor(color);
+
     // Check for 0xRRGGBB format (6 hex digits)
-    if (color.startsWith('0x')) {
-      const hex = color.slice(2);
+    if (resolved.startsWith('0x')) {
+      const hex = resolved.slice(2);
       return /^[0-9A-Fa-f]{6}$/.test(hex);
     }
 
     // Check for #RRGGBB format (6 hex digits)
-    if (color.startsWith('#')) {
-      const hex = color.slice(1);
+    if (resolved.startsWith('#')) {
+      const hex = resolved.slice(1);
       return /^[0-9A-Fa-f]{6}$/.test(hex);
     }
 
     // Check for plain RRGGBB format (6 hex digits)
-    return /^[0-9A-Fa-f]{6}$/.test(color);
+    return /^[0-9A-Fa-f]{6}$/.test(resolved);
   }
 
   function colorToHex(color: string): string {
     if (!color) return '#888888';
-    if (color.startsWith('0x')) {
-      return '#' + color.slice(2);
+    const resolved = resolveNamedColor(color);
+    if (resolved.startsWith('0x')) {
+      return '#' + resolved.slice(2);
     }
-    return color.startsWith('#') ? color : '#' + color;
+    return resolved.startsWith('#') ? resolved : '#' + resolved;
   }
 </script>
 
