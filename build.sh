@@ -35,7 +35,7 @@ show_help() {
     echo "  app     - Build both daemon and UI binaries"
     echo "  daemon  - Build only keydeck daemon (CLI) binary"
     echo "  ui      - Build only keydeck-config UI binary"
-    echo "  install - Stop service, copy binaries to ~/.local/bin, and restart service"
+    echo "  install - Stop service, install binaries into the ~/Works/System/bin pool, and restart service"
     echo "  clean   - Remove all build artifacts and return to fresh state"
     echo "  check   - Check for missing license headers in source files"
     echo "  help    - Show this help message"
@@ -135,7 +135,8 @@ if [ "$1" = "install" ]; then
     echo "======================================"
     echo ""
 
-    INSTALL_DIR="$HOME/.local/bin"
+    POOL="$HOME/Works/System/bin"
+    PLATFORM="$POOL/linux-x86_64"
     KEYDECK_BIN="$DIST_DIR/keydeck"
     KEYDECK_CONFIG_BIN="$DIST_DIR/keydeck-config"
 
@@ -152,8 +153,8 @@ if [ "$1" = "install" ]; then
         exit 1
     fi
 
-    # Create install directory if it doesn't exist
-    mkdir -p "$INSTALL_DIR"
+    # Create pool directories if they don't exist
+    mkdir -p "$POOL/all" "$PLATFORM"
 
     echo -e "${BLUE}Stopping keydeck service...${NC}"
     if systemctl --user is-active --quiet keydeck; then
@@ -164,12 +165,18 @@ if [ "$1" = "install" ]; then
     fi
     echo ""
 
-    echo -e "${BLUE}Copying binaries to $INSTALL_DIR...${NC}"
-    cp -v "$KEYDECK_BIN" "$INSTALL_DIR/keydeck"
-    cp -v "$KEYDECK_CONFIG_BIN" "$INSTALL_DIR/keydeck-config"
-    chmod +x "$INSTALL_DIR/keydeck"
-    chmod +x "$INSTALL_DIR/keydeck-config"
-    echo -e "${GREEN}✓ Binaries copied${NC}"
+    # Install into the arch pool: real file in all/<name>.linux, per-arch symlink in linux-x86_64/.
+    # Copy to a temp name then rename so Syncthing never sees a half-written binary.
+    echo -e "${BLUE}Installing binaries into $PLATFORM...${NC}"
+    for pair in "keydeck:$KEYDECK_BIN" "keydeck-config:$KEYDECK_CONFIG_BIN"; do
+        name="${pair%%:*}"; src="${pair#*:}"
+        dest="$POOL/all/$name.linux"
+        cp -f "$src" "$dest.tmp"
+        chmod +x "$dest.tmp"
+        mv -f "$dest.tmp" "$dest"
+        ln -sfn "../all/$name.linux" "$PLATFORM/$name"
+    done
+    echo -e "${GREEN}✓ Binaries installed${NC}"
     echo ""
 
     echo -e "${BLUE}Starting keydeck service...${NC}"
@@ -190,7 +197,7 @@ if [ "$1" = "install" ]; then
     echo -e "======================================${NC}"
     echo ""
     echo -e "${BLUE}Installed binaries:${NC}"
-    ls -lh "$INSTALL_DIR/keydeck" "$INSTALL_DIR/keydeck-config"
+    ls -lh "$PLATFORM/keydeck" "$PLATFORM/keydeck-config"
     echo ""
     echo -e "${BLUE}Service status:${NC}"
     systemctl --user status keydeck --no-pager | head -10
