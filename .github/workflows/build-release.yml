@@ -113,6 +113,14 @@ jobs:
       - name: Build daemon
         run: cargo build --release --bins
 
+      # Tauri's build script requires the sidecar under the target triple even with
+      # --no-bundle, so stage the daemon before building the UI.
+      - name: Stage daemon sidecar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path keydeck-config/src-tauri/binaries | Out-Null
+          Copy-Item target/release/keydeck.exe keydeck-config/src-tauri/binaries/keydeck-x86_64-pc-windows-msvc.exe
+
       - name: Build config UI
         run: |
           cd keydeck-config

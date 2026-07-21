@@ -18,15 +18,16 @@ BIN_DIR="keydeck-config/src-tauri/binaries"
 mkdir -p "$BIN_DIR"
 
 if [ "$TARGET" = "universal-apple-darwin" ]; then
-    cargo build --release --bin keydeck --target x86_64-apple-darwin
-    cargo build --release --bin keydeck --target aarch64-apple-darwin
-    lipo -create \
-        target/x86_64-apple-darwin/release/keydeck \
-        target/aarch64-apple-darwin/release/keydeck \
-        -output "$BIN_DIR/keydeck-$TARGET"
+    # Tauri builds each arch separately for a universal bundle and expects the
+    # sidecar under each arch's own triple, lipo-ing them itself — so stage both
+    # per-arch binaries rather than a pre-merged universal one.
+    for arch in x86_64-apple-darwin aarch64-apple-darwin; do
+        cargo build --release --bin keydeck --target "$arch"
+        cp "target/$arch/release/keydeck" "$BIN_DIR/keydeck-$arch"
+        echo "Staged sidecar: $BIN_DIR/keydeck-$arch"
+    done
 else
     cargo build --release --bin keydeck --target "$TARGET"
     cp "target/$TARGET/release/keydeck" "$BIN_DIR/keydeck-$TARGET"
+    echo "Staged sidecar: $BIN_DIR/keydeck-$TARGET"
 fi
-
-echo "Staged sidecar: $BIN_DIR/keydeck-$TARGET"
