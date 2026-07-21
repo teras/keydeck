@@ -206,7 +206,7 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
         method_name: Arc<String>,
     }
 
-    #[zbus::interface(name = "org.keydeck.WindowList")]
+    #[zbus::interface(name = "onl.ycode.keydeck.WindowList")]
     impl WindowListHandler {
         async fn window_list_result(
             &self,
@@ -244,7 +244,7 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
     // Register callback handler
     conn.object_server()
         .at(
-            "/org/keydeck/windowlist",
+            "/onl/ycode/keydeck/windowlist",
             WindowListHandler {
                 tx,
                 method_name: method_name.clone(),
@@ -261,8 +261,8 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
                 data.push(client.resourceClass || "");
             }}
             callDBus("{}",
-                    "/org/keydeck/windowlist",
-                    "org.keydeck.WindowList",
+                    "/onl/ycode/keydeck/windowlist",
+                    "onl.ycode.keydeck.WindowList",
                     "WindowListResult",
                     JSON.stringify(data));
         "#,
@@ -327,7 +327,7 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
     let _ = std::fs::remove_file(&script_path);
     let _ = conn
         .object_server()
-        .remove::<WindowListHandler, _>("/org/keydeck/windowlist");
+        .remove::<WindowListHandler, _>("/onl/ycode/keydeck/windowlist");
 
     let mut seen = HashSet::new();
     let mut classes = Vec::new();

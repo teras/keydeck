@@ -613,6 +613,16 @@ fn find_keydeck_binary() -> Result<PathBuf, String> {
             if keydeck_path.exists() {
                 return Ok(keydeck_path);
             }
+            // Arch-pool layout: the real binaries live side by side as
+            // keydeck.linux / keydeck-config.linux (the clean names are only
+            // symlinks elsewhere, and current_exe() canonicalizes to the real
+            // file). Derive the sibling daemon's name from our own extension.
+            if let Some(ext) = exe_path.extension().and_then(|e| e.to_str()) {
+                let suffixed = exe_dir.join(format!("keydeck.{}", ext));
+                if suffixed.exists() {
+                    return Ok(suffixed);
+                }
+            }
         }
     }
 

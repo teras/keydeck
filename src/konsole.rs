@@ -7,7 +7,7 @@
 //! detection lives here in the daemon instead of an installed watcher. It reuses the
 //! window-focus events the daemon already receives from KWin as its trigger, then
 //! asks konsole over D-Bus which tab is active and what foreground program runs in
-//! it, publishing that as the `context`/`git` variables.
+//! it, publishing that as the single `terminal_app` variable.
 //!
 //! Enabled by the global `konsole_context` config flag — a plain behaviour setting,
 //! not a file-installing integration. Portable: the flag deserializes on every OS
@@ -17,8 +17,9 @@ use crate::event::DeviceEvent;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, RwLock};
 
-/// Default programs of interest, matching the kitty watcher's spirit. Only these are
-/// reported as `context`; anything else (including the bare shell) reports empty.
+/// Default programs of interest, matching the kitty watcher's spirit. One of these
+/// (deepest wins) is reported as `terminal_app`; otherwise the value falls back to
+/// the reserved "git" (cwd in a repo) or empty (bare shell elsewhere).
 pub fn default_apps() -> Vec<String> {
     ["claude", "codex", "opencode", "mc"]
         .iter()
@@ -26,23 +27,23 @@ pub fn default_apps() -> Vec<String> {
         .collect()
 }
 
-/// Handle to the background konsole resolver. `trigger()` asks it to re-resolve the
-/// focused konsole and publish `context`/`git` if they changed. On non-Linux
-/// platforms it is an inert stub (no thread; `trigger()` does nothing).
+/// Handle to the background konsole resolver. It is poked (with the focused window's
+/// caption) whenever a konsole window gains focus, and re-resolves the `terminal_app`
+/// of *that* window over D-Bus. On non-Linux platforms it is an inert stub (no thread).
 pub struct KonsoleResolver {
-    tx: Option<Sender<()>>,
+    tx: Option<Sender<String>>,
     apps: Arc<RwLock<Vec<String>>>,
 }
 
 impl KonsoleResolver {
     /// Spawns the resolver thread (Linux only). The thread stays idle until the first
-    /// `trigger()`, connecting to the session bus lazily, so it costs nothing on
+    /// focus poke, connecting to the session bus lazily, so it costs nothing on
     /// machines where konsole is never focused or the flag is off.
     pub fn spawn(event_tx: Sender<DeviceEvent>, apps: Vec<String>) -> Self {
         let apps = Arc::new(RwLock::new(apps));
         #[cfg(target_os = "linux")]
         {
-            let (tx, rx) = std::sync::mpsc::channel::<()>();
+            let (tx, rx) = std::sync::mpsc::channel::<String>();
             let apps_for_thread = apps.clone();
             std::thread::spawn(move || linux::run(rx, event_tx, apps_for_thread));
             Self {
@@ -57,42 +58,52 @@ impl KonsoleResolver {
         }
     }
 
-    /// Asks the resolver to re-read the focused konsole. Coalesced with any pending
-    /// triggers, so a burst of focus/caption events resolves once.
-    pub fn trigger(&self) {
-        if let Some(tx) = &self.tx {
-            let _ = tx.send(());
-        }
-    }
-
     /// Replaces the programs-of-interest list (on config reload).
     pub fn set_apps(&self, apps: Vec<String>) {
         if let Ok(mut guard) = self.apps.write() {
             *guard = apps;
         }
     }
+
+    /// Expose this resolver as a generic pull-trigger for the daemon's focus loop.
+    /// The core pokes it whenever a window whose class contains `pattern` gains
+    /// focus, without knowing it is konsole, handing over the focused window's title.
+    /// The hook clones the resolver's trigger `Sender`, so rebuilding the registry on
+    /// reload never respawns the thread. `None` when the resolver is inert (non-Linux).
+    pub fn as_pull_trigger(&self) -> Option<crate::context::PullTrigger> {
+        self.tx.as_ref().map(|tx| {
+            let tx = tx.clone();
+            crate::context::PullTrigger {
+                pattern: "konsole".to_string(),
+                on_focus: Box::new(move |title: &str| {
+                    let _ = tx.send(title.to_string());
+                }),
+            }
+        })
+    }
 }
 
 #[cfg(target_os = "linux")]
 mod linux {
     use crate::event::{send, DeviceEvent};
-    use crate::{error_log, verbose_log};
+    use crate::error_log;
     use std::sync::mpsc::{Receiver, Sender};
     use std::sync::{Arc, RwLock};
     use zbus::blocking::{Connection, Proxy};
 
-    pub fn run(rx: Receiver<()>, event_tx: Sender<DeviceEvent>, apps: Arc<RwLock<Vec<String>>>) {
+    pub fn run(rx: Receiver<String>, event_tx: Sender<DeviceEvent>, apps: Arc<RwLock<Vec<String>>>) {
         // zbus::blocking wants an ambient tokio runtime on this thread (same pattern
         // the KWin client uses). Both the runtime and the connection are created
         // lazily on the first trigger, so an off/idle integration costs nothing.
         let mut runtime: Option<tokio::runtime::Runtime> = None;
         let mut conn: Option<Connection> = None;
-        let mut last_context: Option<String> = None;
-        let mut last_git: Option<String> = None;
 
-        while rx.recv().is_ok() {
-            // Coalesce a burst of focus/caption events into a single resolve.
-            while rx.try_recv().is_ok() {}
+        while let Ok(mut title) = rx.recv() {
+            // Coalesce a burst of focus/caption events into a single resolve, keeping
+            // the most recent title (the window we must resolve now).
+            while let Ok(t) = rx.try_recv() {
+                title = t;
+            }
 
             if runtime.is_none() {
                 runtime = tokio::runtime::Runtime::new()
@@ -110,55 +121,49 @@ mod linux {
             let Some(conn) = conn.as_ref() else { continue };
 
             let apps_snapshot = apps.read().map(|g| g.clone()).unwrap_or_default();
-            if let Some((context, git)) = resolve(conn, &apps_snapshot) {
-                if last_context.as_deref() != Some(context.as_str()) {
-                    verbose_log!("konsole context = '{}'", context);
-                    send(
-                        &event_tx,
-                        DeviceEvent::SetContextVar {
-                            key: "context".to_string(),
-                            value: if context.is_empty() {
-                                None
-                            } else {
-                                Some(context.clone())
-                            },
-                        },
-                    );
-                    last_context = Some(context);
-                }
-                if last_git.as_deref() != Some(git.as_str()) {
-                    send(
-                        &event_tx,
-                        DeviceEvent::SetContextVar {
-                            key: "git".to_string(),
-                            value: if git.is_empty() { None } else { Some(git.clone()) },
-                        },
-                    );
-                    last_git = Some(git);
-                }
+            if let Some(value) = resolve(conn, &apps_snapshot, &title) {
+                // Re-assert on every konsole focus/caption; the daemon ignores no-op
+                // sets, so it's cheap and keeps the shared `terminal_app` in sync after
+                // another terminal wrote it. Never cleared here — the value is "last
+                // known terminal state", not "focused terminal state".
+                send(
+                    &event_tx,
+                    DeviceEvent::SetContextVar {
+                        key: "terminal_app".to_string(),
+                        value: if value.is_empty() { None } else { Some(value) },
+                    },
+                );
             }
         }
     }
 
-    /// Finds the active konsole window's foreground program + git state. Returns
-    /// `None` when no active konsole window can be resolved (e.g. a transient focus
-    /// event or a D-Bus hiccup), in which case the last-published values are kept.
-    fn resolve(conn: &Connection, apps: &[String]) -> Option<(String, String)> {
+    /// Resolves the focused konsole window's `terminal_app` value (foreground program,
+    /// else the reserved "git", else empty). The focused window is identified by
+    /// matching each konsole window's own title against `focused_title` — the caption
+    /// KWin just handed us — rather than asking konsole which window is "active" (whose
+    /// state lags the focus event and mis-resolves fast window/tab switches). Returns
+    /// `None` when no konsole window matches (a transient focus event or a D-Bus
+    /// hiccup), keeping the last-published value.
+    fn resolve(conn: &Connection, apps: &[String], focused_title: &str) -> Option<String> {
         for svc in konsole_services(conn) {
             for n in main_window_indices(conn, &svc) {
-                if is_active_window(conn, &svc, n) != Some(true) {
+                if !window_matches_focus(conn, &svc, n, focused_title) {
                     continue;
                 }
                 let session = current_session(conn, &svc, n)?;
                 let fg = foreground_pid(conn, &svc, session)?;
                 let prog = proc_cmd_basename(fg);
-                let context = if apps.iter().any(|a| a == &prog) {
+                // Single priority-encoded value (level-2 resolution of the terminal
+                // container): a known program wins; else the reserved "git" if the cwd
+                // is inside a repo; else empty. Matches the kitty watcher's encoding.
+                let value = if apps.iter().any(|a| a == &prog) {
                     prog
+                } else if is_git_repo(&proc_cwd(fg)) {
+                    "git".to_string()
                 } else {
                     String::new()
                 };
-                let git = if is_git_repo(&proc_cwd(fg)) { "1" } else { "" }.to_string();
-                return Some((context, git));
+                return Some(value);
             }
         }
         None
@@ -217,15 +222,25 @@ mod linux {
         out
     }
 
-    /// konsole-authoritative "which window has focus" — no title parsing.
-    fn is_active_window(conn: &Connection, svc: &str, n: u32) -> Option<bool> {
-        let p = proxy(
+    /// Whether konsole window `n` is the one KWin reports as focused, by matching its
+    /// own `windowTitle` against the focused caption. KWin's caption is the window's
+    /// title plus konsole's " — Konsole" suffix, so the title is a substring of the
+    /// caption; comparing this way sidesteps konsole's lagging `isActiveWindow` state,
+    /// which mis-reports the active window right after a fast window/tab switch.
+    fn window_matches_focus(conn: &Connection, svc: &str, n: u32, focused_title: &str) -> bool {
+        let Some(p) = proxy(
             conn,
             svc,
             format!("/konsole/MainWindow_{n}"),
             "org.qtproject.Qt.QWidget",
-        )?;
-        p.get_property::<bool>("isActiveWindow").ok()
+        ) else {
+            return false;
+        };
+        let Ok(title) = p.get_property::<String>("windowTitle") else {
+            return false;
+        };
+        let title = title.trim();
+        !title.is_empty() && focused_title.contains(title)
     }
 
     fn current_session(conn: &Connection, svc: &str, n: u32) -> Option<i32> {

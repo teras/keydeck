@@ -84,7 +84,14 @@ fn write_watcher() -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, WATCHER)
+    // Bake the absolute keydeck path into the watcher. It runs inside kitty, whose
+    // environment PATH need not contain our install dir, so a bare `keydeck` call
+    // would raise OSError and silently drop every context update. Reuse the same
+    // authoritative helper that stamps the daemon path into the systemd unit.
+    let bin = crate::platform::lifecycle::current_exe().unwrap_or_else(|_| "keydeck".to_string());
+    // The placeholder sits in a double-quoted Python string literal.
+    let bin = bin.replace('\\', "\\\\").replace('"', "\\\"");
+    fs::write(&path, WATCHER.replace("@KEYDECK_BIN@", &bin))
 }
 
 fn install() -> i32 {

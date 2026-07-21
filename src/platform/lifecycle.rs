@@ -65,9 +65,10 @@ impl Action {
     pub const NAMES: &'static str = "install, uninstall, start, stop, restart, status, reload";
 }
 
-/// Absolute path to the running `keydeck` binary, used in autostart entries
-/// and when spawning a detached server instance.
-fn current_exe() -> io::Result<String> {
+/// Absolute path to the running `keydeck` binary, used in autostart entries,
+/// when spawning a detached server instance, and to bake the daemon's location
+/// into installed integrations (e.g. the kitty watcher) so they never rely on PATH.
+pub(crate) fn current_exe() -> io::Result<String> {
     env::current_exe()?
         .to_str()
         .map(|s| s.to_string())

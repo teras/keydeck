@@ -1,11 +1,12 @@
 """Push terminal context to the keydeck daemon.
 
 Reports the program running in the focused kitty window (and whether the cwd is a
-git repo) to keydeck via `keydeck --set`. Pages can auto-switch on the `context` /
-`git` variables, e.g.:
+git repo) to keydeck via `keydeck --set`. Pages can auto-switch on the single
+`terminal_app` variable (a known program wins; else "git" at a bare shell inside a
+repo; else empty), e.g.:
 
     Kitty (Claude):
-      when: { window: kitty, context: claude }
+      when: { window: kitty, terminal_app: claude }
 
 Installed and registered by `keydeck --integration kitty install`. This file is
 managed by keydeck and refreshed on daemon startup — edit APPS below, but expect
@@ -96,10 +97,22 @@ def _is_git_repo(cwd: str) -> bool:
     return False
 
 
-def _set(key: str, value: str) -> None:
+# Absolute path to the keydeck binary, substituted by the daemon when it writes
+# this watcher. kitty's environment PATH frequently does not include keydeck's
+# install dir, so a bare "keydeck" call would raise OSError and be swallowed below,
+# silently dropping every context update. Falls back to a PATH lookup only if the
+# placeholder was left untouched (e.g. running this file directly).
+KEYDECK_BIN = "@KEYDECK_BIN@"
+
+
+def _keydeck() -> str:
+    return KEYDECK_BIN if not KEYDECK_BIN.startswith("@") else "keydeck"
+
+
+def _set(value: str) -> None:
     try:
         subprocess.Popen(
-            ["keydeck", "--set", f"{key}={value}"],
+            [_keydeck(), "--set", "terminal_app=%s" % value],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -107,23 +120,27 @@ def _set(key: str, value: str) -> None:
         pass
 
 
-# Last values pushed, to avoid redundant `keydeck --set` calls on every shell prompt.
-_last = {"context": None, "git": None}
+# Last value pushed, to avoid redundant `keydeck --set` calls on every shell prompt.
+_last = {"terminal_app": None}
 
 
-def _push(window) -> None:
+def _push(window, force=False) -> None:
+    # `force` re-asserts on focus-in even if our own last-pushed value is unchanged:
+    # another terminal (konsole) may have written the shared var meanwhile, so gaining
+    # focus must overwrite it with ours. The _last throttle still spares the frequent
+    # title/cmd events from redundant `keydeck --set` subprocesses.
     pid = _shell_pid(window)
     if pid is None:
         return
     fg = _foreground_pid(pid)
-    ctx = _detect_context(_proc_name(fg))
-    git = "1" if _is_git_repo(_cwd(fg)) else ""
-    if ctx != _last["context"]:
-        _last["context"] = ctx
-        _set("context", ctx)
-    if git != _last["git"]:
-        _last["git"] = git
-        _set("git", git)
+    # Single priority-encoded value (level-2 resolution of the terminal container):
+    # a known program wins; else the reserved "git" if the cwd is a repo; else empty.
+    value = _detect_context(_proc_name(fg))
+    if not value and _is_git_repo(_cwd(fg)):
+        value = "git"
+    if force or value != _last["terminal_app"]:
+        _last["terminal_app"] = value
+        _set(value)
 
 
 def _is_focused(boss, window) -> bool:
@@ -133,7 +150,7 @@ def _is_focused(boss, window) -> bool:
 
 def on_focus_change(boss, window, data):
     if data.get("focused"):
-        _push(window)
+        _push(window, force=True)
 
 
 def on_cmd_startstop(boss, window, data):

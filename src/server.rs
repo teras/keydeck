@@ -138,15 +138,23 @@ pub fn start_server() {
     let context_vars: ContextVars = new_context_vars();
 
     // Konsole terminal-context resolver. Triggered on konsole focus/caption events;
-    // publishes `context`/`git` like the kitty watcher. Idle (and thread-lazy) unless
-    // `konsole_context` is on. A no-op stub on non-Linux platforms.
-    let mut conf_konsole_context = conf.konsole_context;
+    // publishes `terminal_app` like the kitty watcher. Idle (and
+    // thread-lazy) unless `konsole_context` is on. A no-op stub on non-Linux.
     let konsole = KonsoleResolver::spawn(
         tx.clone(),
         conf.konsole_apps
             .clone()
             .unwrap_or_else(crate::konsole::default_apps),
     );
+
+    // Pull-style context sources: on a matching focus the daemon pokes each so it
+    // re-resolves. The registry is data — the core never names an app or "terminal".
+    // Push sources (external watchers calling `keydeck --set`) don't register here.
+    // Rebuilt on reload from the fresh config, always reusing the one resolver.
+    let mut pull_triggers: Vec<crate::context::PullTrigger> = Vec::new();
+    if conf.konsole_context {
+        pull_triggers.extend(konsole.as_pull_trigger());
+    }
 
     platform::spawn_sleep_listener(&tx, &still_active.clone(), &should_reset_devices);
     listener_device(&tx, &still_active.clone(), &should_reset_devices);
@@ -238,35 +246,50 @@ pub fn start_server() {
             } => {
                 current_class = class.clone();
                 current_title = title.clone();
+                // Poke any pull-style context source whose pattern matches the focused
+                // window, so it re-resolves. The core knows nothing about which apps
+                // these are — the patterns come from the integrations' registration.
+                let lower_class = class.to_lowercase();
+                for trigger in &pull_triggers {
+                    if lower_class.contains(&trigger.pattern) {
+                        (trigger.on_focus)(&title);
+                    }
+                }
                 // Dispatch wait event first
                 dispatch_wait_event(message, &devices);
                 // Then handle normal focus change
                 for device in devices.values() {
                     device.focus_changed(&current_class, &current_title, false);
                 }
-                // Konsole context tracking reuses the same focus/caption stream: on a
-                // konsole focus event, ask it (over D-Bus) which tab/program is active.
-                if conf_konsole_context && class.to_lowercase().contains("konsole") {
-                    konsole.trigger();
-                }
             }
             DeviceEvent::SetContextVar { key, value } => {
-                {
+                // The daemon is the single point of dedup: sources (konsole resolver,
+                // kitty watcher) re-assert the same value on every focus/caption event,
+                // so only re-evaluate pages when the value actually changed.
+                let changed = {
                     let mut vars = context_vars.write().unwrap();
                     match value {
                         Some(v) => {
-                            verbose_log!("Context variable {}={}", key, v);
-                            vars.insert(key, v);
+                            let changed = vars.get(&key) != Some(&v);
+                            if changed {
+                                verbose_log!("Context variable {}={}", key, v);
+                                vars.insert(key, v);
+                            }
+                            changed
                         }
                         None => {
-                            verbose_log!("Context variable {} cleared", key);
-                            vars.shift_remove(&key);
+                            let removed = vars.shift_remove(&key).is_some();
+                            if removed {
+                                verbose_log!("Context variable {} cleared", key);
+                            }
+                            removed
                         }
                     }
-                }
-                // Re-evaluate page matching against the new context (same fan-out as focus).
-                for device in devices.values() {
-                    device.focus_changed(&current_class, &current_title, false);
+                };
+                if changed {
+                    for device in devices.values() {
+                        device.focus_changed(&current_class, &current_title, false);
+                    }
                 }
             }
             ref message @ DeviceEvent::Tick => {
@@ -349,13 +372,19 @@ pub fn start_server() {
                 // icon_dir remains hard-coded - no need to update
                 conf_brightness = new_conf.brightness;
                 conf_background_image = new_conf.background_image.clone();
-                conf_konsole_context = new_conf.konsole_context;
                 konsole.set_apps(
                     new_conf
                         .konsole_apps
                         .clone()
                         .unwrap_or_else(crate::konsole::default_apps),
                 );
+                // Rebuild the pull-trigger registry from the fresh config, reusing the
+                // one persistent resolver (as_pull_trigger clones its Sender — the
+                // thread is never respawned).
+                pull_triggers.clear();
+                if new_conf.konsole_context {
+                    pull_triggers.extend(konsole.as_pull_trigger());
+                }
 
                 // Update tick_time in the mutex (will be used in next tick cycle)
                 *conf_tick_time.lock().unwrap() = new_conf.tick_time;
