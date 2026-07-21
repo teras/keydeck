@@ -1,6 +1,6 @@
 [package]
 name = "keydeck"
-version = "0.9.0"
+version = "1.0.0"
 edition = "2021"
 description = "KeyDeck - Stream Deck controller for Linux"
 license = "GPL-3.0-or-later"
