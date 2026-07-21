@@ -13,23 +13,28 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  # Resolve the version once (from the tag, or "dev" for a manual run) so every
+  # artifact is named consistently across the OS jobs.
+  meta:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: get_version
+      - id: v
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
+            VERSION="${GITHUB_REF#refs/tags/v}"
           else
             VERSION="dev"
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building version: $VERSION"
+
+  build-linux:
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
@@ -45,72 +50,193 @@ jobs:
             librsvg2-dev \
             libayatana-appindicator3-dev
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Cache Rust dependencies
+      - name: Cache Rust
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          restore-keys: ${{ runner.os }}-cargo-
 
-      - name: Cache Node.js dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            keydeck-config/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - name: Build daemon
+        run: cargo build --release --bins
 
-      - name: Build keydeck daemon
-        run: |
-          cargo build --release --bins
-
-      - name: Build keydeck-config UI
+      - name: Build config UI
         run: |
           cd keydeck-config
           npm install
           npm run tauri build -- --no-bundle
 
-      - name: Create distribution directory
-        run: mkdir -p dist
-
-      - name: Copy binaries
+      - name: Package
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
+          mkdir -p dist
           cp target/release/keydeck dist/
           cp keydeck-config/src-tauri/target/release/keydeck-config dist/
+          zip -j "keydeck-${VERSION}-linux.zip" dist/keydeck dist/keydeck-config
 
-      - name: Create zip archive
-        run: |
-          cd dist
-          zip -9 keydeck-${{ steps.get_version.outputs.version }}-linux.zip keydeck keydeck-config
-          cd ..
-          mv dist/keydeck-${{ steps.get_version.outputs.version }}-linux.zip .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: keydeck-${{ steps.get_version.outputs.version }}-linux
-          path: keydeck-${{ steps.get_version.outputs.version }}-linux.zip
+          name: linux
+          path: keydeck-*-linux.zip
 
-      - name: Create Release
-        if: github.ref_type == 'tag'
+  build-windows:
+    needs: meta
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Build daemon
+        run: cargo build --release --bins
+
+      - name: Build config UI
+        run: |
+          cd keydeck-config
+          npm install
+          npm run tauri build -- --no-bundle
+
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/keydeck.exe dist/
+          Copy-Item keydeck-config/src-tauri/target/release/keydeck-config.exe dist/
+          Compress-Archive -Path dist/* -DestinationPath "keydeck-$env:VERSION-windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: keydeck-*-windows.zip
+
+  build-macos:
+    needs: meta
+    runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_NOTARY_KEY_JSON: ${{ secrets.APPLE_NOTARY_KEY_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # Build the daemon (universal x86_64 + arm64) and stage it as the sidecar
+      # so `cargo tauri build` embeds it inside keydeck-config.app.
+      - name: Stage daemon sidecar
+        run: ./stage-sidecar.sh universal-apple-darwin
+
+      # Import the Developer ID cert and reconstruct the notarization API key, then
+      # hand both to Tauri via its own signing env vars (APPLE_SIGNING_IDENTITY +
+      # APPLE_API_*). Tauri deep-signs the .app (including the embedded daemon),
+      # notarizes and staples it, and packages the .dmg.
+      - name: Set up signing keychain and notarization key
+        run: |
+          set -euo pipefail
+
+          KEYCHAIN_PWD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PWD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"$/\1/')
+          rm certificate.p12
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+          APPLE_API_ISSUER=$(echo "$APPLE_NOTARY_KEY_JSON" | grep -o '"issuer_id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+          APPLE_API_KEY_ID=$(echo "$APPLE_NOTARY_KEY_JSON" | grep -o '"key_id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+          APPLE_API_KEY=$(echo "$APPLE_NOTARY_KEY_JSON" | grep -o '"private_key"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+          mkdir -p ~/private_keys
+          KEY_PATH="$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "-----BEGIN PRIVATE KEY-----" > "$KEY_PATH"
+          echo "$APPLE_API_KEY" >> "$KEY_PATH"
+          echo "-----END PRIVATE KEY-----" >> "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "APPLE_API_ISSUER=$APPLE_API_ISSUER" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY=$APPLE_API_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Build signed, notarized .app and .dmg
+        run: |
+          cd keydeck-config
+          npm install
+          npm run tauri build -- --target universal-apple-darwin
+
+      - name: Collect dmg
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          DMG=$(ls keydeck-config/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          cp "$DMG" "keydeck-${VERSION}-macos.dmg"
+          rm -rf ~/private_keys
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: keydeck-*-macos.dmg
+
+  # Publish a single prerelease with all three OS archives. Only on a tag push —
+  # a manual run just leaves the artifacts on the workflow run for inspection.
+  release:
+    needs: [meta, build-linux, build-windows, build-macos]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create prerelease
         uses: softprops/action-gh-release@v2
         with:
-          files: keydeck-${{ steps.get_version.outputs.version }}-linux.zip
+          files: |
+            artifacts/**/keydeck-*.zip
+            artifacts/**/keydeck-*.dmg
           draft: false
           prerelease: true
           generate_release_notes: true
