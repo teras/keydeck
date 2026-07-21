@@ -152,12 +152,15 @@ mod linux {
                 }
                 let session = current_session(conn, &svc, n)?;
                 let fg = foreground_pid(conn, &svc, session)?;
-                let prog = proc_cmd_basename(fg);
                 // Single priority-encoded value (level-2 resolution of the terminal
-                // container): a known program wins; else the reserved "git" if the cwd
-                // is inside a repo; else empty. Matches the kitty watcher's encoding.
-                let value = if apps.iter().any(|a| a == &prog) {
-                    prog
+                // container): the *deepest* known program in the foreground process
+                // group wins — so a wrapper that launches the app in the same group
+                // (`script -> mc -> claude`) still resolves to the innermost known app
+                // (claude), not the shallow shell/wrapper; else the reserved "git" if
+                // the foreground job's cwd is inside a repo; else empty. Matches the
+                // kitty watcher's encoding.
+                let value = if let Some(app) = deepest_app_in_group(fg, apps) {
+                    app
                 } else if is_git_repo(&proc_cwd(fg)) {
                     "git".to_string()
                 } else {
@@ -280,6 +283,60 @@ mod linux {
         std::fs::read_link(format!("/proc/{pid}/cwd"))
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default()
+    }
+
+    /// A numeric field of `/proc/<pid>/stat`, counting from *after* the parenthesised
+    /// comm field (which may itself contain spaces or ')'). Index 1 = ppid, 2 = pgrp.
+    fn stat_field(pid: i32, idx: usize) -> Option<i32> {
+        let data = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let after = &data[data.rfind(')')? + 1..];
+        after.split_whitespace().nth(idx)?.parse().ok()
+    }
+
+    /// The deepest program listed in `apps` running inside the foreground process
+    /// group of `fg_pid` (the terminal's current foreground job). Scanning the whole
+    /// group — not just its leader — means a wrapper that runs the real app in the
+    /// same process group (`script -> mc -> claude`) still resolves to the innermost
+    /// known app; unknown descendants (a helper the app spawned) are ignored, and a
+    /// bare shell (no known program in the job) yields `None` so callers fall back to
+    /// the git/empty encoding.
+    fn deepest_app_in_group(fg_pid: i32, apps: &[String]) -> Option<String> {
+        let group = stat_field(fg_pid, 2).unwrap_or(fg_pid);
+        // Every process in that group, mapped to its ppid.
+        let mut members = std::collections::HashMap::new();
+        for entry in std::fs::read_dir("/proc").ok()?.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Ok(pid) = name.parse::<i32>() else { continue };
+            if stat_field(pid, 2) == Some(group) {
+                if let Some(ppid) = stat_field(pid, 1) {
+                    members.insert(pid, ppid);
+                }
+            }
+        }
+        // Among known-app members, pick the one deepest in the group's ancestry chain
+        // (most ancestors that are themselves members of this foreground group).
+        let mut best: Option<(String, u32)> = None;
+        for &pid in members.keys() {
+            let prog = proc_cmd_basename(pid);
+            if !apps.iter().any(|a| a == &prog) {
+                continue;
+            }
+            let mut depth = 0u32;
+            let mut cur = pid;
+            let mut seen = std::collections::HashSet::new();
+            while let Some(&ppid) = members.get(&cur) {
+                if !seen.insert(cur) {
+                    break;
+                }
+                cur = ppid;
+                depth += 1;
+            }
+            if best.as_ref().map_or(true, |(_, d)| depth > *d) {
+                best = Some((prog, depth));
+            }
+        }
+        best.map(|(name, _)| name)
     }
 
     fn is_git_repo(cwd: &str) -> bool {

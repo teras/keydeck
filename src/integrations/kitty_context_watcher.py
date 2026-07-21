@@ -81,11 +81,46 @@ def _cwd(pid):
         return ""
 
 
-def _detect_context(name) -> str:
-    # Only known APPS are reported. At the bare shell the foreground program is the
-    # shell itself (and transient prompt helpers like git/date flit through it);
-    # reporting those would make the context flicker, so anything not in APPS = "".
-    return name if name in APPS else ""
+def _stat_fields(pid):
+    """(ppid, pgrp) from /proc/<pid>/stat, skipping the parenthesised comm field
+    (which may contain spaces or ')'). Returns (None, None) on failure."""
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            data = f.read()
+        # after comm: state ppid pgrp session ...
+        after = data[data.rfind(")") + 1:].split()
+        return int(after[1]), int(after[2])
+    except (OSError, ValueError, IndexError):
+        return None, None
+
+
+def _deepest_app(group_pid) -> str:
+    """The deepest program in APPS within the terminal's foreground process group.
+    Scanning the whole group (not just its leader) means a wrapper that launches the
+    real app in the same group (script -> mc -> claude) still resolves to the
+    innermost known app; unknown descendants the app spawned are ignored. Returns ""
+    when the job runs no known program (a bare shell), so callers fall back to git."""
+    members = {}  # pid -> ppid, every process in the foreground group
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        pid = int(entry)
+        ppid, pgrp = _stat_fields(pid)
+        if pgrp == group_pid and ppid is not None:
+            members[pid] = ppid
+    best_name, best_depth = "", -1
+    for pid in members:
+        name = _proc_name(pid)
+        if name not in APPS:
+            continue
+        depth, cur, seen = 0, pid, set()
+        while cur in members and cur not in seen:
+            seen.add(cur)
+            cur = members[cur]
+            depth += 1
+        if depth > best_depth:
+            best_name, best_depth = name, depth
+    return best_name
 
 
 def _is_git_repo(cwd: str) -> bool:
@@ -134,8 +169,11 @@ def _push(window, force=False) -> None:
         return
     fg = _foreground_pid(pid)
     # Single priority-encoded value (level-2 resolution of the terminal container):
-    # a known program wins; else the reserved "git" if the cwd is a repo; else empty.
-    value = _detect_context(_proc_name(fg))
+    # the *deepest* known program in the foreground process group wins — so a wrapper
+    # that launches the app in the same group (script -> mc -> claude) still resolves
+    # to the innermost known app, not the shallow shell/wrapper; else the reserved
+    # "git" if the foreground job's cwd is a repo; else empty.
+    value = _deepest_app(fg)
     if not value and _is_git_repo(_cwd(fg)):
         value = "git"
     if force or value != _last["terminal_app"]:
