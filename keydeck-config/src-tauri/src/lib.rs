@@ -146,9 +146,16 @@ fn list_env_vars() -> Vec<String> {
     std::env::vars().map(|(name, _)| name).collect()
 }
 
+/// Async on purpose: the Wayland/KWin path waits up to 2s on a D-Bus round-trip
+/// to enumerate windows. As a sync command that wait ran on the WebKitGTK main
+/// thread and froze the whole UI for 2s every time the WhenEditor re-fetched
+/// window classes (i.e. on every page selection). `spawn_blocking` moves it off
+/// the main thread so the UI stays responsive regardless of the D-Bus latency.
 #[tauri::command]
-fn list_window_classes() -> Result<Vec<String>, String> {
-    windows::list_window_classes()
+async fn list_window_classes() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(windows::list_window_classes)
+        .await
+        .map_err(|e| format!("window class lookup task failed: {}", e))?
 }
 
 /// Save keydeck configuration to ~/.config/keydeck/config.yaml atomically with timestamped backup

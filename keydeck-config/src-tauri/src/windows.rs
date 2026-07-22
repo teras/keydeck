@@ -7,7 +7,6 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
-
 #[cfg(target_os = "linux")]
 use uuid::Uuid;
 #[cfg(target_os = "linux")]
@@ -198,26 +197,19 @@ fn list_window_classes_x11() -> Result<Vec<String>, String> {
 
 #[cfg(target_os = "linux")]
 fn list_window_classes_wayland() -> Result<Vec<String>, String> {
-    use std::sync::Arc;
-
-    // D-Bus callback handler to receive KWin script results
+    // Enumerate windows via a one-shot KWin script over D-Bus. This runs off the UI
+    // main thread (the Tauri command is async + spawn_blocking) and is fetched
+    // lazily and cached by the caller, so it is not a hot path.
     struct WindowListHandler {
         tx: mpsc::Sender<String>,
-        method_name: Arc<String>,
     }
 
     #[zbus::interface(name = "onl.ycode.keydeck.WindowList")]
     impl WindowListHandler {
-        async fn window_list_result(
-            &self,
-            #[zbus(header)] header: zbus::message::Header<'_>,
-            data: &str,
-        ) {
-            if let Some(member) = header.member() {
-                if member.as_str() == self.method_name.as_str() {
-                    let _ = self.tx.send(data.to_string());
-                }
-            }
+        async fn window_list_result(&self, data: &str) {
+            // This connection has its own unique bus name and only the script we
+            // just loaded calls back to it, so any result delivered here is ours.
+            let _ = self.tx.send(data.to_string());
         }
     }
 
@@ -234,22 +226,12 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
         .ok_or_else(|| "No unique bus name".to_string())?
         .to_string();
 
+    // Unique per call so rapid/overlapping loads never share a KWin script name.
     let script_name = format!("keydeck-window-list-{}", Uuid::new_v4());
-    let method_uuid = Uuid::new_v4().to_string().replace('-', "");
 
-    // Create channel to receive result
     let (tx, rx) = mpsc::channel();
-    let method_name = Arc::new(format!("keydeck_window_list_{}", method_uuid));
-
-    // Register callback handler
     conn.object_server()
-        .at(
-            "/onl/ycode/keydeck/windowlist",
-            WindowListHandler {
-                tx,
-                method_name: method_name.clone(),
-            },
-        )
+        .at("/onl/ycode/keydeck/windowlist", WindowListHandler { tx })
         .map_err(|e| format!("Failed to register callback handler: {}", e))?;
 
     let script = format!(
@@ -257,8 +239,7 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
             var data = [];
             var clients = workspace.windowList();
             for (var i = 0; i < clients.length; i++) {{
-                var client = clients[i];
-                data.push(client.resourceClass || "");
+                data.push(clients[i].resourceClass || "");
             }}
             callDBus("{}",
                     "/onl/ycode/keydeck/windowlist",
@@ -272,12 +253,10 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
     let script_path = std::env::temp_dir().join(format!("{}.js", script_name));
     std::fs::write(&script_path, &script)
         .map_err(|e| format!("Failed to write temporary script: {}", e))?;
-
     let script_path_str = script_path
         .to_str()
         .ok_or_else(|| "Temporary script path contains invalid UTF-8".to_string())?;
 
-    // Load the script
     let reply = conn
         .call_method(
             Some("org.kde.KWin"),
@@ -293,8 +272,6 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
         .map_err(|e| format!("Failed to read script ID: {}", e))?;
 
     let script_object_path = format!("/Scripting/Script{}", script_id);
-
-    // Run the script
     conn.call_method(
         Some("org.kde.KWin"),
         script_object_path.as_str(),
@@ -304,19 +281,12 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
     )
     .map_err(|e| format!("Failed to run KWin script: {}", e))?;
 
-    // Wait for result with timeout
-    let payload = rx
-        .recv_timeout(Duration::from_secs(2))
-        .map_err(|_| "Timed out waiting for KWin response".to_string())?;
+    let payload = rx.recv_timeout(Duration::from_secs(2)).ok();
 
-    // Cleanup
-    let _ = conn.call_method(
-        Some("org.kde.KWin"),
-        script_object_path.as_str(),
-        Some("org.kde.kwin.Script"),
-        "stop",
-        &(),
-    );
+    // Cleanup: unload BY NAME only. KWin reuses script ids after unload, so the
+    // /Scripting/Script<id> node path can later belong to a different script; a
+    // stop()/unload against that path could hit a foreign node. unloadScript(name)
+    // targets only our own registration (and stops it if still running).
     let _ = conn.call_method(
         Some("org.kde.KWin"),
         "/Scripting",
@@ -329,18 +299,18 @@ fn list_window_classes_wayland() -> Result<Vec<String>, String> {
         .object_server()
         .remove::<WindowListHandler, _>("/onl/ycode/keydeck/windowlist");
 
-    let mut seen = HashSet::new();
-    let mut classes = Vec::new();
+    let payload = payload.ok_or_else(|| "Timed out waiting for KWin response".to_string())?;
 
     let parsed: Vec<String> = serde_json::from_str(&payload)
         .map_err(|e| format!("Failed to parse window list: {}", e))?;
+    let mut seen = HashSet::new();
+    let mut classes = Vec::new();
     for entry in parsed {
         let trimmed = entry.trim();
         if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
             classes.push(trimmed.to_string());
         }
     }
-
     Ok(classes)
 }
 

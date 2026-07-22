@@ -11,9 +11,29 @@
 
   In YAML this serializes as a single mapping (one group) or a list of mappings.
 -->
+<script module lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+
+  // Window-class list for autocomplete, cached across every WhenEditor instance so
+  // it is fetched at most once per app session — NOT on every page selection. On
+  // Wayland the fetch runs a one-shot KWin script, so refetching per page-open was
+  // both wasteful and a needless source of KWin script churn.
+  let windowClassCache: string[] | null = null;
+  let windowClassInFlight: Promise<string[]> | null = null;
+
+  export function fetchWindowClasses(): Promise<string[]> {
+    if (windowClassCache) return Promise.resolve(windowClassCache);
+    if (windowClassInFlight) return windowClassInFlight;
+    windowClassInFlight = invoke<string[]>("list_window_classes")
+      .then((r) => (windowClassCache = r || []))
+      .catch(() => (windowClassCache = []))
+      .finally(() => (windowClassInFlight = null));
+    return windowClassInFlight;
+  }
+</script>
+
 <script lang="ts">
   import { untrack } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
 
   interface Condition {
     key: string;
@@ -87,12 +107,14 @@
     }
   });
 
-  // Fetch focusable window classes once for value autocomplete.
-  $effect(() => {
-    invoke<string[]>("list_window_classes")
-      .then((result) => (windowClasses = result || []))
-      .catch(() => (windowClasses = []));
-  });
+  // Populate the autocomplete list lazily: only when a window-condition value field
+  // is first focused (see the input's `onfocus`), reusing the session-wide cache.
+  let windowClassesLoaded = false;
+  function loadWindowClasses() {
+    if (windowClassesLoaded) return;
+    windowClassesLoaded = true;
+    fetchWindowClasses().then((r) => (windowClasses = r));
+  }
 
   function emit() {
     onUpdate(groupsToWhen(groups));
@@ -160,6 +182,7 @@
               placeholder={isWindowKey(row.key) ? "kitty, konsole" : "value"}
               bind:value={row.value}
               oninput={emit}
+              onfocus={() => { if (isWindowKey(row.key)) loadWindowClasses(); }}
             />
             <button
               type="button"
