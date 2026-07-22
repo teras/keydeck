@@ -5,7 +5,7 @@ use crate::context::ContextVars;
 use crate::device_manager::find_path;
 use crate::device_trait::KeydeckDevice;
 use crate::dynamic_params::evaluate_dynamic_params;
-use crate::event::{DeviceEvent, WaitEventType};
+use crate::event::{send, DeviceEvent, WaitEventType};
 use crate::graphics_renderer;
 use crate::platform::{process_escape_sequences, send_key_combination, send_string, set_focus};
 use crate::listener_button::button_listener;
@@ -66,6 +66,7 @@ pub struct PagedDevice {
     pending_actions: RefCell<Option<PendingActionQueue>>,
     time_manager: Arc<TimeManager>,
     background_image: Option<String>,
+    event_tx: Sender<DeviceEvent>,
 }
 
 impl PagedDevice {
@@ -179,6 +180,7 @@ impl PagedDevice {
             pending_actions: RefCell::new(None),
             time_manager,
             background_image,
+            event_tx: tx.clone(),
         };
 
         // Set the initial page (will trigger refresh because current_page_ref is MAX)
@@ -584,6 +586,25 @@ impl PagedDevice {
                             .spawn()
                             .map_err(|e| format!("Failed to execute command '{}': {}", exec, e))?;
                     }
+                }
+                Action::Set { set } => {
+                    // Set a context variable in-daemon, same key=value grammar as
+                    // `--set` (empty value clears). Routed through the event loop so
+                    // it reuses the central dedup + page re-evaluation in server.rs.
+                    let (key, value) = match set.split_once('=') {
+                        Some((k, v)) => (k.trim().to_string(), v.to_string()),
+                        None => (set.trim().to_string(), String::new()),
+                    };
+                    if key.is_empty() {
+                        return Err(format!("set action requires key=value, got '{}'", set));
+                    }
+                    send(
+                        &self.event_tx,
+                        DeviceEvent::SetContextVar {
+                            key,
+                            value: if value.is_empty() { None } else { Some(value) },
+                        },
+                    );
                 }
                 Action::Jump { jump } => {
                     self.set_page(&jump, false)?;

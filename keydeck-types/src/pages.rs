@@ -651,6 +651,13 @@ pub enum Action {
         wait: Option<bool>,
     },
 
+    /// Sets a context variable directly in the daemon (no shell/subprocess), the
+    /// native equivalent of `exec: keydeck --set key=value`. Same `key=value`
+    /// grammar; an empty value clears the variable. Pages re-evaluate immediately,
+    /// so a button can toggle a persistent page mode (e.g. `set: claude_mode=b`).
+    /// Works on every platform, unlike the `--set` control socket (Unix-only).
+    Set { set: String },
+
     /// Calls a macro with optional parameters.
     /// Parameters are substituted in the macro's actions before execution.
     Macro(MacroCall),

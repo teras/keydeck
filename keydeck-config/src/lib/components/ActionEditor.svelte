@@ -69,6 +69,7 @@
   // Determine action type from the action object
   function getActionType(action: any): string {
     if (action.refresh !== undefined) return 'refresh';
+    if (action.set !== undefined) return 'set';
     if (action.exec !== undefined) return 'exec';
     if (action.jump !== undefined) return 'jump';
     if (action.auto_jump !== undefined) return 'auto_jump';
@@ -147,6 +148,9 @@
       case 'refresh':
         onUpdate({ refresh: 'dynamic' });
         break;
+      case 'set':
+        onUpdate({ set: '' });
+        break;
     }
   }
 
@@ -154,6 +158,8 @@
     switch (actionType) {
       case 'exec':
         return `Execute: ${action.exec || '(empty)'}`;
+      case 'set':
+        return `Set: ${action.set || '(empty)'}`;
       case 'jump':
         return `Jump to: ${action.jump || '(empty)'}`;
       case 'auto_jump':
@@ -243,6 +249,7 @@
           <option value="wait">Wait (delay)</option>
           <option value="wait_for">Wait For Event</option>
           <option value="exec">Execute Command</option>
+          <option value="set">Set Context Variable</option>
           <option value="macro">Call Macro</option>
           <option value="try">Try/Else</option>
           <option value="return">Return</option>
@@ -275,6 +282,18 @@
             />
             Wait for completion
           </label>
+        </div>
+
+      {:else if actionType === 'set'}
+        <div class="form-row">
+          <label>Context Variable</label>
+          <input
+            type="text"
+            value={action.set || ''}
+            oninput={(e) => onUpdate({ ...action, set: e.currentTarget.value })}
+            placeholder="key=value (empty value clears the variable)"
+            disabled={disabled}
+          />
         </div>
 
       {:else if actionType === 'jump'}
