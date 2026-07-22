@@ -867,8 +867,13 @@ impl PagedDevice {
         }
         if !force_change {
             let old_page = { self.current_page_ref.borrow().clone() };
-            if let Some((_, page)) = self.pages.pages.get_index(old_page) {
+            if let Some((name, page)) = self.pages.pages.get_index(old_page) {
                 if page.lock.unwrap_or(false) {
+                    detail_log!(
+                        "[{}] Focus change ignored: current page '{}' is locked",
+                        self.serial,
+                        name
+                    );
                     return;
                 }
             }
